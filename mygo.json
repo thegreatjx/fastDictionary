@@ -1,0 +1,7 @@
+{
+  "name": "fastpot",
+  "identifier": "com.example.fastpot",
+  "version": "0.1.0",
+  "icon": "resources/icon.png",
+  "out": "build"
+}
