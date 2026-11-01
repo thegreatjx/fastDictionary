@@ -125,56 +125,66 @@ func TestVocabularyStoreMemory(t *testing.T) {
 
 func TestCustomActionConfigMethods(t *testing.T) {
 	cfg := DefaultConfig()
-	if len(cfg.CustomActions) != 3 {
-		t.Fatalf("expected 3 built-in actions, got %d", len(cfg.CustomActions))
+	if len(cfg.CustomActions) != 2 {
+		t.Fatalf("expected 2 built-in actions, got %d", len(cfg.CustomActions))
 	}
 
-	dict := cfg.GetAction("default-dictionary")
-	if dict == nil || dict.Name != "词典" {
-		t.Fatalf("failed to get dictionary action: %+v", dict)
+	// 词典 is retired with its popup tab: the card lives in 生词本 now, so the
+	// action must not come back for an install that asks for defaults.
+	if retired := cfg.GetAction("default-dictionary"); retired != nil {
+		t.Fatalf("default-dictionary should be gone, got %+v", retired)
+	}
+
+	grammar := cfg.GetAction("default-sentence-analysis")
+	if grammar == nil || grammar.Name != "长难句分析" {
+		t.Fatalf("failed to get sentence-analysis action: %+v", grammar)
 	}
 
 	enabled := cfg.GetEnabledActions()
-	if len(enabled) != 3 {
-		t.Fatalf("expected 3 enabled actions, got %d", len(enabled))
+	if len(enabled) != 2 {
+		t.Fatalf("expected 2 enabled actions, got %d", len(enabled))
 	}
 
-	// Disable dictionary
-	dict.Enabled = false
-	if len(cfg.GetEnabledActions()) != 2 {
-		t.Fatalf("expected 2 enabled actions after disabling dict, got %d", len(cfg.GetEnabledActions()))
+	// Disable grammar
+	grammar.Enabled = false
+	if len(cfg.GetEnabledActions()) != 1 {
+		t.Fatalf("expected 1 enabled action after disabling grammar, got %d", len(cfg.GetEnabledActions()))
 	}
 
 	// Reset action
-	cfg.ResetAction("default-dictionary")
-	if !cfg.GetAction("default-dictionary").Enabled {
-		t.Fatal("expected dictionary to be re-enabled after reset")
+	cfg.ResetAction("default-sentence-analysis")
+	if !cfg.GetAction("default-sentence-analysis").Enabled {
+		t.Fatal("expected sentence analysis to be re-enabled after reset")
 	}
 }
 
-func TestPopupRendersDictionaryCard(t *testing.T) {
-	a := newTestApp()
-	a.source = "blossom"
-	a.mode = modeDictionary
-	a.activeActionID = "default-dictionary"
-	a.dictResult = &DictionaryResult{
-		Term:               "blossom",
-		Phonetic:           "/ˈblɒs.əm/",
-		PartOfSpeech:       "noun",
-		Definition:         "花朵（尤指果树的花）",
-		Context:            "Cherry blossoms remind us to cherish each moment.",
-		ContextTerm:        "blossoms",
-		ContextTranslation: "樱花提醒我们珍惜每一刻。",
-		MemoryTips:         "词源：和 bloom 同源",
-		Difficulty:         "B2",
+// TestLegacyFilesDropTheDictionaryAction covers the migration half of removing
+// 词典: the action was written into every config file that ever ran the app, so
+// dropping it from DefaultCustomActions() leaves it sitting in the list — in
+// the 划词 chip and in 指令 settings — with no view able to render it.
+func TestLegacyFilesDropTheDictionaryAction(t *testing.T) {
+	var cfg Config
+	cfg.CustomActions = []CustomActionConfig{
+		{ID: "default-dictionary", Name: "词典", Enabled: true},
+		{ID: "default-sentence-analysis", Name: "长难句分析", Enabled: true},
+		{ID: "my-own", Name: "我的指令", Enabled: true},
 	}
-
-	tt := ui.NewTester(a.popupView, 480, 500)
-	if !tt.HasText("blossom") || !tt.HasText("花朵（尤指果树的花）") || !tt.HasText("B2") {
-		t.Errorf("dictionary card missing expected texts: %v", tt.Texts())
+	// The return value is what makes load() rewrite the file: without it the
+	// stale entry is filtered in memory on every start and the file keeps it.
+	if !ensureDefaultActions(&cfg) {
+		t.Fatal("cleanup did not report the dictionary action it removed")
 	}
-	if !tt.HasText("保存到笔记本") {
-		t.Errorf("save to notebook button missing: %v", tt.Texts())
+	if cfg.GetAction("default-dictionary") != nil {
+		t.Fatal("legacy default-dictionary survived the migration")
+	}
+	if cfg.GetAction("default-sentence-analysis") == nil || cfg.GetAction("my-own") == nil {
+		t.Fatalf("migration removed the wrong actions: %+v", cfg.CustomActions)
+	}
+	// A file that never had the action must not be marked dirty.
+	var clean Config
+	clean.CustomActions = []CustomActionConfig{{ID: "default-sentence-analysis", Name: "长难句分析", Enabled: true}}
+	if ensureDefaultActions(&clean) {
+		t.Fatal("cleanup reported a change for a config that had none")
 	}
 }
 
@@ -204,15 +214,20 @@ func TestSettingsCustomActionsAndVocabularyPages(t *testing.T) {
 	// 1. Actions page list view
 	a.page = "actions"
 	tt := ui.NewTester(a.settingsView, 760, 560)
-	if !tt.HasText("AI 指令") || !tt.HasText("词典") || !tt.HasText("长难句分析") || !tt.HasText("写作改进") {
+	if !tt.HasText("AI 指令") || !tt.HasText("长难句分析") || !tt.HasText("写作改进") {
 		t.Errorf("actions page missing expected text: %v", tt.Texts())
+	}
+	// 词典 may still appear once, in the sidebar's 词典与发音 entry; what must
+	// not appear is a card for the retired action, whose description is unique.
+	if tt.HasText("面向语言学习者的精细词典") {
+		t.Errorf("actions page still describes the retired 词典 action: %v", tt.Texts())
 	}
 
 	// 2. Actions page customization view
-	a.editingActionID = "default-dictionary"
-	a.customizingAction = *a.store.Get().GetAction("default-dictionary")
+	a.editingActionID = "default-sentence-analysis"
+	a.customizingAction = *a.store.Get().GetAction("default-sentence-analysis")
 	ttEdit := ui.NewTester(a.settingsView, 760, 560)
-	if !ttEdit.HasText("定制化指令：词典") || !ttEdit.HasText("系统提示词") {
+	if !ttEdit.HasText("定制化指令：长难句分析") || !ttEdit.HasText("系统提示词") {
 		t.Errorf("customization form missing: %v", ttEdit.Texts())
 	}
 

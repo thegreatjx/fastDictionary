@@ -1,6 +1,6 @@
 // Windows UI Automation selection capture.
 //
-// This is the primary way fastpot reads what the user selected: the
+// This is the primary way fastDictionary reads what the user selected: the
 // IUIAutomationTextPattern of the focused element answers GetSelection()
 // with the selected text, without touching the clipboard and without
 // synthesising any input. It works in every app that exposes UI Automation

@@ -1,6 +1,6 @@
 {
-  "name": "fastpot",
-  "identifier": "com.example.fastpot",
+  "name": "fastDictionary",
+  "identifier": "com.example.fastdictionary",
   "version": "0.1.0",
   "icon": "resources/icon.png",
   "out": "build"

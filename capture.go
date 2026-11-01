@@ -3,7 +3,7 @@
 // The primary strategy is UI Automation (see uia.go): the focused element's
 // TextPattern answers with the selection without touching the clipboard and
 // without synthesising any input. When UIA has nothing to say — terminal
-// emulators, games, some Java and Qt applications — fastpot falls back to
+// emulators, games, some Java and Qt applications — fastDictionary falls back to
 // pot's technique: simulate Ctrl+C and read the clipboard.
 //
 // The fallback snapshots every representation the clipboard holds, not just
@@ -45,6 +45,7 @@ var (
 	procGetWindow        = user32.NewProc("GetWindow")
 	procMoveWindow       = user32.NewProc("MoveWindow")
 	procMonitorFromPoint = user32.NewProc("MonitorFromPoint")
+	procClientToScreen   = user32.NewProc("ClientToScreen")
 	procGetDpiForMonitor = shcore.NewProc("GetDpiForMonitor")
 	procGetCurrentPID    = kernel32.NewProc("GetCurrentProcessId")
 	procGetModuleHandle  = kernel32.NewProc("GetModuleHandleW")
@@ -88,7 +89,7 @@ const (
 	swpNoMove      = 0x0002
 )
 
-// currentProcessID returns fastpot's own process id.
+// currentProcessID returns fastDictionary's own process id.
 func currentProcessID() uint32 {
 	r, _, _ := procGetCurrentPID.Call()
 	return uint32(r)
@@ -218,7 +219,7 @@ func restoreClipboard(snap transfer.Data, text string) {
 // text to arrive, then restore what was there before.
 //
 // It must run while the application the user selected in still has the
-// keyboard focus: fastpot's own window has to stay hidden until it returns.
+// keyboard focus: fastDictionary's own window has to stay hidden until it returns.
 func captureByCopy() string {
 	// The shortcut's own modifiers are usually still held: releasing them
 	// first is what keeps the synthesised Ctrl+C from arriving as
@@ -253,7 +254,7 @@ func captureByCopy() string {
 // applications whose accessibility tree says nothing useful. Either way the
 // clipboard is left exactly as it was.
 //
-// Call it before showing any fastpot window: showing one takes the focus
+// Call it before showing any fastDictionary window: showing one takes the focus
 // away from the application holding the selection.
 func (a *app) CaptureSelection() selection {
 	if a.store.Get().SelectionCapture != "copy" {
@@ -307,17 +308,65 @@ func captureUIA() selection {
 		s.Text = strings.TrimSpace(s.Text)
 		return s
 	case <-time.After(uiaTimeout):
-		log.Printf("fastpot: uia capture timed out after %v", uiaTimeout)
+		log.Printf("fastDictionary: uia capture timed out after %v", uiaTimeout)
 		return selection{}
 	}
 }
 
-// appsWhereDragIsNotSelection are the shell windows where a drag or a double
-// click does something with files rather than with text: reading the
-// clipboard there would return a file path.
+// appsWhereDragIsNotSelection are the windows where a drag or a double
+// click does something other than select text, so reading the selection
+// there returns something the user never asked for, and the fallback itself
+// has a side effect.
+//
+// Two families live here:
+//
+//   - the shell (Explorer, the desktop): a double click selects a file, and
+//     a synthesised Ctrl+C puts its path on the clipboard;
+//   - terminals: Ctrl+C is not copy there, it is the interrupt. A drag in a
+//     terminal is a selection the terminal handles itself, and when UI
+//     Automation cannot read it the fallback used to send a real Ctrl+C into
+//     whatever command was running. Measured on this machine: 0 of 3
+//     terminal gestures produced text, and each one pressed Ctrl+C.
+//
+// The map is keyed by lowercased executable name.
 var appsWhereDragIsNotSelection = map[string]bool{
 	"explorer.exe": true, // double click selects a file, Ctrl+C copies it
 	"desktop.exe":  true,
+
+	// Terminals and shells: never synthesise Ctrl+C here.
+	"pwsh.exe":                   true,
+	"powershell.exe":             true,
+	"windowsterminal.exe":        true,
+	"wt.exe":                     true,
+	"cmd.exe":                    true,
+	"conhost.exe":                true,
+	"openconsole.exe":            true,
+	"bash.exe":                   true,
+	"wsl.exe":                    true,
+	"wslhost.exe":                true,
+	"alacritty.exe":              true,
+	"wezterm-gui.exe":            true,
+	"wezterm.exe":                true,
+	"mintty.exe":                 true,
+	"conemu.exe":                 true,
+	"conemu64.exe":               true,
+	"tabby.exe":                  true,
+	"hyper.exe":                  true,
+	"kitty.exe":                  true,
+	"fluentterminal.exe":         true,
+	"windowsterminalpreview.exe": true,
+}
+
+// neverSimulateCopy reports whether the copy fallback must stay off in the
+// application named owner, whatever the 取词方式 setting says. A drag in these
+// applications either means something else entirely or makes Ctrl+C mean
+// something else; in both cases pressing it is worse than reading nothing.
+func neverSimulateCopy(owner string) bool {
+	name := strings.ToLower(strings.TrimSpace(owner))
+	if name == "" {
+		return false
+	}
+	return appsWhereDragIsNotSelection[name]
 }
 
 // captureForGesture reads the selection for the automatic trigger.
@@ -329,25 +378,34 @@ var appsWhereDragIsNotSelection = map[string]bool{
 // Snipaste fix, silently stopped appearing.
 //
 // The fallback is still gated: the trigger guard has already dropped
-// screenshot tools and the user's own pause, and the shell is dropped here,
-// because in Explorer a double click is a file selection and the clipboard
-// would hand back a path.
+// screenshot tools and the user's own pause, and neverSimulateCopy drops the
+// shell and the terminals here, because in those the synthesised Ctrl+C does
+// something other than copy.
 func (a *app) captureForGesture(owner string) selection {
 	// The test seam wins: the trigger policy is verified without a real
 	// selection, and it must not reach for the clipboard to do it.
 	if a.captureSelection != nil {
 		return a.captureSelection()
 	}
+	mode := a.store.Get().SelectionCapture
 	if s := captureUIA(); s.Text != "" {
+		log.Printf("fastDictionary: capture path=uia owner=%q bounds=%v", owner, s.Bounds)
 		return s
 	}
-	if a.store.Get().SelectionCapture == "uia" {
+	if mode == "uia" {
+		log.Printf("fastDictionary: capture path=uia-empty owner=%q mode=uia", owner)
 		return selection{}
 	}
-	if appsWhereDragIsNotSelection[strings.ToLower(owner)] {
+	if neverSimulateCopy(owner) {
+		// The distinction matters when reading the log later: this is not
+		// "the app had no selection", it is "the app is one where pressing
+		// Ctrl+C would do something else".
+		log.Printf("fastDictionary: capture path=uia-empty owner=%q fallback=refused", owner)
 		return selection{}
 	}
-	return selection{Text: captureByCopy()}
+	txt := captureByCopy()
+	log.Printf("fastDictionary: capture path=copy owner=%q got=%d chars", owner, len(txt))
+	return selection{Text: txt}
 }
 
 // foregroundAppName returns the executable name of the focused window, used
@@ -419,7 +477,7 @@ func windowClassName(hwnd uintptr) string {
 	return syscall.UTF16ToString(buf[:n])
 }
 
-// isOwnProcess reports whether hwnd belongs to fastpot itself.
+// isOwnProcess reports whether hwnd belongs to fastDictionary itself.
 // procWindowFromPoint resolves the window under a screen point.
 var procWindowFromPoint = user32.NewProc("WindowFromPoint")
 

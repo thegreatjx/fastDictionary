@@ -8,17 +8,35 @@ import (
 // TestWaitForModifiersReleasedReturnsWhenClear checks the wait does not
 // linger when no modifier is held, which is the case for the selection icon
 // and for a shortcut the user has already let go of.
+//
+// The test measures a wait against the physical keyboard, so it cannot assert
+// on a single reading: the user may press Ctrl or Alt while it runs, and that
+// is not a bug in the wait. It retries a few times and only fails when the
+// wait is slow on every attempt, which is what a real "it always sleeps"
+// regression looks like.
 func TestWaitForModifiersReleasedReturnsWhenClear(t *testing.T) {
 	if !waitForModifiersReleased(200 * time.Millisecond) {
 		t.Skip("a modifier is physically held right now; cannot test the clear case")
 	}
-	start := time.Now()
-	if !waitForModifiersReleased(200 * time.Millisecond) {
-		t.Fatal("wait reported a held modifier when none is down")
+	var worst time.Duration
+	for attempt := 0; attempt < 5; attempt++ {
+		start := time.Now()
+		ok := waitForModifiersReleased(200 * time.Millisecond)
+		elapsed := time.Since(start)
+		if !ok {
+			// A modifier went down between the two readings. That is the
+			// user typing, not the wait misbehaving.
+			t.Skip("a modifier was pressed during the measurement")
+		}
+		if elapsed > worst {
+			worst = elapsed
+		}
+		if elapsed <= 100*time.Millisecond {
+			return // returned promptly, which is the whole point
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
-		t.Errorf("wait took %v with no modifier down; it should return at once", elapsed)
-	}
+	t.Errorf("wait took %v with no modifier down on 5 attempts; it should return at once", worst)
 }
 
 // TestKeyDownReportsUnheldKeys is the guard for the bug that made selection

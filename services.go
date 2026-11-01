@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 )
@@ -24,16 +25,29 @@ var httpClient = &http.Client{Timeout: 8 * time.Second}
 // stalls the popup; fail fast and let the user switch back to the race.
 var httpClientPinned = &http.Client{Timeout: 4 * time.Second}
 
+// userAgent identifies the translator to the engines' edge endpoints. Both
+// advertise themselves as a browser to something that expects a page request.
 const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 
+// httpClientPinned serves the "only Google" / "only Microsoft" modes. There
+// is no second engine to cover a hung request, and Google regularly needs
 // ---------------------------------------------------------------------------
-// Local language detection: zero network cost. CJK/Hangul/Kana ranges cover
-// the direction choice (zh -> en, anything else -> zh). Engines also return
-// their own detection, which the UI shows for reference.
+// Local language detection: zero network cost.
 // ---------------------------------------------------------------------------
 
+// detectLocal guesses the source language from its script.
+//
+// It answers two questions: is this already the user's target language (so
+// translate out rather than in), and which source language to tell the engine.
+// It used to answer "en" for everything that was not Chinese, Japanese or
+// Korean, which sent Russian, Arabic and Thai to the engine labelled as English
+// — the engine then translated from the wrong language and returned nonsense or
+// a refusal. The ranges below cover the languages people actually read;
+// anything else returns "" and the engine detects it itself, which is what
+// "auto" means.
 func detectLocal(text string) string {
-	var han, kana, hangul, latin int
+	var han, kana, hangul, cyrillic, arabic, hebrew, thai, devanagari, greek int
+	var latin int
 	for _, r := range text {
 		switch {
 		case unicode.Is(unicode.Han, r):
@@ -42,7 +56,24 @@ func detectLocal(text string) string {
 			kana++
 		case unicode.Is(unicode.Hangul, r):
 			hangul++
+		case unicode.Is(unicode.Cyrillic, r):
+			cyrillic++
+		case unicode.Is(unicode.Arabic, r):
+			arabic++
+		case unicode.Is(unicode.Hebrew, r):
+			hebrew++
+		case unicode.Is(unicode.Thai, r):
+			thai++
+		case unicode.Is(unicode.Devanagari, r):
+			devanagari++
+		case unicode.Is(unicode.Greek, r):
+			greek++
 		case (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z'):
+			latin++
+		case unicode.Is(unicode.Latin, r):
+			// A Latin letter beyond ASCII: é, ñ, ü, ł, ø, ß. Its presence is
+			// what tells English apart from the rest of the Latin-script
+			// languages.
 			latin++
 		}
 	}
@@ -52,9 +83,28 @@ func detectLocal(text string) string {
 	case hangul > 0:
 		return "ko"
 	case han > latin:
-		return "zh-CN"
+		return "zh-Hans"
+	case thai > 0:
+		return "th"
+	case hebrew > 0:
+		return "he"
+	case arabic > 0:
+		return "ar"
+	case devanagari > 0:
+		return "hi"
+	case greek > 0:
+		return "el"
+	case cyrillic > 0:
+		// Cyrillic covers Russian, Ukrainian and Bulgarian. The letters cannot
+		// tell them apart, and the engines detect the difference themselves,
+		// so the answer is the umbrella the API understands.
+		return "ru"
 	default:
-		return "en"
+		// Latin script that is not plain ASCII-pure (French, German, Polish),
+		// or a script not listed above. The engine detects these itself, and
+		// guessing "en" here is what made a French sentence get read by an
+		// English voice and translated from the wrong source language.
+		return ""
 	}
 }
 
@@ -119,10 +169,19 @@ func MicrosoftTranslate(ctx context.Context, text, from, to string) (msResult, e
 }
 
 // ---------------------------------------------------------------------------
-// Google: free gtx web endpoint on translate.googleapis.com (the API host is
+// Google: free web endpoint on translate.googleapis.com (the API host is
 // steadier than translate.google.com, which intermittently 429s on shared
 // proxy nodes). dt=bd adds dictionary data for single words.
 // ---------------------------------------------------------------------------
+
+// googleClients are tried in order, one per attempt. "gtx" is what most
+// scrapers send and it is the first thing Google throttles: measured on this
+// machine 2026-10-26, gtx answered 429 on every request for hours while
+// dict-chrome-ex — the client id the Chrome dictionary extension sends — kept
+// answering 200 with the same JSON shape. Both are the same endpoint and the
+// same payload, so the only difference is which rate-limit bucket the request
+// lands in.
+var googleClients = []string{"dict-chrome-ex", "gtx"}
 
 // DictEntry is one part-of-speech group of a dictionary-style result.
 type DictEntry struct {
@@ -140,6 +199,12 @@ func GoogleTranslate(ctx context.Context, text, from, to string) (string, string
 	return googleTranslate(ctx, text, from, to, false)
 }
 
+// googleSingleURL is the free web endpoint. It is a variable so tests can
+// serve a canned reply and assert on the query string without a network call.
+const googleSingleDefaultURL = "https://translate.googleapis.com/translate_a/single"
+
+var googleSingleURL = googleSingleDefaultURL
+
 // googleTranslate does the work; pinned selects the fail-fast client: a
 // pinned engine has no second engine to cover a hung request, so it uses
 // the shorter timeout rather than making the popup wait eight seconds on a
@@ -147,7 +212,14 @@ func GoogleTranslate(ctx context.Context, text, from, to string) (string, string
 // TranslateRace, which made concurrent translations interfere.
 func googleTranslate(ctx context.Context, text, from, to string, pinned bool) (string, string, error) {
 	q := url.Values{}
-	q.Set("client", "gtx")
+	// Google rejects an empty sl with HTTP 400 and an HTML error page: the
+	// parameter has to say "auto" explicitly. detectLocal returns "" for text
+	// whose script it cannot pin down, which is every plain-ASCII English
+	// sentence, so sending it verbatim broke Google for the most common input
+	// there is. Verified 2026-10-26: sl= → 400, sl=auto → 200.
+	if from == "" {
+		from = "auto"
+	}
 	q.Set("sl", from)
 	q.Set("tl", to)
 	q.Set("hl", to)
@@ -157,7 +229,7 @@ func googleTranslate(ctx context.Context, text, from, to string, pinned bool) (s
 	q.Set("q", text)
 
 	var lastErr error
-	for attempt := 0; attempt < 2; attempt++ {
+	for attempt := 0; attempt < len(googleClients); attempt++ {
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
@@ -165,7 +237,11 @@ func googleTranslate(ctx context.Context, text, from, to string, pinned bool) (s
 			case <-time.After(800 * time.Millisecond):
 			}
 		}
-		req, err := http.NewRequestWithContext(ctx, "GET", "https://translate.googleapis.com/translate_a/single?"+q.Encode(), nil)
+		// Retry with the next client id rather than the same one: a 429 means
+		// this bucket is exhausted, and repeating the request only spends
+		// another second on a route already known to be closed.
+		q.Set("client", googleClients[attempt])
+		req, err := http.NewRequestWithContext(ctx, "GET", googleSingleURL+"?"+q.Encode(), nil)
 		if err != nil {
 			return "", "", err
 		}
@@ -229,7 +305,11 @@ func googleTranslate(ctx context.Context, text, from, to string, pinned bool) (s
 // GoogleDict fetches dictionary data (pronunciation + POS groups) for a word.
 func GoogleDict(ctx context.Context, word, from, to string) (*DictResult, error) {
 	q := url.Values{}
-	q.Set("client", "gtx")
+	q.Set("client", googleClients[0])
+	// Same 400 as googleTranslate: the endpoint rejects an empty sl.
+	if from == "" {
+		from = "auto"
+	}
 	q.Set("sl", from)
 	q.Set("tl", to)
 	q.Set("ie", "UTF-8")
@@ -237,7 +317,7 @@ func GoogleDict(ctx context.Context, word, from, to string) (*DictResult, error)
 	q.Set("dt", "bd")
 	q.Set("dt", "rm")
 	q.Set("q", word)
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://translate.googleapis.com/translate_a/single?"+q.Encode(), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", googleSingleURL+"?"+q.Encode(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -315,45 +395,214 @@ type raceResult struct {
 	Err      error
 }
 
+// racePreferred is the engine the race waits a moment for. 微软 reads complex
+// English better than 腾讯 and 谷歌 in side-by-side tests; the other two still
+// cover the cases where it is rate limited or slow.
+const racePreferred = "微软"
+
+// raceGrace bounds how long a faster answer waits for the preferred engine.
+const raceGrace = 350 * time.Millisecond
+
+// TranslateRace asks every usable engine at once and returns the best answer
+// that arrives inside the grace window. Every engine here is keyless: the app
+// asks for nothing but a selection, and there is no credential to configure.
 func TranslateRace(ctx context.Context, text, from, to, mode string) raceResult {
 	ctx2, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	if mode == "microsoft" || mode == "google" {
-		// single-engine modes: no race, the user pinned one provider
-		if mode == "microsoft" {
+	// A pinned engine is tried even when its breaker is open: the user asked
+	// for that engine, and silently answering with another one would be a lie.
+	if mode == "microsoft" || mode == "google" || mode == "tencent" {
+		var res raceResult
+		switch mode {
+		case "microsoft":
 			r, err := MicrosoftTranslate(ctx2, text, from, to)
-			return raceResult{Text: r.Text, Engine: "微软", Detected: r.Detected, Err: err}
+			breakers.record("microsoft", err)
+			res = raceResult{Text: r.Text, Engine: "微软", Detected: r.Detected, Err: err}
+		case "tencent":
+			r, err := tencentTranslate(ctx2, text, from, to)
+			breakers.record("tencent", err)
+			res = raceResult{Text: r.Text, Engine: "腾讯", Detected: r.Detected, Err: err}
+		default:
+			t, d, err := googleTranslate(ctx2, text, from, to, true)
+			breakers.record("google", err)
+			res = raceResult{Text: t, Engine: "谷歌", Detected: d, Err: err}
 		}
-		t, d, err := googleTranslate(ctx2, text, from, to, true)
-		return raceResult{Text: t, Engine: "谷歌", Detected: d, Err: err}
+		// The same echo check the race applies. Pinning an engine asks for
+		// that engine, not for an unchecked answer from it.
+		if res.Err == nil && looksUntranslated(text, res.Text, from, to) {
+			res.Err = fmt.Errorf("%s: returned the source text unchanged", res.Engine)
+		}
+		return res
 	}
 
-	ch := make(chan raceResult, 2)
+	// The race: whichever engine answers first wins.
+	type contender struct {
+		name string
+		run  func() (string, string, error)
+	}
+	cands := make([]contender, 0, 3)
 
-	go func() {
-		r, err := MicrosoftTranslate(ctx2, text, from, to)
-		ch <- raceResult{Text: r.Text, Engine: "微软", Detected: r.Detected, Err: err}
-	}()
-	go func() {
-		t, d, err := googleTranslate(ctx2, text, from, to, false)
-		ch <- raceResult{Text: t, Engine: "谷歌", Detected: d, Err: err}
-	}()
+	if breakers.allow("microsoft") {
+		cands = append(cands, contender{"微软", func() (string, string, error) {
+			r, err := MicrosoftTranslate(ctx2, text, from, to)
+			return r.Text, r.Detected, err
+		}})
+	}
+	if breakers.allow("google") {
+		cands = append(cands, contender{"谷歌", func() (string, string, error) {
+			return googleTranslate(ctx2, text, from, to, false)
+		}})
+	}
+	// 腾讯 only joins pairs it can actually serve: it answers
+	// "Unsupported-Language" for about half of this app's target list, and a
+	// contender that always fails would open its breaker for no reason.
+	if tencentSupportsTarget(to) && breakers.allow("tencent") {
+		cands = append(cands, contender{"腾讯", func() (string, string, error) {
+			r, err := tencentTranslate(ctx2, text, from, to)
+			return r.Text, r.Detected, err
+		}})
+	}
+	// Every engine has its breaker open: try them all anyway rather than
+	// failing. A blocked engine may have recovered, and a wrong-but-present
+	// translation beats an error.
+	if len(cands) == 0 {
+		cands = append(cands,
+			contender{"微软", func() (string, string, error) {
+				r, err := MicrosoftTranslate(ctx2, text, from, to)
+				return r.Text, r.Detected, err
+			}},
+			contender{"谷歌", func() (string, string, error) {
+				return googleTranslate(ctx2, text, from, to, false)
+			}},
+		)
+		if tencentSupportsTarget(to) {
+			cands = append(cands, contender{"腾讯", func() (string, string, error) {
+				r, err := tencentTranslate(ctx2, text, from, to)
+				return r.Text, r.Detected, err
+			}})
+		}
+	}
+
+	// A race returns the first valid answer, but first is not the same as
+	// best. Measured here, 腾讯 answers in 200-300ms and 微软 in 300-500ms, so
+	// 腾讯 wins most races — and loses on exactly the sentences a reader
+	// notices: "her arms are up" became "她的手臂向上", "scale law" became
+	// "比例律". The reader sees one engine's weakest output at random and
+	// concludes the translation is broken.
+	//
+	// The preferred engine therefore gets a short grace window: when another
+	// engine answers first, its text is held for up to raceGrace so 微软 can
+	// still land. A healthy 微软 usually does; when it is slow or down the
+	// cost is bounded at 350ms, below the point where the popup feels stalled.
+	preferredPending := false
+	for _, c := range cands {
+		if c.name == racePreferred {
+			preferredPending = true
+		}
+	}
+
+	ch := make(chan raceResult, len(cands))
+	for _, c := range cands {
+		c := c
+		go func() {
+			txt, det, err := c.run()
+			// Record here, not after the race is decided. The winner returns
+			// at once and stops reading the channel, so a loser's failure was
+			// never seen and its breaker never opened — the engine stayed in
+			// the race to fail again on the next selection.
+			breakers.record(engineKey(c.name), err)
+			ch <- raceResult{Text: txt, Engine: c.name, Detected: det, Err: err}
+		}()
+	}
 
 	var errs []string
-	for i := 0; i < 2; i++ {
-		r := <-ch
-		if r.Err == nil && r.Text != "" {
-			cancel() // stop the loser
-			return r
+	var held *raceResult
+	var grace <-chan time.Time
+	for i := 0; i < len(cands); i++ {
+		var r raceResult
+		select {
+		case r = <-ch:
+		case <-grace:
+			cancel()
+			return *held
 		}
+		if r.Engine == racePreferred {
+			preferredPending = false
+		}
+		if r.Err == nil && r.Text != "" && looksUntranslated(text, r.Text, from, to) {
+			// 腾讯 hands back the source untouched when it cannot handle the
+			// pair, and a race that accepts it wins with the sentence the
+			// reader already had. Measured on a Portuguese sentence: 腾讯
+			// returned it verbatim in 365ms while 微软 translated it.
+			r.Err = fmt.Errorf("%s: returned the source text unchanged", r.Engine)
+		}
+		if r.Err == nil && r.Text != "" {
+			if r.Engine == racePreferred || !preferredPending {
+				cancel() // stop the losers
+				return r
+			}
+			if held == nil {
+				held = &r
+				grace = time.After(raceGrace)
+			}
+			continue
+		}
+		breakers.record(engineKey(r.Engine), r.Err)
 		if r.Err != nil {
 			errs = append(errs, r.Err.Error())
 		} else {
 			errs = append(errs, r.Engine+": empty result")
 		}
+		// The preferred engine failed: the held answer is now the best there
+		// is, and there is nothing left to wait for.
+		if held != nil && !preferredPending {
+			cancel()
+			return *held
+		}
+	}
+	if held != nil {
+		cancel()
+		return *held
 	}
 	return raceResult{Err: fmt.Errorf("all engines failed: %s", strings.Join(errs, " | "))}
+}
+
+// looksUntranslated reports whether an engine echoed the sentence back instead
+// of translating it. Only judged when the two languages differ, and only on a
+// whole-sentence match: a translation that keeps a proper noun or a code
+// snippet is normal, a translation identical to its input is not.
+func looksUntranslated(source, result, from, to string) bool {
+	if from != "" && to != "" && strings.EqualFold(from, to) {
+		return false
+	}
+	norm := func(s string) string {
+		s = strings.ToLower(strings.TrimSpace(s))
+		return strings.Join(strings.Fields(s), " ")
+	}
+	return norm(source) != "" && norm(source) == norm(result)
+}
+
+// engineKey maps a display name onto the breaker's key.
+func engineKey(display string) string {
+	switch display {
+	case "微软":
+		return "microsoft"
+	case "谷歌":
+		return "google"
+	case "腾讯":
+		return "tencent"
+	}
+	return display
+}
+
+// record updates a breaker from one attempt's outcome.
+func (b *engineBreaker) record(name string, err error) {
+	if err != nil {
+		b.fail(name)
+		return
+	}
+	b.ok(name)
 }
 
 // isWord reports whether text is a single ASCII dictionary-worthy word.
@@ -371,3 +620,76 @@ func isWord(text string) bool {
 	}
 	return true
 }
+
+// engineBreaker remembers an engine that has just failed repeatedly, so the
+// race stops paying for it.
+//
+// Google's keyless endpoint answers a burst of requests with an HTML "Sorry"
+// page and HTTP 429. Each of those costs the failed engine's own retry loop —
+// two attempts, 1.6 seconds — while the healthy engine has already answered.
+// The winner was never in doubt, so the only thing the loser added was load,
+// which extends its own blockout.
+//
+// A breaker is keyed by engine name and holds an expiry. While it is open the
+// engine is skipped entirely; the first request after it expires tries again,
+// so recovery needs no timer.
+type engineBreaker struct {
+	mu    sync.Mutex
+	until map[string]time.Time
+	fails map[string]int
+}
+
+var breakers = &engineBreaker{until: map[string]time.Time{}, fails: map[string]int{}}
+
+// breakerThreshold is how many consecutive failures open the breaker.
+//
+// One is not enough: a single 429 can be a transient blip, and skipping the
+// engine for a full minute on that basis would cost quality on every request
+// that follows. Two is the smallest count that distinguishes a burst from a
+// coincidence.
+const breakerThreshold = 2
+
+// breakerCooldown is how long an open breaker lasts.
+//
+// Google's blockouts last from a few seconds to a few minutes; a minute lets
+// the common case recover before the next selection, and costs nothing when it
+// does not, because the other engines carry the translation.
+const breakerCooldown = 60 * time.Second
+
+// allow reports whether an engine may be tried.
+func (b *engineBreaker) allow(name string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	until, open := b.until[name]
+	if !open {
+		return true
+	}
+	if time.Now().After(until) {
+		// Expired: forget the failures so the next burst starts clean.
+		delete(b.until, name)
+		delete(b.fails, name)
+		return true
+	}
+	return false
+}
+
+// ok clears an engine's failure count.
+func (b *engineBreaker) ok(name string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.fails, name)
+	delete(b.until, name)
+}
+
+// fail records a failure and opens the breaker once the threshold is reached.
+func (b *engineBreaker) fail(name string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.fails[name]++
+	if b.fails[name] >= breakerThreshold {
+		b.until[name] = time.Now().Add(breakerCooldown)
+	}
+}
+
+// open reports whether an engine is currently being skipped, for the UI.
+func (b *engineBreaker) open(name string) bool { return !b.allow(name) }

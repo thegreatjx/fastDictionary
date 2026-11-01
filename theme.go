@@ -149,3 +149,106 @@ func saveButtonColor(t *ui.Theme) ui.Color {
 	}
 	return ui.Hex("#EAB308")
 }
+
+// chipTone names what one selection-chip button does. The tone picks one of
+// two inks, not one of seven hues.
+//
+// The chip used to colour every action differently: blue, teal, violet,
+// amber, green, magenta in one 36px row. Six saturated hues side by side read
+// as a toy, and they fought the quiet grey the rest of the app is built from.
+// Colour is now spent once — on the primary action — and the other buttons
+// share a cool slate ink that differs from its neighbours by glyph and by
+// position, which is how a real toolbar separates its tools.
+type chipTone int
+
+const (
+	// chipTonePrimary marks the chip's main action (translate). It is the one
+	// button allowed an accent colour, so the row has a single place to look
+	// first.
+	chipTonePrimary chipTone = iota
+	// chipToneInk is every other action: speech, screenshot, the AI actions
+	// and the utility menu.
+	chipToneInk
+)
+
+// The chip's palette. One cool, low-saturation family: a blue-grey slate for
+// the ink and a single steel blue for the primary action. The surface is not
+// pure white or pure black — a trace of blue in it keeps the bar from
+// looking pasted on top of the page.
+const (
+	chipSurfaceLight = "#FBFCFD"
+	chipSurfaceDark  = "#1B2027"
+	chipBorderLight  = "#E3E8EE"
+	chipBorderDark   = "#2E3641"
+	chipInkLight     = "#3F4A5A"
+	chipInkDark      = "#AEBAC8"
+	chipInkHoverL    = "#1E2A38"
+	chipInkHoverD    = "#E4EAF1"
+	chipAccentLight  = "#4A6E8A"
+	chipAccentDark   = "#7FA6C4"
+	chipTipBgLight   = "#26303B"
+	chipTipBgDark    = "#E8EDF2"
+	chipTipFgLight   = "#EAF0F6"
+	chipTipFgDark    = "#1A2028"
+)
+
+// chipSurface is the pill the buttons sit on.
+func chipSurface(t *ui.Theme) ui.Color {
+	if t.Dark {
+		return ui.Hex(chipSurfaceDark)
+	}
+	return ui.Hex(chipSurfaceLight)
+}
+
+// chipBorderColor is the hairline around the pill and the rule that separates
+// the tools from the menu.
+func chipBorderColor(t *ui.Theme) ui.Color {
+	if t.Dark {
+		return ui.Hex(chipBorderDark)
+	}
+	return ui.Hex(chipBorderLight)
+}
+
+// chipToneColors returns the icon colour of a chip action and the wash its
+// button takes on hover.
+//
+// Both inks sit at or above the 3:1 non-text contrast floor against
+// chipSurface in both themes, which is what keeps a glyph legible when colour
+// is no longer carrying the meaning. The wash is the same slate for every
+// button: a hover that changes hue per button was what made the row look like
+// six unrelated tools.
+func chipToneColors(t *ui.Theme, tone chipTone) (fg, wash ui.Color) {
+	if t.Dark {
+		if tone == chipTonePrimary {
+			return ui.Hex(chipAccentDark), ui.RGBA(127, 166, 196, 0.16)
+		}
+		return ui.Hex(chipInkDark), ui.RGBA(174, 186, 200, 0.12)
+	}
+	if tone == chipTonePrimary {
+		return ui.Hex(chipAccentLight), ui.RGBA(74, 110, 138, 0.10)
+	}
+	return ui.Hex(chipInkLight), ui.RGBA(63, 74, 90, 0.07)
+}
+
+// chipIconHover is the icon colour while the pointer is on the button: the ink
+// deepens instead of turning into another hue, so hover reads as emphasis and
+// not as a change of identity.
+func chipIconHover(t *ui.Theme) ui.Color {
+	if t.Dark {
+		return ui.Hex(chipInkHoverD)
+	}
+	return ui.Hex(chipInkHoverL)
+}
+
+// chipTipColors returns the fill and text of the hover label.
+//
+// It is a dark slate plate in the light theme and a pale one in the dark theme
+// — inverted from the chip, as a tooltip should be, but drawn from the same
+// cool family rather than from the theme's neutral Inverse, which is nearly
+// black and reads as a different product.
+func chipTipColors(t *ui.Theme) (bg, fg ui.Color) {
+	if t.Dark {
+		return ui.Hex(chipTipBgDark), ui.Hex(chipTipFgDark)
+	}
+	return ui.Hex(chipTipBgLight), ui.Hex(chipTipFgLight)
+}

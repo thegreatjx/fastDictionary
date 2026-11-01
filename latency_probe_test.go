@@ -9,8 +9,11 @@ import (
 
 func TestDetectLocal(t *testing.T) {
 	cases := map[string]string{
-		"hello world": "en",
-		"你好世界":        "zh-CN",
+		// Plain ASCII cannot prove English: French and Dutch sentences also
+		// consist of ASCII letters. detectLocal reports only what the script
+		// settles, and leaves the rest to the engine.
+		"hello world": "",
+		"你好世界":        "zh-Hans",
 		"こんにちは":       "ja",
 		"안녕하세요":       "ko",
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"reflect"
 	"strings"
 )
 
@@ -253,7 +254,7 @@ func parseWritingAnnotations(v any) []WritingAnnotation {
 		s = strings.TrimSpace(s)
 		var list []WritingAnnotation
 		if err := json.Unmarshal([]byte(s), &list); err == nil {
-			return list
+			return normalizeWritingAnnotations(list)
 		}
 		return nil
 	}
@@ -264,9 +265,72 @@ func parseWritingAnnotations(v any) []WritingAnnotation {
 	}
 	var list []WritingAnnotation
 	if err := json.Unmarshal(data, &list); err == nil {
-		return list
+		return normalizeWritingAnnotations(list)
 	}
 	return nil
+}
+
+// writingTypes are the annotation types the card knows how to label. The model
+// is asked for one of these bare words, but it also returns the prose it was
+// given as a definition — "not what a native writer would write in this
+// setting" — which then renders as an unreadable tag chip. Normalising here
+// keeps the card readable even when the model paraphrases.
+var writingTypes = []string{
+	"spelling", "grammar", "punctuation", "word-choice", "logic",
+	"unnatural", "register", "clarity", "good",
+}
+
+// normalizeWritingAnnotations maps each annotation's type onto a known value.
+// An unrecognised type becomes empty rather than leaking prose into the UI; the
+// card then falls back to the tag, or to no chip at all.
+func normalizeWritingAnnotations(list []WritingAnnotation) []WritingAnnotation {
+	out := list[:0]
+	for _, an := range list {
+		an.Type = normalizeWritingType(an.Type)
+		out = append(out, an)
+	}
+	return out
+}
+
+// normalizeWritingType returns the canonical short type for an annotation.
+func normalizeWritingType(raw string) string {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	if s == "" {
+		return ""
+	}
+	for _, known := range writingTypes {
+		if s == known {
+			return known
+		}
+	}
+	// The model paraphrased: match on the definition it was given. "wrong in
+	// any setting" is not quotable as a single type, so the more specific
+	// phrases are tried first.
+	switch {
+	case strings.Contains(s, "good") || strings.Contains(s, "worth keeping"):
+		return "good"
+	case strings.Contains(s, "literal translation") || strings.Contains(s, "stiff") ||
+		strings.Contains(s, "wordy") || strings.Contains(s, "unnatural"):
+		return "unnatural"
+	case strings.Contains(s, "too casual") || strings.Contains(s, "too formal") ||
+		strings.Contains(s, "impolite") || strings.Contains(s, "honorific") ||
+		strings.Contains(s, "register"):
+		return "register"
+	case strings.Contains(s, "ambiguous") || strings.Contains(s, "confusing") ||
+		strings.Contains(s, "clarity"):
+		return "clarity"
+	case strings.Contains(s, "spelling") || strings.Contains(s, "typo"):
+		return "spelling"
+	case strings.Contains(s, "grammar"):
+		return "grammar"
+	case strings.Contains(s, "punctuation"):
+		return "punctuation"
+	case strings.Contains(s, "word-choice") || strings.Contains(s, "word choice"):
+		return "word-choice"
+	case strings.Contains(s, "logic"):
+		return "logic"
+	}
+	return ""
 }
 
 // FormatActionPrompt substitutes {{selection}}, {{paragraphs}}, {{targetLanguage}} in user prompt
@@ -287,27 +351,46 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
+// firstNonNil returns the first argument that is not nil.
+//
+// A typed nil — a nil *T or nil map/slice stored in an any — is not == nil,
+// so it would be returned and then stringified as "<nil>" by the parsers
+// downstream. reflect keeps that case on the "absent" side where it belongs.
 func firstNonNil(vals ...any) any {
 	for _, v := range vals {
-		if v != nil {
-			return v
+		if v == nil {
+			continue
 		}
+		rv := reflect.ValueOf(v)
+		switch rv.Kind() {
+		case reflect.Ptr, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan, reflect.Interface:
+			if rv.IsNil() {
+				continue
+			}
+		}
+		return v
 	}
 	return nil
 }
 
-// renderDictionaryCard renders the 1:1 Learner's Dictionary layout
-func renderDictionaryCard(c *ui.Context, t *ui.Theme, origText string, res *DictionaryResult, onSave func()) {
+// renderDictionaryCard renders the 1:1 Learner's Dictionary layout.
+//
+// savedTerm is the headword the last save wrote to the notebook. When it
+// matches this card's term the save button turns into a static 已保存 badge:
+// the write already happened, so a live-looking amber button only invites a
+// second click that rewrites the same entry.
+func renderDictionaryCard(c *ui.Context, t *ui.Theme, origText string, res *DictionaryResult, savedTerm string, onSave func()) {
+	termText := res.Term
+	if termText == "" {
+		termText = origText
+	}
+	saved := savedTerm != "" && savedTerm == termText
 	ui.Box(c).FillWidth().Padding(14, 16).Radius(8).
 		Background(t.Surface).Border(1, t.Border).
 		Shadow(0, 2, 8, 0, ui.RGBA(0, 0, 0, 0.08)).Children(func() {
 		ui.Column(c).FillWidth().Gap(10).Children(func() {
 			// 1. Term Header: [Term] [Phonetic] [🔊] [CEFR Level]
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
-				termText := res.Term
-				if termText == "" {
-					termText = origText
-				}
 				ui.Text(c, termText).FontSize(18).FontWeight(700).TextColor(t.Text)
 
 				if res.Phonetic != "" {
@@ -318,12 +401,15 @@ func renderDictionaryCard(c *ui.Context, t *ui.Theme, origText string, res *Dict
 					ui.Text(c, ph).FontSize(13).TextColor(t.TextMuted)
 				}
 
-				btnSpeak := ui.Button(c, "").Tooltip("朗读发音").Height(22).Padding(2, 4).Radius(4)
+				// 28px square: the icon is 15px, but the hit area has to be
+				// large enough to press without aiming. A 22px button around a
+				// 14px glyph is a target the pointer keeps missing.
+				btnSpeak := ui.Button(c, "").Tooltip("朗读发音").Size(28, 28).Padding(0, 0).Radius(6).Center()
 				btnSpeak.Children(func() {
-					ui.Icon(c, iconSpeak).Size(14, 14).TextColor(t.TextMuted)
+					ui.Icon(c, iconSpeak).Size(15, 15).TextColor(t.TextMuted)
 				})
 				if btnSpeak.Clicked() {
-					PlaySpeech(termText, false)
+					PlaySpeechLang(termText, "", false)
 				}
 
 				ui.Spacer(c).Grow(1)
@@ -357,12 +443,12 @@ func renderDictionaryCard(c *ui.Context, t *ui.Theme, origText string, res *Dict
 					Background(t.SurfaceHover).Border(1, t.Border).Children(func() {
 					ui.Column(c).FillWidth().Gap(6).Children(func() {
 						ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Start).Children(func() {
-							btnSpeakCtx := ui.Button(c, "").Tooltip("朗读例句").Height(20).Padding(1, 3).Radius(3)
+							btnSpeakCtx := ui.Button(c, "").Tooltip("朗读例句").Size(24, 24).Padding(0, 0).Radius(6).Center()
 							btnSpeakCtx.Children(func() {
-								ui.Icon(c, iconSpeak).Size(12, 12).TextColor(t.TextMuted)
+								ui.Icon(c, iconSpeak).Size(14, 14).TextColor(t.TextMuted)
 							})
 							if btnSpeakCtx.Clicked() {
-								PlaySpeech(res.Context, false)
+								PlaySpeechLang(res.Context, "", false)
 							}
 							renderHighlightedContext(c, t, res.Context, res.ContextTerm)
 						})
@@ -397,28 +483,101 @@ func renderDictionaryCard(c *ui.Context, t *ui.Theme, origText string, res *Dict
 
 			ui.Divider(c).FillWidth()
 
-			// 5. Bottom action bar: [ 保存到笔记本 ]
+			// 5. Bottom action bar: [ 保存到生词本 ]
 			ui.Row(c).FillWidth().Justify(ui.End).AlignItems(ui.Center).Children(func() {
+				// A box, not a disabled button: the same shape and height
+				// keep the row from jumping, and a muted outline says
+				// "done" without borrowing the amber that means "act".
+				//
+				// onSave is nil where there is nowhere left to save: the
+				// 生词本 renders this card for an entry it already holds.
+				// Drawing a button there offered a click that could only
+				// do nothing, which is the "保存根本点不了" report.
+				if saved || onSave == nil {
+					ui.Box(c).Height(26).Padding(2, 12).Radius(5).
+						Background(t.Surface).Border(1, t.Border).Children(func() {
+						ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+							ui.Icon(c, iconCheckSquare).Size(12, 12).TextColor(t.Success)
+							ui.Text(c, "已保存 ✓").FontSize(11).FontWeight(600).TextColor(t.TextMuted)
+						})
+					})
+					return
+				}
 				btnSave := ui.Button(c, "").Height(26).Padding(2, 12).Radius(5).
-					Background(saveButtonColor(t)).TextColor(ui.Hex("#FFFFFF")).Tooltip("保存到本地笔记本")
+					Background(saveButtonColor(t)).TextColor(ui.Hex("#FFFFFF")).Tooltip("把这个词条存入本地生词本")
 				btnSave.Children(func() {
 					ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
 						ui.Icon(c, iconBookmark).Size(12, 12).TextColor(ui.Hex("#FFFFFF"))
-						ui.Text(c, "保存到笔记本").FontSize(11).FontWeight(600)
+						ui.Text(c, "保存到生词本").FontSize(11).FontWeight(600)
 					})
 				})
 				if btnSave.Clicked() {
-					if onSave != nil {
-						onSave()
-					}
+					onSave()
 				}
 			})
 		})
 	})
 }
 
+// writingTone is a semantic surface and its foreground. Keeping the three
+// together prevents a dark button from being placed on a light green card.
+type writingTone struct {
+	background ui.Color
+	border     ui.Color
+	text       ui.Color
+}
+
+type writingTheme struct {
+	setting       writingTone
+	tag           writingTone
+	success       writingTone
+	improved      writingTone
+	copy          writingTone
+	save          writingTone
+	settingLabel  ui.Color
+	removed       ui.Color
+	added         ui.Color
+	deleted       ui.Color
+	improvedTitle ui.Color
+}
+
+// writingThemeFor keeps the light card's pastel palette and gives dark mode
+// equivalent dark surfaces with brighter, readable accents.
+func writingThemeFor(t *ui.Theme) writingTheme {
+	saveBackground := saveButtonColor(t)
+	if t != nil && t.Dark {
+		return writingTheme{
+			setting:       writingTone{background: ui.Hex("#1E293B"), border: ui.Hex("#38536F"), text: ui.Hex("#93C5FD")},
+			tag:           writingTone{background: ui.Hex("#3F2328"), border: ui.Hex("#7F3F46"), text: ui.Hex("#FCA5A5")},
+			success:       writingTone{background: ui.Hex("#172B21"), border: ui.Hex("#365A41"), text: ui.Hex("#86EFAC")},
+			improved:      writingTone{background: ui.Hex("#172B21"), border: ui.Hex("#365A41"), text: ui.Hex("#DCFCE7")},
+			copy:          writingTone{background: ui.Hex("#243A2C"), border: ui.Hex("#4B7256"), text: ui.Hex("#BBF7D0")},
+			save:          writingTone{background: saveBackground, border: saveBackground, text: ui.Hex("#18181B")},
+			settingLabel:  ui.Hex("#94A3B8"),
+			removed:       ui.Hex("#FCA5A5"),
+			added:         ui.Hex("#86EFAC"),
+			deleted:       ui.Hex("#CBD5E1"),
+			improvedTitle: ui.Hex("#86EFAC"),
+		}
+	}
+	return writingTheme{
+		setting:       writingTone{background: ui.Hex("#EFF6FF"), border: ui.Hex("#BFDBFE"), text: ui.Hex("#1D4ED8")},
+		tag:           writingTone{background: ui.Hex("#FEE2E2"), border: ui.Hex("#FECACA"), text: ui.Hex("#991B1B")},
+		success:       writingTone{background: ui.Hex("#F0FDF4"), border: ui.Hex("#BBF7D0"), text: ui.Hex("#15803D")},
+		improved:      writingTone{background: ui.Hex("#F0FDF4"), border: ui.Hex("#86EFAC"), text: ui.Hex("#14532D")},
+		copy:          writingTone{background: ui.Hex("#F0FDF4"), border: ui.Hex("#BBF7D0"), text: ui.Hex("#166534")},
+		save:          writingTone{background: saveBackground, border: saveBackground, text: ui.Hex("#18181B")},
+		settingLabel:  ui.Hex("#475569"),
+		removed:       ui.Hex("#B91C1C"),
+		added:         ui.Hex("#166534"),
+		deleted:       ui.Hex("#475569"),
+		improvedTitle: ui.Hex("#166534"),
+	}
+}
+
 // renderImproveWritingCard renders the 1:1 Improve Writing layout
 func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *ImproveWritingResult, onSave func()) {
+	w := writingThemeFor(t)
 	ui.Box(c).FillWidth().Padding(14, 16).Radius(8).
 		Background(t.Surface).Border(1, t.Border).
 		Shadow(0, 2, 8, 0, ui.RGBA(0, 0, 0, 0.08)).Children(func() {
@@ -429,10 +588,10 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 				if settingText == "" {
 					settingText = "通用场合"
 				}
-				ui.Box(c).Padding(2, 10).Radius(12).Background(ui.Hex("#EFF6FF")).Border(1, ui.Hex("#BFDBFE")).Children(func() {
+				ui.Box(c).Padding(2, 10).Radius(12).Background(w.setting.background).Border(1, w.setting.border).Children(func() {
 					ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, "场合：").FontSize(11).TextColor(ui.Hex("#64748B"))
-						ui.Text(c, settingText).FontSize(11).FontWeight(600).TextColor(ui.Hex("#1D4ED8"))
+						ui.Text(c, "场合：").FontSize(11).TextColor(w.settingLabel)
+						ui.Text(c, settingText).FontSize(11).FontWeight(600).TextColor(w.setting.text)
 					})
 				})
 
@@ -451,12 +610,12 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 							Background(t.SurfaceHover).Border(1, t.Border).Children(func() {
 							ui.Column(c).FillWidth().Gap(3).Children(func() {
 								ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
-									ui.Text(c, ann.Text).FontSize(13).FontWeight(600).Strikethrough().TextColor(ui.Hex("#DC2626"))
+									ui.Text(c, ann.Text).FontSize(13).FontWeight(600).Strikethrough().TextColor(w.removed)
 									ui.Text(c, "→").FontSize(12).TextColor(t.TextMuted)
 									if ann.Fix != "" {
-										ui.Text(c, ann.Fix).FontSize(13).FontWeight(700).TextColor(ui.Hex("#16A34A"))
+										ui.Text(c, ann.Fix).FontSize(13).FontWeight(700).TextColor(w.added)
 									} else {
-										ui.Text(c, "(删除)").FontSize(11).TextColor(ui.Hex("#94A3B8"))
+										ui.Text(c, "(删除)").FontSize(11).TextColor(w.deleted)
 									}
 									ui.Spacer(c).Grow(1)
 									tagLabel := ann.Tag
@@ -464,8 +623,8 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 										tagLabel = ann.Type
 									}
 									if tagLabel != "" {
-										ui.Box(c).Padding(1, 6).Radius(4).Background(ui.Hex("#FEE2E2")).Border(1, ui.Hex("#FECACA")).Children(func() {
-											ui.Text(c, tagLabel).FontSize(10).FontWeight(600).TextColor(ui.Hex("#991B1B"))
+										ui.Box(c).Padding(1, 6).Radius(4).Background(w.tag.background).Border(1, w.tag.border).Children(func() {
+											ui.Text(c, tagLabel).FontSize(10).FontWeight(600).TextColor(w.tag.text)
 										})
 									}
 								})
@@ -478,9 +637,9 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 				})
 			} else {
 				ui.Box(c).FillWidth().Padding(8, 10).Radius(6).
-					Background(ui.Hex("#F0FDF4")).Border(1, ui.Hex("#BBF7D0")).Children(func() {
+					Background(w.success.background).Border(1, w.success.border).Children(func() {
 					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, "✓ 原文表达地道得体，无需修改。").FontSize(12).TextColor(ui.Hex("#15803D"))
+						ui.Text(c, "✓ 原文表达地道得体，无需修改。").FontSize(12).TextColor(w.success.text)
 					})
 				})
 			}
@@ -488,23 +647,24 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 			// 3. Corrected / Improved Full Text Card
 			if res.Improved != "" {
 				ui.Box(c).FillWidth().Padding(10, 12).Radius(6).
-					Background(ui.Hex("#F0FDF4")).Border(1, ui.Hex("#86EFAC")).Children(func() {
+					Background(w.improved.background).Border(1, w.improved.border).Children(func() {
 					ui.Column(c).FillWidth().Gap(6).Children(func() {
 						ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
-							ui.Text(c, "改后版本").FontSize(11).FontWeight(700).TextColor(ui.Hex("#166534"))
+							ui.Text(c, "改后版本").FontSize(11).FontWeight(700).TextColor(w.improvedTitle)
 							ui.Spacer(c).Grow(1)
-							btnCopy := ui.Button(c, "").Height(20).Padding(1, 6).Radius(4).Tooltip("复制改后版本")
+							btnCopy := ui.Button(c, "").Height(24).Padding(2, 8).Radius(5).
+								Background(w.copy.background).Border(1, w.copy.border).TextColor(w.copy.text).Tooltip("复制改后版本")
 							btnCopy.Children(func() {
 								ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-									ui.Icon(c, iconCopy).Size(11, 11).TextColor(ui.Hex("#166534"))
-									ui.Text(c, "复制").FontSize(10).TextColor(ui.Hex("#166534"))
+									ui.Icon(c, iconCopy).Size(12, 12).TextColor(w.copy.text)
+									ui.Text(c, "复制").FontSize(11).TextColor(w.copy.text)
 								})
 							})
 							if btnCopy.Clicked() {
 								mygo.Clipboard.WriteText(res.Improved)
 							}
 						})
-						ui.Text(c, res.Improved).FontSize(14).FontWeight(600).TextColor(ui.Hex("#14532D")).Wrap()
+						ui.Text(c, res.Improved).FontSize(14).FontWeight(600).TextColor(w.improved.text).Wrap()
 					})
 				})
 			}
@@ -528,10 +688,10 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 			// 5. Bottom bar: [ 保存到笔记本 ]
 			ui.Row(c).FillWidth().Justify(ui.End).AlignItems(ui.Center).Children(func() {
 				btnSave := ui.Button(c, "").Height(24).Padding(2, 12).Radius(5).
-					Background(ui.Hex("#EAB308")).TextColor(ui.Hex("#FFFFFF")).Tooltip("保存改后版本与批注到笔记本")
+					Background(w.save.background).Border(1, w.save.border).TextColor(w.save.text).Tooltip("保存改后版本与批注到笔记本")
 				btnSave.Children(func() {
 					ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-						ui.Icon(c, iconBookmark).Size(12, 12).TextColor(ui.Hex("#FFFFFF"))
+						ui.Icon(c, iconBookmark).Size(12, 12).TextColor(w.save.text)
 						ui.Text(c, "保存到笔记本").FontSize(11).FontWeight(600)
 					})
 				})

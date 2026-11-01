@@ -1,4 +1,4 @@
-// fastpot — a fast desktop translator.
+// fastDictionary — a fast desktop translator.
 //
 // Two global shortcuts: Ctrl+Alt+F reads the selection and shows the
 // translation popup at the cursor; Ctrl+Alt+S opens the same popup in
@@ -20,6 +20,14 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
+
+// buildStamp is the time this binary was linked, injected by build.ps1 as
+// `-X main.buildStamp=...`. A tray-resident app has no window to close and
+// no visible version, so "am I running the build I just made?" had no
+// answer: the shortcut kept launching an older binary while the fresh one
+// sat on disk under a different name, and nothing on screen said which one
+// was live. The stamp is logged at startup and shown in 关于.
+var buildStamp = "dev"
 
 // registerHotkeys (re)registers global shortcuts and returns a message
 // describing what happened, empty when everything registered.
@@ -51,9 +59,9 @@ func registerHotkeys(sel, inp, ocr string, a *app) string {
 		}
 	}
 	if msg == "" {
-		log.Printf("fastpot: shortcuts ready (selection=%s input=%s ocr=%s)", sel, inp, ocr)
+		log.Printf("fastDictionary: shortcuts ready (selection=%s input=%s ocr=%s)", sel, inp, ocr)
 	} else {
-		log.Printf("fastpot: shortcut problem: %s", msg)
+		log.Printf("fastDictionary: shortcut problem: %s", msg)
 	}
 	return msg
 }
@@ -78,7 +86,7 @@ func (a *app) trayMenu() *mygo.Menu {
 		mygo.Separator(),
 		{Label: "设置", Click: func(*mygo.MenuItem, *mygo.Window) { a.showSettings() }},
 		mygo.Separator(),
-		{Label: "退出 fast词典", Click: func(*mygo.MenuItem, *mygo.Window) { a.quitApp() }},
+		{Label: "退出 " + appTitle, Click: func(*mygo.MenuItem, *mygo.Window) { a.quitApp() }},
 	})
 }
 
@@ -120,10 +128,10 @@ func (a *app) quitApp() {
 func (a *app) buildTray() {
 	t, err := mygo.NewTray(mygo.TrayOptions{
 		Icon:    trayIcon(),
-		ToolTip: "fast词典 (左键快速面板 / 右键菜单)",
+		ToolTip: appTitle + " (左键快速面板 / 右键菜单)",
 	})
 	if err != nil {
-		log.Println("fastpot: tray:", err)
+		log.Println("fastDictionary: tray:", err)
 		return
 	}
 	t.OnClick(a.toggleTrayFlyout)
@@ -192,7 +200,7 @@ func setupLogging() {
 	dir, err := mygo.App.Path(mygo.PathLogs)
 	if err != nil || dir == "" {
 		if appData := os.Getenv("APPDATA"); appData != "" {
-			dir = filepath.Join(appData, "fast词典")
+			dir = filepath.Join(appData, appName)
 		} else {
 			return
 		}
@@ -200,7 +208,7 @@ func setupLogging() {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return
 	}
-	f, err := os.OpenFile(filepath.Join(dir, "fastpot.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	f, err := os.OpenFile(filepath.Join(dir, logFile), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return
 	}
@@ -209,14 +217,14 @@ func setupLogging() {
 }
 
 // safeView wraps a view function so a panic while rendering leaves a
-// readable placeholder instead of taking the whole process down. fastpot is
+// readable placeholder instead of taking the whole process down. fastDictionary is
 // a tray-resident tool: one bad snapshot crashing every window at once is
 // worse than one window showing an error box.
 func safeView(name string, view func(*ui.Context)) func(*ui.Context) {
 	return func(c *ui.Context) {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("fastpot: panic rendering %s view: %v\n%s", name, r, debug.Stack())
+				log.Printf("fastDictionary: panic rendering %s view: %v\n%s", name, r, debug.Stack())
 				t := c.Theme()
 				ui.Box(c).FillWidth().Padding(16, 12).Radius(8).
 					Background(t.Surface).Border(1, t.Danger).Children(func() {
@@ -233,8 +241,13 @@ func safeView(name string, view func(*ui.Context)) func(*ui.Context) {
 }
 
 func main() {
+	// Before the config store reads anything: a build renamed after the last
+	// one has to find the settings the previous name wrote, not start over.
+	// The message is held until setupLogging opens the file; a GUI build has
+	// no stderr, and this is the one run whose record the user may need.
+	migration := migrateUserData()
+
 	a := &app{store: newStore()}
-	setupLogging()
 	cfg := a.store.Get()
 
 	// One instance only. A second copy installs a second pair of low-level
@@ -243,8 +256,18 @@ func main() {
 	// selections that occasionally do not arrive and a clipboard that is
 	// sometimes empty. The second instance hands its command line to the
 	// first one and exits.
+	//
+	// Logging is set up after this check on purpose: setupLogging truncates
+	// the log, so a second launch would wipe the running instance's log on
+	// its way out, exactly when the user is trying to find out why the
+	// shortcut "did nothing".
 	if !mygo.App.RequestSingleInstanceLock() {
 		return
+	}
+	setupLogging()
+	log.Printf("fastDictionary: build %s", buildStamp)
+	if migration != "" {
+		log.Print(migration)
 	}
 	mygo.App.OnSecondInstance(func(args []string, workingDir string) {
 		// A second launch is the user asking for the app: show the popup.
@@ -259,7 +282,7 @@ func main() {
 		})
 
 		win := mygo.NewWindow(mygo.WindowOptions{
-			Title:       "fast词典",
+			Title:       appTitle,
 			Width:       int(cfg.PopupWidth),
 			Height:      340,
 			Hidden:      true,
@@ -277,6 +300,7 @@ func main() {
 			a.mu.Unlock()
 			if !isPinned && a.store.Get().CloseOnBlur {
 				stopAudio()
+				a.stopScreenshotOCR()
 				win.Hide()
 			}
 		})
@@ -290,6 +314,8 @@ func main() {
 		// their own, so the work they start never blocks the hook.
 		OnSelectionGesture = a.onSelectionGesture
 		OnMouseDown = a.onGlobalMouseDown
+		OnMouseMove = a.onChipPointer
+		OnKeyDown = a.onGlobalKeyDown
 		if cfg.SelectionTrigger != "hotkey" {
 			runOnMainThread()
 		}
@@ -301,17 +327,27 @@ func main() {
 		// waiting for sound.
 		warmEdgeTTSAuth()
 
-		log.Printf("fastpot: ready (selection=%s input=%s)", cfg.HotkeySelection, cfg.HotkeyInput)
+		// Learn which reasoning levels each model declares before the first
+		// request, not when the settings page happens to open. 快速 asks for a
+		// model's own lowest level, and without this list it has nothing to
+		// ask for and falls back to sending no field at all — which is exactly
+		// the slow path the option exists to avoid on models that reason by
+		// default (measured: gemini 8.93s with no field against 2.58s on low).
+		a.loadMagpieModels()
+
+		log.Printf("fastDictionary: ready (selection=%s input=%s)", cfg.HotkeySelection, cfg.HotkeyInput)
 
 		// Development flags: --settings opens the settings window, --input the
 		// input popup, --shot <file> captures a window to PNG and exits.
-		var shotPath, shotWindow, demoText, demoSelection, demoAction string
+		var shotPath, shotWindow, demoText, demoSelection, demoAction, demoOCR string
 		// --shot-size WxH resizes the captured window first, which is how the
 		// minimum-size layout and its scrolling are checked without a human
 		// dragging the frame.
 		shotSizeW, shotSizeH := 0, 0
 		openSettingsFlag := false
 		chipDemo := false
+		chipTipDemo := false
+		previewDark := false
 		shotDelay := 1500 * time.Millisecond
 		args := os.Args[1:]
 		for i, arg := range args {
@@ -350,8 +386,10 @@ func main() {
 						sleepMS(1000)
 						e, d, u, g, own := hookStats()
 						if e != last {
-							log.Printf("fastpot: hook events=%d down=%d up=%d drag=%d skippedOwn=%d rejected=%q/%q",
-								e, d, u, g, own, hookRejectedTitle, hookRejectedClass)
+							rejected, why := hookPolicyRejects()
+							title, class := hookOwnRejects()
+							log.Printf("fastDictionary: hook events=%d down=%d up=%d drag=%d skippedOwn=%d dragRejected=%d(%q) rejected=%q/%q",
+								e, d, u, g, own, rejected, why, title, class)
 							last = e
 						}
 					}
@@ -360,6 +398,16 @@ func main() {
 				// Show the selection chip at a fixed point for diagnosis,
 				// with a sample word, and log what the window really is.
 				chipDemo = true
+			case "--chip-tip":
+				// Raise the hover label at a fixed point, so its window can be
+				// measured without a pointer: a label window that fails to
+				// place itself is invisible to every headless test.
+				chipDemo, chipTipDemo = true, true
+			case "--ui-dark":
+				// Visual previews use an in-memory theme only; they never change
+				// the user's saved appearance.
+				previewDark = true
+				a.store = &store{cfg: cfg}
 			case "--demo":
 				if i+1 < len(args) {
 					demoText = args[i+1]
@@ -371,6 +419,11 @@ func main() {
 			case "--demo-action":
 				if i+1 < len(args) {
 					demoAction = args[i+1]
+				}
+			case "--demo-ocr":
+				// Exercise the real crop preview, local OCR and editable result.
+				if i+1 < len(args) {
+					demoOCR = args[i+1]
 				}
 			case "--shot-size":
 				if i+1 < len(args) {
@@ -388,6 +441,9 @@ func main() {
 				}
 			}
 		}
+		if previewDark {
+			a.store.Update(func(c *Config) { c.ThemeMode = "dark" })
+		}
 		if chipDemo {
 			a.mu.Lock()
 			a.sel.text = "serendipity"
@@ -397,6 +453,18 @@ func main() {
 				a.showSelIcon(760, 520, "serendipity")
 				sleepMS(700)
 				a.logChipState()
+				if chipTipDemo {
+					// The second button, so the plate is centred on something that
+					// is not the first or the last: both of those are clamped.
+					a.raiseChipTip("朗读选中文字", ui.Rect{X: chipPadH + chipButtonSize + chipRowGap, Y: 4, W: chipButtonSize, H: chipButtonSize})
+					sleepMS(500)
+					a.logChipTipState()
+				}
+				if shotWindow == "more" {
+					mygo.RunOnMain(func() { a.toggleMoreFlyout() })
+					sleepMS(600)
+					log.Printf("fastDictionary: demo more flyout open=%v", a.moreFlyout != nil)
+				}
 			}()
 		}
 		if demoText != "" {
@@ -404,33 +472,13 @@ func main() {
 			a.translate(demoText)
 		}
 		if demoSelection != "" {
-			a.mu.Lock()
-			a.mode = modeSelection
-			a.mu.Unlock()
-			a.openPopup(modeSelectionPreview)
-			a.translate(demoSelection)
+			a.openPopupWithText(modeSelectionPreview, demoSelection)
 		}
 		if demoAction != "" {
 			a.openPopup(modeSelectionPreview)
 			a.mu.Lock()
 			a.mode = modeSelection
 			switch demoAction {
-			case "dict":
-				a.mode = modeDictionary
-				a.source = "blossom"
-				a.target = "花朵（尤指果树的花）"
-				a.activeActionID = "default-dictionary"
-				a.dictResult = &DictionaryResult{
-					Term:               "blossom",
-					Phonetic:           "/ˈblɒs.əm/",
-					PartOfSpeech:       "noun",
-					Definition:         "花；花朵（尤指果树的花）",
-					Context:            "The ephemeral beauty of cherry blossoms reminds us to cherish each moment.",
-					ContextTerm:        "blossoms",
-					ContextTranslation: "樱花短暂的美丽提醒我们珍惜每一刻。",
-					MemoryTips:         "词源：和 bloom（开花）同源，bl- 开头的词多与花或植物生长有关\n近义词：bloom 多指花开的状态，blossom 常指果树的花",
-					Difficulty:         "B2",
-				}
 			case "grammar":
 				a.mode = modeGrammar
 				a.source = "This is a slide from Terence Tao's 'Math 2.0' public lecture yesterday evening at Caltech. I am highly confident that, if the cure actually worked, almost any Stage 4 cancer patient would tell you that human comprehension of its mechanism is completely irrelevant to them."
@@ -478,6 +526,9 @@ func main() {
 				a.win.Update(func() {})
 			}
 		}
+		if demoOCR != "" {
+			a.beginScreenshotOCR(winRect{Left: 120, Top: 120, Right: 420, Bottom: 360}, demoOCR)
+		}
 		// A translator belongs in the tray. Opening the settings window on
 		// every launch put a 900 px form in front of whatever the user was
 		// reading before they had pressed a single shortcut. It still opens
@@ -487,7 +538,7 @@ func main() {
 		if firstRun {
 			a.store.Update(func(c *Config) { c.Onboarded = true })
 		}
-		headless := shotPath != "" || chipDemo || demoText != "" || demoSelection != "" || demoAction != ""
+		headless := shotPath != "" || chipDemo || chipTipDemo || demoText != "" || demoSelection != "" || demoAction != "" || demoOCR != ""
 		if openSettingsFlag || (firstRun && !headless) {
 			a.showSettings()
 		}
@@ -500,6 +551,10 @@ func main() {
 					target = a.cfgWin
 				} else if shotWindow == "chip" && a.sel.win != nil {
 					target = a.sel.win
+				} else if shotWindow == "more" && a.moreFlyout != nil {
+					target = a.moreFlyout
+				} else if shotWindow == "chip-tip" && a.chipTip.win != nil {
+					target = a.chipTip.win
 				}
 				if shotSizeW > 0 && shotSizeH > 0 {
 					target.SetSize(shotSizeW, shotSizeH)
@@ -507,11 +562,11 @@ func main() {
 				}
 				png, err := target.CapturePage()
 				if err != nil {
-					log.Printf("fastpot: capture failed: %v", err)
+					log.Printf("fastDictionary: capture failed: %v", err)
 				} else if err := os.WriteFile(shotPath, png, 0o644); err != nil {
-					log.Printf("fastpot: capture write failed: %v", err)
+					log.Printf("fastDictionary: capture write failed: %v", err)
 				} else {
-					log.Printf("fastpot: captured %d bytes to %s", len(png), shotPath)
+					log.Printf("fastDictionary: captured %d bytes to %s", len(png), shotPath)
 				}
 				time.Sleep(200 * time.Millisecond)
 				mygo.RunOnMain(func() {

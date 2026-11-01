@@ -1,23 +1,27 @@
-# Build output
+# 构建产物
 /build/
 /.mygo/
 mygo_windows_*.syso
 
-# Binaries (18MB each; three backups = ~75MB of noise)
+# 可执行文件（每个 20MB，留三个备份就是 60MB 噪音）
 *.exe
 *.exe~
 *.exe.bak-*
 
-# Runtime logs and diagnostics
+# 运行时日志
 *.log
-chip.out
 
-# Debug screenshots taken while diagnosing the chip / settings layout
-shot_*.png
+# 开发时临时截的图。正式的界面截图放 docs/screenshots/，不进这里。
 diag_*.png
+test_*.png
+shot_*.png
 
-# Cache
+# 缓存
 cache/
 
-# Ad-hoc test artifacts
-test_*.png
+# OCR 运行时依赖：模型 31MB、DLL 16MB。
+#
+# 不进仓库是因为体积，但打包时必须和 exe 放在一起，否则截图识别会静默
+# 回落到 Windows OCR（质量差很多，而且不报错）。build.ps1 负责复制。
+/indra-models/
+/onnxruntime.dll

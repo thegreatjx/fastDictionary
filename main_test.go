@@ -50,7 +50,7 @@ func TestPopupBusyAndError(t *testing.T) {
 	a.source = "hi"
 	a.busy = true
 	tt := ui.NewTester(a.popupView, 400, 340)
-	if !tt.HasText("翻译中") {
+	if !tt.HasText("正在翻译") {
 		t.Errorf("busy state missing: %q", tt.Texts())
 	}
 
@@ -95,15 +95,54 @@ func TestSettingsRendersAllPages(t *testing.T) {
 	}
 }
 
-func TestAdaptivePopupHeaderAtSmallWidth(t *testing.T) {
+// The build stamp is how the user tells a fresh binary from the one the
+// shortcut used to launch. If it stops reaching 关于, the only way to answer
+// "did my build take effect" is to compare file timestamps by hand again.
+func TestAboutPageShowsBuildStamp(t *testing.T) {
+	old := buildStamp
+	buildStamp = "2026-10-25T07:23"
+	t.Cleanup(func() { buildStamp = old })
+
 	a := newTestApp()
-	a.source = "Hello world"
-	a.target = "你好世界"
-	// Test at standard and narrower widths to ensure no panic and modes render
-	for _, w := range []int{380, 400, 440, 460, 520} {
+	a.page = "about"
+	tt := ui.NewTester(a.settingsView, 760, 560)
+	if !tt.HasText("构建") || !tt.HasText("2026-10-25T07:23") {
+		t.Errorf("about page missing build stamp: %q", tt.Texts())
+	}
+}
+
+func TestAdaptivePopupHeaderKeepsReadingToolsReachable(t *testing.T) {
+	for _, w := range []int{360, 380, 400, 440, 460, 520} {
+		a := newTestApp()
+		a.source, a.target, a.popupW = "Hello world", "你好世界", w
 		tt := ui.NewTester(a.popupView, w, 340)
-		if !tt.HasText("翻译") || !tt.HasText("长难句") || !tt.HasText("词典") {
-			t.Errorf("width %d: mode buttons missing, texts: %q", w, tt.Texts())
+		for _, want := range []string{"翻译", "复制译文", "复制原文", "朗读原文", "翻译引擎", "重新翻译"} {
+			if !tt.HasText(want) {
+				t.Errorf("width %d: missing %q, texts: %q", w, want, tt.Texts())
+			}
+		}
+		modeLabel := "阅读工具"
+		if w < 440 {
+			modeLabel = "切换阅读工具"
+		} else {
+			for _, want := range popupModeLabels {
+				if !tt.HasText(want) {
+					t.Errorf("width %d: direct mode %q missing", w, want)
+				}
+			}
+		}
+		for _, label := range []string{modeLabel, "简体中文", "固定窗口（失焦不关闭）", "翻译设置"} {
+			r, ok := tt.Find(label)
+			if !ok {
+				t.Errorf("width %d: %q not found", w, label)
+				continue
+			}
+			if r.X < 0 || r.X+r.W > float32(w) {
+				t.Errorf("width %d: %q clips at %+v", w, label, r)
+			}
+		}
+		if tt.HasText("本地窗口 · 在线翻译") {
+			t.Errorf("width %d: implementation detail is shown in place of engine controls", w)
 		}
 	}
 }
@@ -138,5 +177,18 @@ func TestCalcPopupPositionAdaptiveLifting(t *testing.T) {
 	// Verify coordinates are bounded and reasonable
 	if x1 < 0 || x2 < 0 || x3 < 0 {
 		t.Errorf("unexpected negative X coordinates: x1=%d, x2=%d, x3=%d", x1, x2, x3)
+	}
+}
+
+func TestRenderTranslatePopupScreenshot(t *testing.T) {
+	a := newTestApp()
+	a.source = "The quick brown fox jumps over the lazy dog. A journey of a thousand miles begins with a single step."
+	a.target = "敏捷的棕色狐狸跳过了懒狗。千里之行，始于足下。"
+	a.engine = "Microsoft Translator"
+	a.popupW = 500
+	tt := ui.NewTester(a.popupView, 500, 260)
+	img := tt.Image()
+	if img == nil {
+		t.Fatal("expected rendered popup image")
 	}
 }

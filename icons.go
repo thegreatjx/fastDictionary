@@ -9,7 +9,7 @@ import (
 
 const (
 	// Icon: Language / Translation (中/A)
-	svgTranslateData = `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+	svgTranslateData = `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
 		<path d="m5 8 6 6"/>
 		<path d="m4 14 6-6 2-3"/>
 		<path d="M2 5h12"/>

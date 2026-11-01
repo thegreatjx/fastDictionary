@@ -44,8 +44,9 @@ func TestPlaceChipFlipsAboveWhenNoRoomBelow(t *testing.T) {
 func TestPlaceChipStaysInsideRightEdge(t *testing.T) {
 	ds, p := oneDisplay()
 	x, _ := placeChip(ds, p, 1919, 300)
-	if x+selIconWidth > p.WorkArea.X+p.WorkArea.Width {
-		t.Errorf("chip x=%d (+%d) escapes width %d", x, selIconWidth, p.WorkArea.Width)
+	width := selectionChipWidth(len(DefaultCustomActions()))
+	if x+width > p.WorkArea.X+p.WorkArea.Width {
+		t.Errorf("chip x=%d (+%d) escapes width %d", x, width, p.WorkArea.Width)
 	}
 	if x < 0 {
 		t.Errorf("chip x=%d is negative", x)
@@ -75,7 +76,7 @@ func TestPlaceChipUsesTheHoldingDisplay(t *testing.T) {
 
 	// The chip must respect the second display's work area, not the first's.
 	cx, _ := placeChip(ds, first, int32((1920+2550)*1.5), 300)
-	if cx+selIconWidth > second.WorkArea.X+second.WorkArea.Width {
+	if cx+selectionChipWidth(len(DefaultCustomActions())) > second.WorkArea.X+second.WorkArea.Width {
 		t.Errorf("chip x=%d escapes the second display's work area", cx)
 	}
 }
@@ -95,7 +96,7 @@ func TestPlaceChipFallsBackToPrimary(t *testing.T) {
 // the size of the window.
 func TestSelectionIconCornersAreTransparent(t *testing.T) {
 	a := newTestApp()
-	tt := ui.NewTester(a.selIconView, selIconWidth, selIconHeight)
+	tt := ui.NewTester(a.selIconView, selectionChipWidth(len(DefaultCustomActions())), selIconHeight)
 	img := tt.Image()
 	if img == nil {
 		t.Fatal("no image rendered")
@@ -114,7 +115,7 @@ func TestSelectionIconCornersAreTransparent(t *testing.T) {
 
 func TestSelectionIconRenders(t *testing.T) {
 	a := newTestApp()
-	tt := ui.NewTester(a.selIconView, selIconWidth, selIconHeight)
+	tt := ui.NewTester(a.selIconView, selectionChipWidth(len(DefaultCustomActions())), selIconHeight)
 	img := tt.Image()
 	if img == nil {
 		t.Fatal("no image rendered for selection toolbar")

@@ -15,6 +15,17 @@ import (
 	"github.com/egoist/mygo"
 )
 
+// snipOCRScale is how much the crop is enlarged before Windows.Media.Ocr reads
+// it. 2x is measured as the best value: small type becomes legible, and larger
+// factors start losing accuracy again (the engine's own detection struggles
+// with very large glyphs).
+const snipOCRScale = 2
+
+// maxOCRSide is OcrEngine.MaxImageDimension. A crop scaled past it makes the
+// engine throw instead of returning text, so an enormous selection stays at 1x
+// rather than failing outright.
+const maxOCRSide = 10000
+
 var (
 	procGetDC                  = user32.NewProc("GetDC")
 	procReleaseDC              = user32.NewProc("ReleaseDC")
@@ -358,7 +369,7 @@ func snipCacheDir() (string, error) {
 		return dir, nil
 	}
 	if appData := os.Getenv("APPDATA"); appData != "" {
-		return filepath.Join(appData, "Dictionary", "cache"), nil
+		return filepath.Join(appData, appName, "cache"), nil
 	}
 	return "", fmt.Errorf("no cache directory available")
 }
@@ -397,21 +408,21 @@ func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError f
 			hdcScreen, _, _ = procGetDC.Call(0)
 		}
 		if hdcScreen == 0 {
-			log.Println("fastpot: failed to get screen DC")
+			log.Println("fastDictionary: failed to get screen DC")
 			return
 		}
 		defer procReleaseDC.Call(hwndDesk, hdcScreen)
 
 		hdcMem, _, _ := procCreateCompatibleDC.Call(hdcScreen)
 		if hdcMem == 0 {
-			log.Println("fastpot: failed to create compatible DC")
+			log.Println("fastDictionary: failed to create compatible DC")
 			return
 		}
 		defer procDeleteDC.Call(hdcMem)
 
 		hbm, _, _ := procCreateCompatibleBitmap.Call(hdcScreen, vw, vh)
 		if hbm == 0 {
-			log.Println("fastpot: failed to create compatible bitmap")
+			log.Println("fastDictionary: failed to create compatible bitmap")
 			return
 		}
 		defer procDeleteObject.Call(hbm)
@@ -422,7 +433,7 @@ func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError f
 		const srccopy = 0x00CC0020
 		rBlt, _, errBlt := procBitBlt.Call(hdcMem, 0, 0, vw, vh, hdcScreen, vx, vy, srccopy)
 		if rBlt == 0 {
-			log.Printf("fastpot: BitBlt screen capture failed: %v", errBlt)
+			log.Printf("fastDictionary: BitBlt screen capture failed: %v", errBlt)
 			return
 		}
 
@@ -472,7 +483,7 @@ func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError f
 		)
 
 		if hwnd == 0 {
-			log.Println("fastpot: cannot create snip overlay window")
+			log.Println("fastDictionary: cannot create snip overlay window")
 			return
 		}
 
@@ -541,14 +552,14 @@ func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError f
 			// know the cache dir was unwritable.
 			cacheDir, dirErr := snipCacheDir()
 			if dirErr != nil {
-				log.Printf("fastpot: snip cache dir: %v", dirErr)
+				log.Printf("fastDictionary: snip cache dir: %v", dirErr)
 				if s.onError != nil {
 					s.onError(dirErr)
 				}
 				return
 			}
 			if err := os.MkdirAll(cacheDir, 0o755); err != nil {
-				log.Printf("fastpot: snip cache mkdir: %v", err)
+				log.Printf("fastDictionary: snip cache mkdir: %v", err)
 				if s.onError != nil {
 					s.onError(err)
 				}
@@ -558,7 +569,7 @@ func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError f
 
 			f, err := os.Create(outPath)
 			if err != nil {
-				log.Printf("fastpot: snip save: %v", err)
+				log.Printf("fastDictionary: snip save: %v", err)
 				if s.onError != nil {
 					s.onError(err)
 				}
@@ -566,7 +577,7 @@ func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError f
 			}
 			if err := png.Encode(f, cropImg); err != nil {
 				f.Close()
-				log.Printf("fastpot: snip encode: %v", err)
+				log.Printf("fastDictionary: snip encode: %v", err)
 				if s.onError != nil {
 					s.onError(err)
 				}

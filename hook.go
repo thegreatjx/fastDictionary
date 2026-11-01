@@ -2,7 +2,7 @@
 //
 // A WH_MOUSE_LL hook sees every mouse event before the application it is
 // meant for does, and a WH_KEYBOARD_LL hook sees the keys. Together they
-// let fastpot recognise the gesture "the user finished selecting text":
+// let fastDictionary recognise the gesture "the user finished selecting text":
 //
 //   - the left button went down and came back up, and
 //   - the pointer moved more than a few pixels while it was down (a drag,
@@ -20,6 +20,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -32,11 +33,16 @@ var (
 	hookEvents   uint64 // events seen by the mouse hook, for diagnosis
 	hookDowns    uint64 // left button downs
 	hookUps      uint64 // left button ups
-	hookDrags    uint64 // completed drags past the slack
-	hookDragsOwn uint64 // drags rejected because the target was fastpot itself
+	hookDrags    uint64 // completed drags that passed the policy
+	hookDragsOwn uint64 // drags rejected because the target was fastDictionary itself
+	// hookRejectedDrags counts drags the policy dropped (too short, too
+	// fast) and hookRejectedDragWhy keeps the last reason, so --hookstats
+	// can explain a quiet trigger without a log line in the callback.
+	hookRejectedDrags   uint64
+	hookRejectedDragWhy atomic.Pointer[string]
 	// what the hook rejected as "our own window", for diagnosis
-	hookRejectedTitle string
-	hookRejectedClass string
+	hookRejectedTitle atomic.Pointer[string]
+	hookRejectedClass atomic.Pointer[string]
 	// liveMouseHook/liveKeyHook are the handles the callbacks pass back to
 	// CallNextHookEx. Passing 0 there is not harmless: the system drops the
 	// hook from the chain, and the symptom is a hook that installs
@@ -57,15 +63,39 @@ var (
 	lastClickTime uint32
 	lastClickPos  winPoint
 	clickCount    int
+	// pressTime is when the button went down, in the hook's own millisecond
+	// clock (MSLLHOOKSTRUCT.Time). It is what the duration floor judges.
+	pressTime uint32
+	// pressAt is the same moment on the wall clock, and pressLastKey is when
+	// the user last typed before it. The pair is what tells a caret drag
+	// inside a text field apart from a selection drag: see typingSuppresses.
+	// They are read at the release, so they are taken at the press.
+	pressAt      time.Time
+	pressLastKey time.Time
+	// lastKeyAt is when a key that types (not a modifier) was last pressed.
+	// It is the clock the typing guard reads; the zero value means the user
+	// has not typed since the program started.
+	lastKeyAt time.Time
 	// OnSelectionGesture runs, on its own goroutine, when a selection
-	// gesture has just finished. owner is the executable name of the
-	// application the gesture happened in, which is what the trigger guard
-	// needs to tell a real selection from a drag in a screenshot tool.
-	// main() installs it.
-	OnSelectionGesture func(x, y int32, owner string)
+	// gesture has just finished. The gesture carries the executable name of
+	// the application it happened in, which is what the trigger guard needs
+	// to tell a real selection from a drag in a screenshot tool, and the
+	// keystroke clock, which is what tells a selection from a caret drag
+	// while the user is typing. main() installs it.
+	OnSelectionGesture func(g selectionGesture)
 	// OnMouseDown runs, on its own goroutine, for every left press. It lets
 	// the selection chip notice a click somewhere else and go away.
 	OnMouseDown func(x, y int32)
+	// OnMouseMove runs, on its own goroutine, for every pointer move. The
+	// chip needs it because a window that appears under a still pointer gets
+	// no WM_MOUSEMOVE: without this the hovered button never learns it is
+	// hovered, and the label it is supposed to show never appears.
+	OnMouseMove func(x, y int32)
+	// OnKeyDown runs, on its own goroutine, for every key press that is not
+	// part of a selection. It is what takes the chip away when the user
+	// starts typing: a chip left on screen over a text field is in the way
+	// of the very thing the user is doing.
+	OnKeyDown func(vk uint32)
 )
 
 const (
@@ -85,12 +115,14 @@ const (
 	// time window itself comes from the system (doubleClickThreshold).
 	doubleClickSlack = 4
 
-	vkLeft    = 0x25
-	vkUp      = 0x26
-	vkRight   = 0x27
-	vkDown    = 0x28
-	llkhfUp   = 0x80
-	dragSlack = 10 // pixels: below this a press-and-release is a click
+	vkLeft  = 0x25
+	vkUp    = 0x26
+	vkRight = 0x27
+	vkDown  = 0x28
+	llkhfUp = 0x80
+	// How far a drag must travel and how long it must take is not a magic
+	// number here any more: see selection_policy.go, where the thresholds
+	// are named, documented and tested.
 )
 
 // msllHookStruct is MSLLHOOKSTRUCT.
@@ -128,15 +160,24 @@ func lowLevelMouseProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 	atomic.AddUint64(&hookEvents, 1)
 
 	hookMu.Lock()
-	var fire, press, clickFire bool
-	var fx, fy, cx, cy int32
+	var fire, press, clickFire, moved bool
+	var fx, fy, cx, cy, moveX, moveY int32
 	var target uintptr
+	var kind gestureKind
+	var lastKey, pressedAt time.Time
 	switch uint32(wParam) {
 	case wmLButtonDown:
 		atomic.AddUint64(&hookDowns, 1)
 		dragging = true
 		dragStart = pt
 		dragEnd = pt
+		pressTime = info.Time
+		// The typing guard judges the moment the drag *began*, so both
+		// clocks are taken here rather than at the release: a caret drag
+		// that starts while the user is typing and lasts half a second is
+		// still a caret drag.
+		pressAt = time.Now()
+		pressLastKey = lastKeyAt
 		hookTarget = foregroundWindow()
 		press = true
 		// A second press near the previous one, soon after it, is a double
@@ -153,6 +194,9 @@ func lowLevelMouseProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 		lastClickPos = pt
 		if clickCount == 2 && !isOwnProcess(hookTarget) {
 			clickFire = true
+			kind = gestureDoubleClick
+			lastKey = pressLastKey
+			pressedAt = pressAt
 			cx, cy = pt.X, pt.Y
 			target = hookTarget
 		}
@@ -160,28 +204,38 @@ func lowLevelMouseProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 		if dragging {
 			dragEnd = pt
 		}
+		moveX, moveY = pt.X, pt.Y
+		moved = true
 	case wmLButtonUp:
 		atomic.AddUint64(&hookUps, 1)
 		if dragging {
 			dragging = false
-			dx := int(dragEnd.X - dragStart.X)
-			dy := int(dragEnd.Y - dragStart.Y)
-			if dx*dx+dy*dy >= dragSlack*dragSlack {
+			held := time.Duration(info.Time-pressTime) * time.Millisecond
+			if ok, why := dragIsSelection(dragStart, dragEnd, held); !ok {
+				// Counted, not logged: a log line written from this callback
+				// is slow enough to get the hook removed by Windows.
+				atomic.AddUint64(&hookRejectedDrags, 1)
+				hookRejectedDragWhy.Store(&why)
+			} else {
 				atomic.AddUint64(&hookDrags, 1)
 				// Resolve the window under the pointer, not the foreground
-				// window of the press: a topmost fastpot window (the
+				// window of the press: a topmost fastDictionary window (the
 				// settings page, a pinned popup) is the foreground one even
 				// while the user selects text underneath it, and judging by
-				// it dropped every selection made with a fastpot window open.
+				// it dropped every selection made with a fastDictionary window open.
 				hwnd := windowAt(dragEnd.X, dragEnd.Y)
 				if !isOwnProcess(hwnd) {
 					fire = true
+					kind = gestureDrag
+					lastKey = pressLastKey
+					pressedAt = pressAt
 					fx, fy = dragEnd.X, dragEnd.Y
 					target = hwnd
 				} else {
 					atomic.AddUint64(&hookDragsOwn, 1)
-					hookRejectedTitle = windowTitleOf(hwnd)
-					hookRejectedClass = windowClassName(hwnd)
+					title, class := windowTitleOf(hwnd), windowClassName(hwnd)
+					hookRejectedTitle.Store(&title)
+					hookRejectedClass.Store(&class)
 				}
 			}
 		}
@@ -195,15 +249,27 @@ func lowLevelMouseProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 		go OnMouseDown(x, y)
 	}
 
+	// Same rule as the press: the callback goes to its own goroutine, so the
+	// hook returns at once and the desktop keeps its input latency. The
+	// atomic gate matters as much: pointer moves arrive by the thousand per
+	// second, and a goroutine per move for a bar that is not on screen is
+	// pure waste.
+	if moved && OnMouseMove != nil && atomic.LoadUint32(&chipHoverArmed) != 0 {
+		x, y := moveX, moveY
+		go OnMouseMove(x, y)
+	}
+
 	// Everything slow happens in the goroutine, never here. A low-level hook
 	// runs on the input thread and the whole desktop waits on it: OpenProcess
 	// and QueryFullProcessImageName can take milliseconds, which is how a
 	// "fast" translator ends up introducing input lag everywhere.
 	if clickFire && OnSelectionGesture != nil {
-		x, y, hwnd := cx, cy, target
+		g := selectionGesture{X: cx, Y: cy, Kind: kind, LastKey: lastKey, PressedAt: pressedAt}
+		hwnd := target
 		go func() {
 			settleAfterMouseUp()
-			OnSelectionGesture(x, y, processNameOf(hwnd))
+			g.Owner = processNameOf(hwnd)
+			OnSelectionGesture(g)
 		}()
 	}
 
@@ -211,10 +277,12 @@ func lowLevelMouseProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 		// The button is still logically down here: the release reaches the
 		// application after this hook returns. Let the selection settle
 		// before asking for it.
-		x, y, hwnd := fx, fy, target
+		g := selectionGesture{X: fx, Y: fy, Kind: kind, LastKey: lastKey, PressedAt: pressedAt}
+		hwnd := target
 		go func() {
 			settleAfterMouseUp()
-			OnSelectionGesture(x, y, processNameOf(hwnd))
+			g.Owner = processNameOf(hwnd)
+			OnSelectionGesture(g)
 		}()
 	}
 	r, _, _ := procCallNextHookEx.Call(liveMouseHook, uintptr(nCode), wParam, lParam)
@@ -223,6 +291,10 @@ func lowLevelMouseProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 
 // lowLevelKeyProc is the WH_KEYBOARD_LL callback. ONLY Shift plus an arrow key
 // extends a selection without the mouse; the gesture fires on key up.
+//
+// It also keeps the clock the typing guard reads (lastKeyAt) and tells the
+// chip when the user starts typing, so a chip left over a text field goes
+// away instead of sitting on top of what the user is writing.
 func lowLevelKeyProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 	if nCode >= 0 {
 		info := (*kbdllHookStruct)(nativePtr(lParam))
@@ -238,6 +310,19 @@ func lowLevelKeyProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 				keyboardSelecting = true
 				hookTarget = foregroundWindow()
 				hookMu.Unlock()
+			} else if !isModifierKey(info.VkCode) {
+				// Any key that types restarts the typing guard's clock. A
+				// modifier on its own does not: holding Shift or Ctrl before
+				// dragging to select is not typing, and counting it would
+				// swallow the very gesture the user is about to make.
+				now := time.Now()
+				hookMu.Lock()
+				lastKeyAt = now
+				hookMu.Unlock()
+				if OnKeyDown != nil {
+					vk := info.VkCode
+					go OnKeyDown(vk)
+				}
 			}
 		} else if info.Flags&llkhfUp != 0 {
 			hookMu.Lock()
@@ -248,17 +333,31 @@ func lowLevelKeyProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 			if wasSelecting && !isOwnProcess(target) && OnSelectionGesture != nil {
 				// Same rule as the mouse hook: no OpenProcess on the input
 				// thread, only inside the goroutine.
+				g := selectionGesture{Kind: gestureKeyboard, PressedAt: time.Now()}
 				hwnd := target
 				go func() {
 					settleAfterMouseUp()
 					p := cursorPoint()
-					OnSelectionGesture(p.X, p.Y, processNameOf(hwnd))
+					g.X, g.Y = p.X, p.Y
+					g.Owner = processNameOf(hwnd)
+					OnSelectionGesture(g)
 				}()
 			}
 		}
 	}
 	r, _, _ := procCallNextHookEx.Call(liveKeyHook, uintptr(nCode), wParam, lParam)
 	return r
+}
+
+// isModifierKey reports whether vk is a modifier, which never types a
+// character on its own.
+func isModifierKey(vk uint32) bool {
+	for _, m := range modifierKeys {
+		if uint32(m) == vk {
+			return true
+		}
+	}
+	return false
 }
 
 var keyboardSelecting bool
@@ -319,6 +418,10 @@ func installHooks() error {
 		keyProc = syscall.NewCallback(lowLevelKeyProc)
 	})
 
+	// Installing twice would leak the first pair of handles and deliver every
+	// event twice. The guard above (mouseHook != 0) is what makes this
+	// idempotent; applySelectionMode calls it on every settings change.
+
 	h, _, err := procSetWindowsHookEx.Call(whMouseLL, mouseProc, 0, 0)
 	if h == 0 {
 		return fmt.Errorf("mouse hook: %w", err)
@@ -332,26 +435,45 @@ func installHooks() error {
 	mouseHook, keyHook = h, k
 	liveMouseHook, liveKeyHook = h, k
 	hookMu.Unlock()
-	log.Printf("fastpot: selection hooks installed on thread %d (mouse=%d key=%d)",
+	log.Printf("fastDictionary: selection hooks installed on thread %d (mouse=%d key=%d)",
 		currentThreadID(), h, k)
 	return nil
 }
 
+// chipHoverArmed gates the pointer-move callback. It is set while the
+// selection chip is on screen and clear otherwise, so the hook can skip the
+// dispatch without taking a lock or starting a goroutine.
+var chipHoverArmed uint32
+
+// armChipHover lets pointer moves reach OnMouseMove.
+func armChipHover() { atomic.StoreUint32(&chipHoverArmed, 1) }
+
+// disarmChipHover stops pointer moves from reaching OnMouseMove.
+func disarmChipHover() {
+	atomic.StoreUint32(&chipHoverArmed, 0)
+}
+
 // removeHooks uninstalls both hooks. Unhooking is thread-agnostic in win32,
 // but it is still done from the hook thread so the loop can exit cleanly.
+//
+// It is idempotent: removing hooks that were never installed is a no-op, which
+// is what lets applySelectionMode be called freely on every settings change.
 func removeHooks() {
 	hookMu.Lock()
 	mh, kh := mouseHook, keyHook
 	mouseHook, keyHook = 0, 0
 	liveMouseHook, liveKeyHook = 0, 0
 	hookMu.Unlock()
+	if mh == 0 && kh == 0 {
+		return
+	}
 	if mh != 0 {
 		procUnhookWindowsHook.Call(mh)
 	}
 	if kh != 0 {
 		procUnhookWindowsHook.Call(kh)
 	}
-	log.Printf("fastpot: selection hooks removed")
+	log.Printf("fastDictionary: selection hooks removed")
 }
 
 // hookThread runs the selection hooks on a thread of its own that pumps
@@ -393,6 +515,27 @@ func hookStats() (events, downs, ups, drags, own uint64) {
 	return atomic.LoadUint64(&hookEvents), atomic.LoadUint64(&hookDowns),
 		atomic.LoadUint64(&hookUps), atomic.LoadUint64(&hookDrags),
 		atomic.LoadUint64(&hookDragsOwn)
+}
+
+// hookPolicyRejects reports how many drags the selection policy dropped and
+// why the last one was dropped, for the --hookstats reporter.
+func hookPolicyRejects() (uint64, string) {
+	why := ""
+	if p := hookRejectedDragWhy.Load(); p != nil {
+		why = *p
+	}
+	return atomic.LoadUint64(&hookRejectedDrags), why
+}
+
+// hookOwnRejects reports what the hook last mistook for a fastDictionary window.
+func hookOwnRejects() (title, class string) {
+	if p := hookRejectedTitle.Load(); p != nil {
+		title = *p
+	}
+	if p := hookRejectedClass.Load(); p != nil {
+		class = *p
+	}
+	return title, class
 }
 
 // wmHookCommand is the private window message used to run hook work on the
@@ -448,7 +591,7 @@ func hookLoop() {
 	hookMu.Unlock()
 
 	if err := installHooks(); err != nil {
-		log.Printf("fastpot: selection hooks unavailable: %v", err)
+		log.Printf("fastDictionary: selection hooks unavailable: %v", err)
 		return
 	}
 

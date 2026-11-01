@@ -8,7 +8,7 @@ import (
 )
 
 func TestExportImportVocabulary(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "fastpot_vocab_test_*")
+	tmpDir, err := os.MkdirTemp("", "fastDictionary_vocab_test_*")
 	if err != nil {
 		t.Fatal(err)
 	}

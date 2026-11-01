@@ -59,19 +59,22 @@ func GetVocabularyStore() *VocabularyStore {
 }
 
 func defaultVocabPath() string {
-	if appData := os.Getenv("APPDATA"); appData != "" {
-		oldPath := filepath.Join(appData, "Dictionary", "vocabulary.json")
-		if _, err := os.Stat(oldPath); err == nil {
-			return oldPath
-		}
-		newPath := filepath.Join(appData, "fast词典", "vocabulary.json")
-		if _, err := os.Stat(newPath); err == nil {
-			return newPath
-		}
-		return oldPath
-	}
+	// The notebook follows the app: whatever directory mygo hands out for
+	// this build's name wins. The APPDATA guesses below only matter when the
+	// framework path is unavailable, and they have to stay in step with
+	// naming.go or the store writes one file while the settings page shows
+	// another.
 	if dir, err := mygo.App.Path(mygo.PathUserData); err == nil && dir != "" {
 		return filepath.Join(dir, "vocabulary.json")
+	}
+	if appData := os.Getenv("APPDATA"); appData != "" {
+		for _, legacy := range legacyDataDirs {
+			p := filepath.Join(appData, legacy, "vocabulary.json")
+			if _, err := os.Stat(p); err == nil {
+				return p
+			}
+		}
+		return filepath.Join(appData, appName, "vocabulary.json")
 	}
 	return "vocabulary.json"
 }
@@ -102,7 +105,7 @@ func (s *VocabularyStore) load() {
 	}
 	var entries []VocabularyEntry
 	if err := json.Unmarshal(data, &entries); err != nil {
-		log.Printf("fastpot: failed to parse vocabulary.json: %v", err)
+		log.Printf("fastDictionary: failed to parse vocabulary.json: %v", err)
 		return
 	}
 	s.mu.Lock()
@@ -333,6 +336,18 @@ func (s *VocabularyStore) Clear() error {
 	s.entries = []VocabularyEntry{}
 	s.mu.Unlock()
 	return s.save()
+}
+
+// Path reports where this store persists its entries, so the settings page
+// can show the real file instead of a hardcoded guess. A literal path in the
+// UI drifts from reality the moment the app is renamed, because the directory
+// is derived from the exe name; the user only finds out when they try to back
+// the file up. Empty for the in-memory store used by tests.
+func (s *VocabularyStore) Path() string {
+	if s == nil {
+		return ""
+	}
+	return s.path
 }
 
 // Count returns the number of saved entries
@@ -697,7 +712,7 @@ func (s *VocabularyStore) EnrichAll() int {
 // was stored: read-only disks, a full disk and a locked file all end up here.
 func (s *VocabularyStore) saveOrLog() {
 	if err := s.save(); err != nil {
-		log.Printf("fastpot: vocabulary save failed: %v", err)
+		log.Printf("fastDictionary: vocabulary save failed: %v", err)
 	}
 }
 

@@ -64,7 +64,7 @@ func playMP3(path string) error {
 		mciCall("close " + curAlias)
 		curAlias = ""
 	}
-	const alias = "fastpot_snd"
+	const alias = "fastDictionary_snd"
 	if err := mciCall(fmt.Sprintf("open \"%s\" alias %s type mpegvideo", path, alias)); err != nil {
 		return err
 	}
@@ -113,7 +113,22 @@ var (
 // PlaySpeech speaks text: a single English word uses Youdao's studio
 // recording, everything else goes through Edge TTS (neural voices), and
 // Windows SAPI is kept only as the last resort when the network fails.
+// PlaySpeech speaks text with the language guessed from its script.
+//
+// Prefer PlaySpeechLang: a guess is what made French read aloud by an English
+// voice. This stays for the call sites that only have the text.
 func PlaySpeech(text string, us bool) {
+	PlaySpeechLang(text, "", us)
+}
+
+// PlaySpeechLang speaks text in a named language.
+//
+// lang is a BCP-47 tag. When it is empty the language is settled here, before
+// synthesis: the script, then a two-word English test, then the engine's own
+// detection. That order matters — an empty tag used to fall straight through to
+// en-US-AriaNeural, so French and German were read by an English voice, which
+// is the robotic sound the user hears.
+func PlaySpeechLang(text, lang string, us bool) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return
@@ -129,13 +144,6 @@ func PlaySpeech(text string, us bool) {
 	}
 
 	go func() {
-		// The whole utterance goes to the synthesiser in ONE request.
-		//
-		// Splitting it by sentence was tried and reverted: every chunk gets
-		// its own sentence-final intonation and its own stress pattern, so a
-		// paragraph read that way sounds choppy and mis-stressed. Measured on
-		// this machine, a 600-character paragraph synthesises in ~620ms as a
-		// single request, so there is nothing to gain from splitting either.
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
@@ -150,7 +158,8 @@ func PlaySpeech(text string, us bool) {
 			}
 		}
 
-		voice := edgeTTSVoice(detectLocal(text), us, "")
+		speechLang := resolveSpeechLang(ctx, text, lang)
+		voice := edgeTTSVoice(speechLang, us, "")
 		path, err := FetchEdgeTTS(ctx, text, voice)
 		if err == nil && path != "" {
 			speakMu.Lock()
@@ -164,25 +173,69 @@ func PlaySpeech(text string, us bool) {
 			}
 		}
 
-		// Network failed: fall back to the offline voice rather than silence.
+		// Network failed: fall back to the offline voice rather than silence,
+		// in the same language. Handing the text to SAPI without a language
+		// let it use the default voice, which on a Chinese Windows is a Chinese
+		// voice reading Japanese.
 		speakMu.Lock()
 		current := gen == speakGeneration
 		speakMu.Unlock()
 		if current {
-			speakWithSAPI(text, gen)
+			speakWithSAPI(text, speechLang, gen)
 		}
 	}()
 }
 
-// speakWithSAPI is the last-resort voice: Windows SAPI5, which sounds
-// synthetic but needs no network. The process handle is kept so stopAudio
-// can kill it - otherwise the utterance outlives the window that started it.
-func speakWithSAPI(text string, gen int) {
+// resolveSpeechLang settles the language to read text in.
+func resolveSpeechLang(ctx context.Context, text, lang string) string {
+	if tag := strings.TrimSpace(lang); tag != "" {
+		return tag
+	}
+	if tag := detectLocal(text); tag != "" {
+		return tag
+	}
+	if looksEnglish(text) {
+		return "en"
+	}
+	// Latin script that the local tests cannot settle: French, German, Dutch,
+	// Polish. Ask the engine, which recognises a language from one short
+	// request; without this the text would be read by an English voice.
+	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if r, err := MicrosoftTranslate(probeCtx, text, "auto", "zh-Hans"); err == nil && r.Detected != "" {
+		return r.Detected
+	}
+	return "en"
+}
+
+// speakWithSAPI reads text with the Windows voice when Edge TTS is unreachable.
+//
+// Three things matter here, all learned from a real machine:
+//
+//   - SAPI's Voice.Language is empty on Windows 11; the language only appears
+//     in the voice id ("TTS_MS_ZH-CN_HUIHUI_11.0"), so that is what is matched.
+//   - The installed set is tiny (Chinese and two English voices here), so a
+//     language usually has no voice at all. Falling back to the default would
+//     read Japanese with a Chinese voice, which is worse than useless.
+//   - SAPI reads non-Latin scripts badly or not at all. When no matching voice
+//     exists, silence plus a log line is more honest than wrong-sounding
+//     gibberish.
+func speakWithSAPI(text, lang string, gen int) {
 	escaped := strings.ReplaceAll(text, "'", "''")
 	escaped = strings.ReplaceAll(escaped, "\n", " ")
 	escaped = strings.ReplaceAll(escaped, "\r", " ")
-	cmd := fmt.Sprintf("(New-Object -ComObject SAPI.SpVoice).Speak('%s')", escaped)
-	c := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", cmd)
+	script := fmt.Sprintf(`$s = New-Object -ComObject SAPI.SpVoice
+$want = '%s'
+$hit = $null
+if ($want) {
+  $hit = $s.GetVoices() | Where-Object { $_.Id -match "(?i)(^|[_\-])$want([_\-]|$)" } | Select-Object -First 1
+} else {
+  $hit = $s.GetVoices() | Select-Object -First 1
+}
+if (-not $hit) { exit 3 }
+$s.Voice = $hit
+$s.Speak('%s')`, escapePowerShell(langPrefix(lang)), escaped)
+	c := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
 	c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	if err := c.Start(); err != nil {
 		return
@@ -196,6 +249,11 @@ func speakWithSAPI(text string, gen int) {
 	speakCmd = c
 	speakMu.Unlock()
 	go func() { _ = c.Wait() }()
+}
+
+// escapePowerShell escapes a value for the single-quoted string above.
+func escapePowerShell(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
 }
 
 // ---------------------------------------------------------------------------
@@ -291,7 +349,7 @@ func sanitizeFileName(s string) string {
 // FetchYoudaoAudio downloads the pronunciation mp3 for a word (type: 1=UK, 2=US)
 // into the cache dir and returns the local path.
 func FetchYoudaoAudio(ctx context.Context, word string, us bool) (string, error) {
-	dir := filepath.Join(os.TempDir(), "fastpot_audio")
+	dir := filepath.Join(os.TempDir(), "fastDictionary_audio")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}

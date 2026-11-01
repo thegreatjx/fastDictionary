@@ -71,7 +71,7 @@ func CleanSelectionText(s string) string {
 		var b strings.Builder
 		for i := 0; i < len(runes); i++ {
 			if runes[i] == ' ' && i > 0 && i < len(runes)-1 {
-				if isCJK(runes[i-1]) && isCJK(runes[i+1]) {
+				if isCJKOrPunctuation(runes[i-1]) && isCJKOrPunctuation(runes[i+1]) {
 					continue
 				}
 			}
@@ -95,6 +95,23 @@ func isCJK(r rune) bool {
 		(r >= 0xAC00 && r <= 0xD7AF) // Hangul
 }
 
+// isCJKPunctuation reports full-width punctuation, which OCR separates from
+// the glyph beside it with the same spurious space it puts between glyphs.
+// It is deliberately not part of isCJK: selection policy uses isCJK to answer
+// "is this text at all", and punctuation is not.
+func isCJKPunctuation(r rune) bool {
+	return (r >= 0x3000 && r <= 0x303F) || // CJK symbols and punctuation
+		(r >= 0xFF00 && r <= 0xFFEF) || // Halfwidth and fullwidth forms
+		(r >= 0xFE30 && r <= 0xFE4F) // CJK compatibility forms
+}
+
+// isCJKOrPunctuation is the neighbour test for removing OCR's spurious glyph
+// spaces: a space between “好” and “，” is the same artifact as one between
+// “好” and “世”, so punctuation counts as a neighbour here but nowhere else.
+func isCJKOrPunctuation(r rune) bool {
+	return isCJK(r) || isCJKPunctuation(r)
+}
+
 // CleanOcrText tidies OCR output the way CleanSelectionText tidies a
 // selection, except it keeps line structure: OCR reports the page's own
 // line breaks, and folding them into spaces (as the selection path does)
@@ -109,11 +126,32 @@ func CleanOcrText(s string) string {
 	lines := strings.Split(s, "\n")
 	for i, ln := range lines {
 		// Collapse runs of spaces/tabs inside a line, but never across lines.
-		lines[i] = strings.Join(strings.Fields(ln), " ")
+		ln = strings.Join(strings.Fields(ln), " ")
+		// Windows.Media.Ocr reports each CJK glyph as its own word, so its
+		// text comes back as "微 软 翻 译". Left alone, that reaches the
+		// translator as six tokens instead of two words, and the result
+		// reads as broken Chinese. Only spaces between two CJK glyphs go:
+		// a space beside Latin text is a real word break.
+		lines[i] = removeCJKSeparation(ln)
 	}
 	// Drop empty lines at the edges; keep the interior ones — they separate
 	// paragraphs of the image.
 	return strings.Trim(strings.Join(lines, "\n"), "\n")
+}
+
+// removeCJKSeparation deletes the single spaces OCR puts between CJK glyphs,
+// which it reports as one word each.
+func removeCJKSeparation(s string) string {
+	runes := []rune(s)
+	out := make([]rune, 0, len(runes))
+	for i, r := range runes {
+		if r == ' ' && i > 0 && i+1 < len(runes) &&
+			isCJKOrPunctuation(runes[i-1]) && isCJKOrPunctuation(runes[i+1]) {
+			continue
+		}
+		out = append(out, r)
+	}
+	return string(out)
 }
 
 func removeZeroWidthChars(s string) string {

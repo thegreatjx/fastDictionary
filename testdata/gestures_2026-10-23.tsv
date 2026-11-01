@@ -1,0 +1,152 @@
+# Real selection gestures recorded by fastpot on 2026-10-23
+# (13:10-16:38, one working day of normal use on this machine).
+#
+# Columns, tab separated:
+#   owner    executable the gesture happened in
+#   chars    number of characters the read returned
+#   head     the first runes of that text, newlines shown as \n
+#
+# What this file CAN replay: the short-selection filter and the
+# per-application policy, both of which only need the text and the
+# owner. What it CANNOT replay: the drag threshold and the duration
+# floor, because the log written before 2026-10-23 did not record
+# pointer travel or press-to-release time. Those two are covered by
+# their own unit tests in selection_policy_test.go.
+#
+# Regenerate by re-running the same extraction over
+# %APPDATA%\Dictionary\logs\fastpot.log.
+antigravity.exe	3	aud
+antigravity.exe	6	Claude
+antigravity.exe	11	OpenCode Go
+chrome.exe	233	Most famous 
+chrome.exe	249	pilvar (Phil
+chrome.exe	59	大肥鱼和Claude小姐
+chrome.exe	1044	How long it 
+chrome.exe	336	年就有国际象棋特级大师做
+obsidian.exe	18	898.8−845.4=
+chrome.exe	319	为对外高层团队，今天出现
+chrome.exe	60	Prefiero una
+chrome.exe	85	The only thi
+chrome.exe	108	このポストに各言語から賛
+chrome.exe	131	Explain more
+chrome.exe	279	Here is my o
+chrome.exe	274	I've thought
+chrome.exe	279	Here is my o
+chrome.exe	12	mercenaries.
+chrome.exe	223	Neoliberal g
+chrome.exe	248	Yes. Since a
+chrome.exe	76	And that is 
+chrome.exe	1450	视的《武安钢铁调查》中，
+chrome.exe	48	なぜ麻辣湯が男から人気な
+chrome.exe	54	ただ男が流行りに興味ない
+chrome.exe	180	世界范围内，色情行业尤其
+chrome.exe	521	，中国绝大多数地区和人口
+chrome.exe	128	力已经非常强了。但是有一
+chrome.exe	313	是会更多。我觉得 Dee
+chrome.exe	234	I recommend 
+chrome.exe	230	Thank you fo
+chrome.exe	376	在抨击大模型是美式价值观
+chrome.exe	751	离掉所有国家前缀去提问，
+chrome.exe	589	克制、低冲突、极度礼貌的
+chrome.exe	270	K3 看起来效果挺不错的
+antigravity.exe	12	Anthropology
+antigravity.exe	9	Anthropic
+antigravity.exe	9	Anthropic
+antigravity.exe	547	人 Dario Amod
+chrome.exe	601	这个人很可能是要跟你过一
+chrome.exe	94	Are you sure
+chrome.exe	124	Grok \r\n@Bo
+chrome.exe	42	what is Kend
+chrome.exe	54	are you sure
+chrome.exe	129	Grok\r\n\r\n
+chrome.exe	100	It’s a pink 
+chrome.exe	77	ずっと男でやってたから気
+chrome.exe	30	ダーは最小に近い；；
+chrome.exe	8	AION2꒰
+chrome.exe	240	I still some
+chrome.exe	309	Kimi K3.1 vs
+chrome.exe	303	他在X上写道，那些承载着
+chrome.exe	166	是“中产梦”这三个字。\
+chrome.exe	155	最近正在练习做突尼斯糕点
+chrome.exe	152	프랑스 출신 방송인: 
+chrome.exe	5	AION2
+chrome.exe	60	さすがに隠しきれてないデ
+chrome.exe	185	鬱病ってなんのために存在
+chrome.exe	682	本和服务能力能不能跟得上
+chrome.exe	280	I've been bl
+chrome.exe	273	It would beh
+chrome.exe	87	seven years 
+chrome.exe	180	最近のラウンドガール様、
+chrome.exe	45	こちらの方の名前知りたい
+chrome.exe	30	むしろよく耐えられた
+chrome.exe	354	所有人发了现金奖金和苹果
+chrome.exe	200	量化研究基准Quant-
+chrome.exe	767	Max For AI\r
+chrome.exe	201	床前，让 Codex 帮
+chrome.exe	434	Peach, my pe
+chrome.exe	297	我其实非常明显的能感觉到
+deepseek harness.exe	260	岗里现在报录比最低的是布
+chrome.exe	297	我其实非常明显的能感觉到
+chrome.exe	118	哪怕你逃到天涯海角赚钱也
+chrome.exe	125	了一个合法的“免税飞地漏
+chrome.exe	369	出口服务型公司的企业所得
+chrome.exe	639	每3个月就来这么一出。“
+chrome.exe	190	Because most
+chrome.exe	161	Google pro订阅
+chrome.exe	657	总的来说，DS 在我看来
+chrome.exe	792	享者曾经历长达 5 年的
+chrome.exe	240	的母亲，但是你的母亲可能
+chrome.exe	288	嫉妒不舒适，但是他从未想
+chrome.exe	777	日本与此前分析的德国案例
+chrome.exe	175	空房子代表的是每个男人手
+chrome.exe	253	，人家之前做修正主义的时
+chrome.exe	357	够有前端界面的风格化作品
+chrome.exe	255	Stephen Schw
+chrome.exe	908	，马云在北京堵车时，给一
+chrome.exe	343	石此前披露的数据，其已出
+chrome.exe	205	Major Chines
+chrome.exe	229	he number of
+chrome.exe	223	penDesign 发现
+chrome.exe	900	jiangkoumo\r
+chrome.exe	45	题只 2 遍，各渠道跑的
+deepseek harness.exe	391	而是同一个模型被换到了一
+deepseek harness.exe	222	的 descriptio
+chrome.exe	350	于其极快的编译速度和高性
+chrome.exe	122	s用户的Codex： S
+chrome.exe	15	授乳手コキ
+chrome.exe	15	授乳手コキ
+chrome.exe	302	Au fait, à t
+chrome.exe	78	ほぼ15%という数字の意
+chrome.exe	14	pi-mcp-adapt
+chrome.exe	25	ubagents｜约 5
+chrome.exe	12	pi-subagents
+chrome.exe	3	omp
+deepseek harness.exe	44	opm agent怎么样
+deepseek harness.exe	64	应该是在说 omp（oh
+antigravity.exe	357	是 OMP（Oh My 
+antigravity.exe	602	er（libGDX 作者
+deepseek harness.exe	64	应该是在说 omp（oh
+deepseek harness.exe	174	的“安静基准”,别为了 
+chrome.exe	9	pi 插件
+chrome.exe	1	p
+chrome.exe	154	用回pi了......o
+chrome.exe	261	说真的最符合我习惯的是 
+chrome.exe	279	Kimi 的这条宣传视频
+chrome.exe	149	his is the p
+chrome.exe	93	Looking at t
+chrome.exe	140	2025年1月，我母亲的
+chrome.exe	74	Tryna decide
+chrome.exe	399	なんか思い出してきたんで
+chrome.exe	301	知道吗，最近他们更多的是
+chrome.exe	203	对相关指控表示不认罪，并
+chrome.exe	288	Command Code
+chrome.exe	23	Somehow both
+chrome.exe	229	着的东西，居然有着相似的
+chrome.exe	142	155 行 Three.
+chrome.exe	114	赖外部 3D 素材，直接
+chrome.exe	9	达利奥
+chrome.exe	832	Gemini 不愧是最浩
+antigravity.exe	832	Gemini 不愧是最浩
+chrome.exe	1064	家也都知道了，全球资本市
+chrome.exe	106	I honestly c
+chrome.exe	124	Greg Glazews

@@ -93,11 +93,11 @@ func contains(h, n string) bool {
 	return false
 }
 
-// TestEdgeTTSLive hits the real service. It only runs with FASTPOT_LIVE=1
+// TestEdgeTTSLive hits the real service. It only runs with FASTDICTIONARY_LIVE=1
 // so the offline suite stays offline.
 func TestEdgeTTSLive(t *testing.T) {
-	if os.Getenv("FASTPOT_LIVE") != "1" {
-		t.Skip("set FASTPOT_LIVE=1 to run the live TTS probe")
+	if os.Getenv("FASTDICTIONARY_LIVE") != "1" {
+		t.Skip("set FASTDICTIONARY_LIVE=1 to run the live TTS probe")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()

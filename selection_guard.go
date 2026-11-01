@@ -2,7 +2,7 @@
 //
 // A global mouse hook cannot tell "the user selected text" from "the user
 // dragged something in a screenshot tool": both are a press, a long drag and
-// a release. Without a guard, fastpot reacts to every drag in every
+// a release. Without a guard, fastDictionary reacts to every drag in every
 // application — which is what made it fight Snipaste: a screenshot region is
 // exactly that gesture, and the capture fallback (clear clipboard, send
 // Ctrl+C) tears the snip session down.
@@ -76,7 +76,7 @@ func (a *app) pauseSelection(d time.Duration) {
 	a.mu.Lock()
 	a.pausedUntil = time.Now().Add(d)
 	a.mu.Unlock()
-	log.Printf("fastpot: selection trigger paused for %s", d)
+	log.Printf("fastDictionary: selection trigger paused for %s", d)
 	// The tray rebuild hops onto the main thread and blocks until it has
 	// run; doing it in the background keeps this callable from anywhere,
 	// including tests that have no message loop.
@@ -88,7 +88,10 @@ func (a *app) resumeSelection() {
 	a.mu.Lock()
 	a.pausedUntil = time.Time{}
 	a.mu.Unlock()
-	log.Printf("fastpot: selection trigger resumed")
+	// A pause is a deliberate break: the gesture after it must not be judged
+	// against the one from before it.
+	a.gestureGate.reset()
+	log.Printf("fastDictionary: selection trigger resumed")
 	go a.rebuildTray()
 }
 

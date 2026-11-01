@@ -206,32 +206,92 @@ func edgeTTSGetAuth(ctx context.Context) (edgeTTSAuth, error) {
 
 // edgeTTSVoice picks a neural voice for a language tag, honouring a user
 // override when one is configured.
+//
+// Every language the translator offers needs a voice here. The list used to
+// stop at the nine the picker had, so when the picker grew to thirty-four the
+// other twenty-five fell through to en-US-AriaNeural: Japanese, Arabic, Thai
+// and Hindi were all read aloud by an English speaker. That is the "robotic"
+// sound — an English voice pronouncing foreign text.
 func edgeTTSVoice(langTag string, us bool, override string) string {
 	if strings.TrimSpace(override) != "" {
 		return strings.TrimSpace(override)
 	}
-	base := strings.ToLower(langTag)
+	base := strings.ToLower(strings.TrimSpace(langTag))
 	switch {
 	case strings.HasPrefix(base, "en"):
 		if us {
 			return "en-US-AriaNeural"
 		}
 		return "en-GB-SoniaNeural"
+	case strings.HasPrefix(base, "zh-hant") || base == "zh-tw" || base == "zh-hk":
+		return "zh-TW-HsiaoChenNeural"
 	case strings.HasPrefix(base, "zh"):
 		return "zh-CN-XiaoxiaoNeural"
 	case strings.HasPrefix(base, "ja"):
 		return "ja-JP-NanamiNeural"
 	case strings.HasPrefix(base, "ko"):
 		return "ko-KR-SunHiNeural"
+	case strings.HasPrefix(base, "th"):
+		return "th-TH-PremwadeeNeural"
+	case strings.HasPrefix(base, "vi"):
+		return "vi-VN-HoaiMyNeural"
+	case strings.HasPrefix(base, "id"):
+		return "id-ID-GadisNeural"
+	case strings.HasPrefix(base, "ms"):
+		return "ms-MY-YasminNeural"
+	case strings.HasPrefix(base, "tl") || strings.HasPrefix(base, "fil"):
+		return "fil-PH-BlessicaNeural"
 	case strings.HasPrefix(base, "fr"):
 		return "fr-FR-DeniseNeural"
 	case strings.HasPrefix(base, "de"):
 		return "de-DE-KatjaNeural"
 	case strings.HasPrefix(base, "es"):
 		return "es-ES-ElviraNeural"
+	case strings.HasPrefix(base, "pt"):
+		return "pt-BR-FranciscaNeural"
+	case strings.HasPrefix(base, "it"):
+		return "it-IT-ElsaNeural"
+	case strings.HasPrefix(base, "nl"):
+		return "nl-NL-ColetteNeural"
 	case strings.HasPrefix(base, "ru"):
 		return "ru-RU-SvetlanaNeural"
+	case strings.HasPrefix(base, "uk"):
+		return "uk-UA-PolinaNeural"
+	case strings.HasPrefix(base, "pl"):
+		return "pl-PL-ZofiaNeural"
+	case strings.HasPrefix(base, "sv"):
+		return "sv-SE-SofieNeural"
+	case strings.HasPrefix(base, "da"):
+		return "da-DK-ChristelNeural"
+	case strings.HasPrefix(base, "nb") || strings.HasPrefix(base, "no"):
+		return "nb-NO-PernilleNeural"
+	case strings.HasPrefix(base, "fi"):
+		return "fi-FI-NooraNeural"
+	case strings.HasPrefix(base, "cs"):
+		return "cs-CZ-VlastaNeural"
+	case strings.HasPrefix(base, "ro"):
+		return "ro-RO-AlinaNeural"
+	case strings.HasPrefix(base, "hu"):
+		return "hu-HU-NoemiNeural"
+	case strings.HasPrefix(base, "el"):
+		return "el-GR-AthinaNeural"
+	case strings.HasPrefix(base, "tr"):
+		return "tr-TR-EmelNeural"
+	case strings.HasPrefix(base, "ar"):
+		return "ar-SA-ZariyahNeural"
+	case strings.HasPrefix(base, "he"):
+		return "he-IL-HilaNeural"
+	case strings.HasPrefix(base, "fa"):
+		return "fa-IR-DilaraNeural"
+	case strings.HasPrefix(base, "hi"):
+		return "hi-IN-SwaraNeural"
+	case strings.HasPrefix(base, "bn"):
+		return "bn-IN-TanishaaNeural"
+	case strings.HasPrefix(base, "ur"):
+		return "ur-PK-UzmaNeural"
 	}
+	// An unknown tag is better read by an English voice than not at all, but
+	// it should be rare: every offered language is listed above.
 	return "en-US-AriaNeural"
 }
 
@@ -300,7 +360,7 @@ func fetchEdgeTTSFormat(ctx context.Context, text, voice, format string) (string
 	if text == "" {
 		return "", fmt.Errorf("edge tts: empty text")
 	}
-	dir := filepath.Join(os.TempDir(), "fastpot_tts")
+	dir := filepath.Join(os.TempDir(), "fastDictionary_tts")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
@@ -384,9 +444,9 @@ func warmEdgeTTSAuth() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		if _, err := edgeTTSGetAuth(ctx); err != nil {
-			log.Printf("fastpot: edge tts warmup failed (will retry on demand): %v", err)
+			log.Printf("fastDictionary: edge tts warmup failed (will retry on demand): %v", err)
 			return
 		}
-		log.Printf("fastpot: edge tts token ready")
+		log.Printf("fastDictionary: edge tts token ready")
 	}()
 }
