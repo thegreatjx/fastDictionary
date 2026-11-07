@@ -6,6 +6,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"log"
+	"os"
 	"time"
 )
 
@@ -109,6 +110,28 @@ func (a *app) settingsView(c *ui.Context) {
 			// One measured column instead of controls stretched across the
 			// whole window: a form reads as a form, not as a spreadsheet.
 			ui.Column(c).FillWidth().Gap(18).Children(func() {
+				// A failed save used to be only a log line: the switch moved,
+				// the window looked saved, and the setting vanished on restart.
+				// Keep the error visible until a retry actually succeeds.
+				if saveErr := a.store.LastSaveError(); saveErr != nil {
+					ui.Box(c).FillWidth().Padding(10, 12).Radius(8).
+						Background(ui.RGBA(239, 68, 68, 0.08)).
+						Border(1, ui.RGBA(239, 68, 68, 0.35)).Children(func() {
+						ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
+							ui.Icon(c, iconInfo).Size(14, 14).TextColor(t.Danger)
+							ui.Text(c, "设置未保存：磁盘写入失败。"+saveErr.Error()).FontSize(12).TextColor(t.Danger).Wrap().Grow(1)
+							if ui.Button(c, "重试").Height(24).Padding(2, 10).FontSize(11).Clicked() {
+								a.retryConfigSave()
+							}
+							if ui.Button(c, "查看日志").Height(24).Padding(2, 10).FontSize(11).Clicked() {
+								a.copyToClipboard(settingsLogPath())
+								a.mu.Lock()
+								a.actionSavedMsg = "日志路径已复制到剪贴板"
+								a.mu.Unlock()
+							}
+						})
+					})
+				}
 				switch a.page {
 				case "general":
 					a.pageGeneral(c, t, cfg)
@@ -150,6 +173,35 @@ func (a *app) settingsView(c *ui.Context) {
 	if savedMsg != "" {
 		c.Toast(savedMsg)
 	}
+}
+
+func (a *app) retryConfigSave() {
+	a.mu.Lock()
+	a.actionSaveFeedback = "正在重试保存设置…"
+	a.mu.Unlock()
+	a.settingsRefresh()
+	go func() {
+		err := a.store.RetrySave()
+		a.mu.Lock()
+		if err != nil {
+			a.actionSaveFeedback = "设置仍未保存：" + err.Error()
+		} else {
+			a.actionSaveFeedback = "设置已保存"
+		}
+		a.mu.Unlock()
+		a.settingsRefresh()
+	}()
+}
+
+func settingsLogPath() string {
+	dir, err := mygo.App.Path(mygo.PathLogs)
+	if err != nil || dir == "" {
+		dir = os.Getenv("APPDATA")
+		if dir != "" {
+			dir = dir + string(os.PathSeparator) + appName
+		}
+	}
+	return dir + string(os.PathSeparator) + logFile
 }
 
 // testGateway pings the magpie gateway and reports the result.
@@ -275,6 +327,15 @@ func (a *app) getAvailableModels() []string {
 		"minimax-code/MiniMax-M2.7-highspeed",
 		"codex/gpt-5.5",
 	}
+}
+
+// openAISettings jumps straight to the AI gateway page. A failed AI refine
+// should lead to the setting that can fix it, not to a generic settings page
+// the user then has to search.
+func (a *app) openAISettings() {
+	a.page = "ai"
+	a.showSettings()
+	a.settingsRefresh()
 }
 
 // showSettings opens (or focuses) the settings window.

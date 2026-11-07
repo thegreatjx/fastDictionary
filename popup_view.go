@@ -109,9 +109,23 @@ func (a *app) popupView(c *ui.Context) {
 					})
 				}
 
-				// Show general error if present
+				// Show general error if present. A failure that left the card
+				// empty is not useful without a way to try again; keep the
+				// reason and the retry together.
 				if s.errText != "" {
-					ui.Text(c, s.errText).FontSize(13).TextColor(t.Danger).Wrap()
+					ui.Box(c).FillWidth().Padding(9, 10).Radius(7).
+						Background(ui.RGBA(239, 68, 68, 0.07)).
+						Border(1, ui.RGBA(239, 68, 68, 0.28)).Children(func() {
+						ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+							ui.Icon(c, iconInfo).Size(13, 13).TextColor(t.Danger)
+							ui.Text(c, s.errText).FontSize(12).TextColor(t.Danger).Wrap().Grow(1)
+							if s.source != "" && s.mode == modeTranslate {
+								if ui.Button(c, "重试").Height(22).Padding(0, 8).FontSize(10).Radius(4).Clicked() {
+									a.rerunCurrentModeFresh(s.source)
+								}
+							}
+						})
+					})
 				}
 
 				// The AI busy state is drawn by renderAIResultState in the body,
@@ -298,6 +312,11 @@ func renderNotesBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 							desc := item.Pos + " " + item.Meaning
 							ui.Text(c, desc).FontSize(12).TextColor(t.TextMuted).Wrap()
 						})
+						btnDismiss := ui.Button(c, "不再推荐").Height(20).Padding(0, 6).FontSize(10).Radius(4)
+						btnDismiss.Background(ui.Transparent).Border(0, ui.Transparent).TextColor(t.TextMuted)
+						if btnDismiss.Clicked() {
+							a.dismissNoteWord(item.Word)
+						}
 					})
 				})
 			}

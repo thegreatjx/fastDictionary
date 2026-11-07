@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/egoist/mygo/ui"
 	"strings"
+	"time"
 )
 
 func heading(c *ui.Context, t *ui.Theme, title, sub string) {
@@ -177,6 +178,32 @@ func (a *app) pageTranslate(c *ui.Context, t *ui.Theme, cfg Config) {
 				a.store.Update(func(c *Config) { c.EngineMode = mode })
 			})
 		}).Description("竞速：三家并发，先回来先用，微软有 350ms 宽限。腾讯只参与它支持的目标语言，不支持时会自动退出")
+		ui.Field(c, "引擎状态", func() {
+			ui.Column(c).FillWidth().Gap(5).Children(func() {
+				for _, h := range engineHealths() {
+					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
+						ui.Text(c, h.Engine).FontSize(12).TextColor(t.Text).Width(48)
+						status := "正常"
+						col := t.TextMuted
+						if h.Open {
+							remain := time.Until(h.Until).Round(time.Second)
+							if remain < 0 {
+								remain = 0
+							}
+							status = fmt.Sprintf("熔断中 · 约 %s 后重试", remain)
+							col = t.Danger
+						} else if h.Fails > 0 {
+							status = fmt.Sprintf("连续失败 %d 次", h.Fails)
+							col = t.TextMuted
+						}
+						ui.Text(c, status).FontSize(11).TextColor(col).Width(160)
+						if h.LastError != "" {
+							ui.Text(c, truncateFor(h.LastError, 88)).FontSize(10).TextColor(t.TextMuted).Grow(1).SingleLine()
+						}
+					})
+				}
+			})
+		}).Description("某个引擎连续失败两次会暂时跳过，不影响其他引擎继续翻译")
 		ui.Field(c, "目标语言", func() {
 			label := langLabels[cfg.TargetLang]
 			ui.Select(c, &label, langList()).OnChange(func() {
@@ -271,6 +298,15 @@ func (a *app) pageAI(c *ui.Context, t *ui.Theme, cfg Config) {
 				}
 			}
 			ui.Segmented(c, &idx, "跟随翻译", "长难句分析", "润色翻译").MaxWidth(400).OnChange(func() {
+				if idx > 0 && !a.store.Get().AIEnabled {
+					// The preference would be ignored at popup time anyway;
+					// keeping it selected would claim a mode the app cannot run.
+					a.mu.Lock()
+					a.actionSaveFeedback = "AI 精翻未启用，默认模式保持「跟随翻译」。请先启用 AI 网关"
+					a.mu.Unlock()
+					a.settingsRefresh()
+					return
+				}
 				modes := []string{"", "grammar", "translate"}
 				a.store.Update(func(c *Config) {
 					if idx <= 0 {
@@ -326,6 +362,19 @@ func (a *app) pageAI(c *ui.Context, t *ui.Theme, cfg Config) {
 				}
 			})
 		}).Description("测试本地 magpie 大模型网关连通性；日常划词查词走微软/谷歌双路直连通道（~200ms）")
+		ui.Field(c, "临时缓存", func() {
+			ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, fmt.Sprintf("当前 %d 条 · 仅在内存中，重启后清空", a.aiCacheCount())).
+					FontSize(12).TextColor(t.TextMuted)
+				if ui.Button(c, "清空临时缓存").Height(26).Padding(2, 10).FontSize(11).Clicked() {
+					a.clearAICache()
+					a.mu.Lock()
+					a.actionSaveFeedback = "临时 AI 缓存已清空"
+					a.mu.Unlock()
+					a.settingsRefresh()
+				}
+			})
+		}).Description("AI 结果会按提示词、模型、网关地址和推理强度自动失效；这里可手动清空")
 	})
 }
 
@@ -416,7 +465,7 @@ func (a *app) pageAbout(c *ui.Context, t *ui.Theme, cfg Config) {
 		{"发音", "有道 dictvoice，mp3 缓存 + 系统 MCI 播放"},
 		{"OCR 引擎", "Windows.Media.Ocr 原生离线神经文字识别"},
 		{"AI 精翻", "magpie 网关，闪速模型 + 低推理档"},
-		{"外壳", "mygo v0.6.3 原生 UI（Go，无 cgo）"},
+		{"外壳", "mygo v0.8.3 原生 UI（Go，无 cgo）"},
 	}
 	for _, r := range rows {
 		ui.Row(c).FillWidth().Gap(12).AlignItems(ui.Start).Children(func() {

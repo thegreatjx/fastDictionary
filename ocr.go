@@ -267,6 +267,10 @@ func (a *app) openPinnedScreenshot(rect winRect, imgPath string, bmp *ui.Bitmap)
 		y = int(rect.Top)
 	}
 	a.mu.Lock()
+	// A screenshot preview is a new card; do not let the previous popup's AI
+	// pass or note extraction write into it while OCR is running.
+	a.stopAIPassLocked()
+	a.stopNotesLocked()
 	a.mode = modeTranslate
 	a.source, a.target, a.engine, a.detected, a.errText, a.notice = "", "", "", "", "", ""
 	a.dict, a.gdict, a.busy, a.aiBusy = nil, nil, false, false
@@ -274,8 +278,10 @@ func (a *app) openPinnedScreenshot(rect winRect, imgPath string, bmp *ui.Bitmap)
 	a.dictResult, a.grammarResult, a.writingResult = nil, nil, nil
 	a.notes, a.notesBusy, a.notesSaved = nil, false, false
 	a.grammarSaved = false
+	a.tabStates = nil
 	a.inputText, a.ocrText, a.ocrPath, a.ocrCrop = "", "", imgPath, rect
 	a.ocrBusy, a.ocrError = true, ""
+	a.ocrCompare, a.ocrExpanded = true, false
 	a.snipExpanded, a.sourceExpanded, a.notesExpanded = false, false, false
 	a.isScreenshotMode, a.screenshotPinned, a.pinned = true, true, true
 	a.snipBitmap = bmp

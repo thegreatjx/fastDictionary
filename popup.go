@@ -57,21 +57,25 @@ func modeName(m popupMode) string {
 type app struct {
 	store *store
 
-	mu             sync.Mutex
-	mode           popupMode
-	source         string
-	target         string
-	engine         string
-	detected       string
-	errText        string
-	notice         string
-	busy           bool
-	elapsed        time.Duration
-	dict           *YoudaoDict
-	gdict          *DictResult
-	aiText         string
-	aiBusy         bool
-	aiCancel       context.CancelFunc
+	mu       sync.Mutex
+	mode     popupMode
+	source   string
+	target   string
+	engine   string
+	detected string
+	errText  string
+	notice   string
+	busy     bool
+	elapsed  time.Duration
+	dict     *YoudaoDict
+	gdict    *DictResult
+	aiText   string
+	aiBusy   bool
+	aiCancel context.CancelFunc
+	// aiGen counts AI passes and anything that supersedes them. A cancelled
+	// pass keeps running until its HTTP request returns, so without this its
+	// teardown would write over the newer request's card.
+	aiGen          uint64
 	inputText      string
 	trayInput      string // the tray quick-search box, separate from the popup's input
 	sourceExpanded bool
@@ -85,15 +89,20 @@ type app struct {
 	ocrGeneration  uint64
 	ocrCancel      context.CancelFunc
 
-	win           *mygo.Window
-	cfgWin        *mygo.Window
-	tray          *mygo.Tray
-	trayFlyout    *mygo.Window
-	page          string
-	pinned        bool
-	showNotes     bool
-	notes         []NoteItem
-	notesBusy     bool
+	win        *mygo.Window
+	cfgWin     *mygo.Window
+	tray       *mygo.Tray
+	trayFlyout *mygo.Window
+	page       string
+	pinned     bool
+	showNotes  bool
+	notes      []NoteItem
+	notesBusy  bool
+	// notesGen counts note extractions and every popup/translation that
+	// supersedes them. The request is slow (up to 20s), so its teardown must
+	// not write into a newer card after the user has moved on.
+	notesGen      uint64
+	notesCancel   context.CancelFunc
 	onlyTrunk     bool
 	grammarResult *SentenceAnalysisResult
 	// grammarResultPrefill reports that grammarResult.Translation came from the
@@ -150,6 +159,14 @@ type app struct {
 	// superseded can be recognised and dropped instead of overwriting the
 	// newer result.
 	translateGen uint64
+	// tabStates keeps the answer each reading tab already owns. Switching
+	// tabs must not rerun a slow model or show the previous tab's text under
+	// the new heading.
+	tabStates map[popupMode]*tabViewState
+	// OCR paragraph view: compare shows each OCR paragraph beside its
+	// translation; expanded lifts the height cap for long screenshots.
+	ocrCompare  bool
+	ocrExpanded bool
 	// screenshotPinned remembers that the *screenshot* translation asked
 	// for a pinned window, so the next normal popup can un-pin it. Setting
 	// pinned alone made every popup after one screenshot permanently
@@ -270,6 +287,8 @@ type snapshot struct {
 	ocrBusy               bool
 	ocrError              string
 	ocrText               string
+	ocrCompare            bool
+	ocrExpanded           bool
 }
 
 func (a *app) snap() snapshot {
@@ -283,6 +302,7 @@ func (a *app) snap() snapshot {
 		activeActionID: a.activeActionID, dictResult: a.dictResult, writingResult: a.writingResult, actionSavedMsg: a.actionSavedMsg, savedDictTerm: a.savedDictTerm, copiedMsg: a.copiedMsg, showSlashes: a.showSlashes, filterRole: a.filterRole, grammarHoverKnowledge: a.grammarHoverKnowledge, notesSaved: a.notesSaved, grammarSaved: a.grammarSaved,
 		isScreenshotMode: a.isScreenshotMode, snipBitmap: a.snipBitmap, sourceExpanded: a.sourceExpanded,
 		snipExpanded: a.snipExpanded, notesExpanded: a.notesExpanded, ocrBusy: a.ocrBusy, ocrError: a.ocrError, ocrText: a.ocrText,
+		ocrCompare: a.ocrCompare, ocrExpanded: a.ocrExpanded,
 	}
 }
 
@@ -369,19 +389,61 @@ func (a *app) rerunCurrentModeFresh(text string) {
 }
 
 func (a *app) switchMode(m popupMode) {
-	a.mu.Lock()
-	a.mode = m
-	text := a.source
-	a.busy = false
-	a.aiBusy = false
-	a.notice = ""
-	a.errText = ""
-	a.mu.Unlock()
-	if strings.TrimSpace(text) != "" {
-		a.rerunCurrentMode(text)
-	} else if a.win != nil {
-		a.win.Update(func() {})
+	cfg := a.store.Get()
+	notice := ""
+	if (m == modeGrammar || m == modeWriting) && !cfg.AIEnabled {
+		// The AI tabs cannot run without the gateway. Falling back to the
+		// machine translation is better than opening a blank card whose only
+		// explanation is an error.
+		m = modeTranslate
+		notice = "AI 精翻未启用，已使用机器翻译。可在 设置 → AI 网关 中启用。"
 	}
+	a.stopScreenshotOCR()
+	a.mu.Lock()
+	if a.mode == m {
+		if notice != "" {
+			a.notice = notice
+		}
+		a.mu.Unlock()
+		if a.win != nil {
+			a.win.Update(func() {})
+		}
+		return
+	}
+	// Switching tabs is also switching cards. Save the old tab before its
+	// async work is cancelled, then restore the tab's own answer if it has
+	// one. An old AI pass or note request must not paint over the new tab.
+	a.saveTabLocked()
+	a.stopAIPassLocked()
+	a.stopNotesLocked()
+	text := a.source
+	a.mode = m
+	a.busy = false
+	a.notice = notice
+	a.errText = ""
+	if strings.TrimSpace(text) == "" {
+		// An empty source means there is no new request to replace the old
+		// card. Leaving the old answer on screen under a different tab makes
+		// it look as if the newly selected feature produced that answer.
+		a.clearTabLocked()
+		a.mu.Unlock()
+		if a.win != nil {
+			a.win.Update(func() {})
+		}
+		return
+	}
+	if st := a.tabStates[m]; st != nil && st.source == text && st.hasContent() {
+		a.restoreTabLocked(st)
+		a.mu.Unlock()
+		if a.win != nil {
+			a.win.Update(func() {})
+			a.fitHeight()
+		}
+		return
+	}
+	a.clearTabLocked()
+	a.mu.Unlock()
+	a.rerunCurrentMode(text)
 }
 
 func (a *app) openPopupAction(m popupMode, text string) {
@@ -411,6 +473,13 @@ func (a *app) openPopupAction(m popupMode, text string) {
 	a.popupH = initH
 
 	a.mu.Lock()
+	// Opening a new card supersedes every async result that belonged to the
+	// previous one, including the note extraction.
+	a.stopAIPassLocked()
+	a.stopNotesLocked()
+	// A new card has no tab history: results from the previous source must
+	// never be restored under the new text.
+	a.tabStates = nil
 	a.mode = m
 	a.inputText = ""
 	a.notice = ""
@@ -446,6 +515,7 @@ func (a *app) openPopupAction(m popupMode, text string) {
 	a.snipExpanded = false
 	a.notesExpanded = false
 	a.ocrText, a.ocrPath, a.ocrError = "", "", ""
+	a.ocrCompare, a.ocrExpanded = false, false
 	a.mu.Unlock()
 
 	win.SetSize(int(w), initH)
@@ -485,6 +555,11 @@ func (a *app) openPopupWithText(m popupMode, text string) {
 	a.popupH = initH
 
 	a.mu.Lock()
+	// A normal popup is a new card too: the previous AI pass and note request
+	// must not write into it after the user has selected another text.
+	a.stopAIPassLocked()
+	a.stopNotesLocked()
+	a.tabStates = nil
 	a.mode = m
 	a.inputText = ""
 	a.notice = ""
@@ -503,6 +578,7 @@ func (a *app) openPopupWithText(m popupMode, text string) {
 	a.isScreenshotMode, a.snipExpanded = false, false
 	a.snipBitmap = nil
 	a.ocrText, a.ocrPath, a.ocrError = "", "", ""
+	a.ocrCompare, a.ocrExpanded = false, false
 	// A normal popup starts unpinned, even right after a screenshot
 	// translation (which pins itself on purpose). Without this the pin
 	// survived into every later popup and OnBlur never closed them again.

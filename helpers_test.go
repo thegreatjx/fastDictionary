@@ -56,3 +56,46 @@ func TestCleanSelectionText(t *testing.T) {
 		})
 	}
 }
+
+func TestFlattenTranslation(t *testing.T) {
+	cases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "empty",
+			input:    "   \n\t  ",
+			expected: "",
+		},
+		{
+			name:     "chinese multiple paragraphs with empty lines",
+			input:    "等等，OpenAI居然真的在做这个？！\n\n\n他们把Codex的线束直接嵌入到Agents SDK里\n\n你无需自行构建和维护执行工具，可以直接在SDK中使用\nCodex",
+			expected: "等等，OpenAI居然真的在做这个？！他们把Codex的线束直接嵌入到Agents SDK里你无需自行构建和维护执行工具，可以直接在SDK中使用 Codex",
+		},
+		{
+			name:     "english multiple lines preserves word breaks",
+			input:    "First line of text.\n\nSecond line of   text\nwith a break.",
+			expected: "First line of text. Second line of text with a break.",
+		},
+		{
+			name:     "zero width chars stripped",
+			input:    "测试\u200B\uFEFF文本\n\n换行\u200C测试",
+			expected: "测试文本换行测试",
+		},
+		{
+			name:     "cjk with punctuation and latin mix",
+			input:    "还在Alpha阶段，\n\n但我真的很想看看他们会把这个玩法推进到\n什么程度",
+			expected: "还在Alpha阶段，但我真的很想看看他们会把这个玩法推进到什么程度",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := flattenTranslation(tc.input)
+			if got != tc.expected {
+				t.Errorf("got %q, want %q", got, tc.expected)
+			}
+		})
+	}
+}

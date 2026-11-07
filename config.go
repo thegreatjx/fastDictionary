@@ -5,7 +5,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/egoist/mygo"
 )
@@ -82,10 +84,14 @@ type Config struct {
 	HistoryEnabled bool    `json:"history_enabled"`
 	// ShowNotes is the "猜你想存" card: whether the popup offers to save the
 	// words an AI found in the selected sentence.
-	ShowNotes     bool                 `json:"show_notes"`
-	WindowOpacity float64              `json:"window_opacity"` // 0.5 to 1.0
-	AIMode        string               `json:"ai_mode"`        // "translate" | "grammar" | "dict" | "polish"
-	CustomActions []CustomActionConfig `json:"custom_actions"`
+	ShowNotes bool `json:"show_notes"`
+	// DismissedNoteWords remembers recommendations the user rejected with
+	// "不再推荐此词". It is a preference, not per-card state, and survives
+	// restarts like the rest of the config.
+	DismissedNoteWords []string             `json:"dismissed_note_words"`
+	WindowOpacity      float64              `json:"window_opacity"` // 0.5 to 1.0
+	AIMode             string               `json:"ai_mode"`        // "translate" | "grammar" | "dict" | "polish"
+	CustomActions      []CustomActionConfig `json:"custom_actions"`
 	// NotesMigrated marks a config file written after 猜你想存 was turned back
 	// on by default. Its absence is how a file that predates the change is
 	// recognised; without it, flipping the default would do nothing for
@@ -103,6 +109,22 @@ type Config struct {
 	// Onboarded records that the first run has happened, so the settings
 	// window is only opened automatically once.
 	Onboarded bool `json:"onboarded"`
+}
+
+// NoteWordDismissed reports whether the user asked the recommendation card to
+// stop suggesting this word. Matching is case-insensitive because the model
+// may return the same word with a different capitalisation.
+func (c Config) NoteWordDismissed(word string) bool {
+	word = strings.TrimSpace(word)
+	if word == "" {
+		return false
+	}
+	for _, item := range c.DismissedNoteWords {
+		if strings.EqualFold(strings.TrimSpace(item), word) {
+			return true
+		}
+	}
+	return false
 }
 
 // InitialAIMode reports which mode a selection popup should open in, given the
@@ -189,9 +211,13 @@ func newMemoryStore() *store {
 
 // store holds the live config plus its file path, guarded for concurrent use.
 type store struct {
-	mu   sync.RWMutex
-	cfg  Config
-	path string
+	mu     sync.RWMutex
+	saveMu sync.Mutex
+	cfg    Config
+	path   string
+	// lastSaveErr records the most recent persistence failure so settings can
+	// tell the user their change is only in memory. Guarded by mu.
+	lastSaveErr error
 	// notesMigrated records that load() applied the 猜你想存 default to a file
 	// that predated the marker, so the caller can persist the decision. Without
 	// the write-back the file keeps saying show_notes: false, and the migration
@@ -243,25 +269,100 @@ func newStore() *store {
 	return s
 }
 
-// Get returns a copy of the current config, safe to read from any goroutine.
+// cloneConfig returns a copy whose slices are independent of cfg. A plain
+// struct copy is not enough: CustomActions and SelectionBlocklist share their
+// backing arrays, so a caller that edits a returned config could mutate the
+// live store without holding its lock.
+func cloneConfig(cfg Config) Config {
+	clone := cfg
+	if cfg.SelectionBlocklist != nil {
+		clone.SelectionBlocklist = append([]string(nil), cfg.SelectionBlocklist...)
+	}
+	if cfg.DismissedNoteWords != nil {
+		clone.DismissedNoteWords = append([]string(nil), cfg.DismissedNoteWords...)
+	}
+	if cfg.CustomActions != nil {
+		clone.CustomActions = make([]CustomActionConfig, len(cfg.CustomActions))
+		for i, action := range cfg.CustomActions {
+			clone.CustomActions[i] = action
+			if action.OutputSchema != nil {
+				clone.CustomActions[i].OutputSchema = append([]string(nil), action.OutputSchema...)
+			}
+		}
+	}
+	return clone
+}
+
+// Get returns a deep copy of the current config, safe to read and mutate from
+// any goroutine without touching the store's live slices.
 func (s *store) Get() Config {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.cfg
+	return cloneConfig(s.cfg)
 }
 
-// Update mutates the config on a copy and persists it.
+// LastSaveError reports the most recent failure to persist the config. The
+// caller can use it to tell the user that a setting will be lost on restart.
+func (s *store) LastSaveError() error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.lastSaveErr
+}
+
+// RetrySave writes the current in-memory config again after a failed update.
+// The settings banner uses it instead of asking the user to change a value
+// twice just to trigger another save.
+func (s *store) RetrySave() error {
+	s.saveMu.Lock()
+	defer s.saveMu.Unlock()
+
+	s.mu.RLock()
+	cfg := cloneConfig(s.cfg)
+	path := s.path
+	s.mu.RUnlock()
+	var err error
+	if path != "" {
+		err = saveConfig(path, cfg)
+	}
+	s.mu.Lock()
+	s.lastSaveErr = err
+	s.mu.Unlock()
+	return err
+}
+
+// Path returns the config file path, or "" for the in-memory test store.
+func (s *store) Path() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.path
+}
+
+// Update mutates the config and persists it. saveMu serialises the whole
+// read-modify-write-and-save sequence; two concurrent settings changes used to
+// race in saveConfig's fixed temp path and one update could overwrite the
+// other's JSON on disk.
 func (s *store) Update(fn func(*Config)) Config {
+	s.saveMu.Lock()
+	defer s.saveMu.Unlock()
+
 	s.mu.Lock()
 	fn(&s.cfg)
-	cfg := s.cfg
+	cfg := cloneConfig(s.cfg)
 	path := s.path
+	s.lastSaveErr = nil
 	s.mu.Unlock()
+
+	var saveErr error
 	if path != "" {
-		if err := saveConfig(path, cfg); err != nil {
-			log.Printf("fastDictionary: config save failed: %v", err)
+		saveErr = saveConfig(path, cfg)
+		if saveErr != nil {
+			log.Printf("fastDictionary: config save failed: %v", saveErr)
 		}
 	}
+
+	s.mu.Lock()
+	s.lastSaveErr = saveErr
+	s.mu.Unlock()
 	return cfg
 }
 
@@ -361,18 +462,61 @@ func (s *store) load() bool {
 }
 
 func saveConfig(path string, cfg Config) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	// A unique temp name per save prevents two concurrent settings changes
+	// from writing into the same file and renaming a half-written mixture.
+	f, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	tmp := f.Name()
+	closed := false
+	cleanup := func() {
+		if !closed {
+			_ = f.Close()
+		}
+		_ = os.Remove(tmp)
+	}
+	if _, err := f.Write(data); err != nil {
+		cleanup()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		cleanup()
+		return err
+	}
+	if err := f.Chmod(0o644); err != nil {
+		cleanup()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		closed = true
+		_ = os.Remove(tmp)
+		return err
+	}
+	closed = true
+
+	// Windows sometimes denies the rename while the just-closed file is still
+	// held by an indexer or antivirus scanner. Retry briefly instead of losing
+	// the user's settings for a transient sharing violation.
+	var renameErr error
+	for attempt := 0; attempt < 6; attempt++ {
+		if renameErr = os.Rename(tmp, path); renameErr == nil {
+			return nil
+		}
+		if attempt < 5 {
+			time.Sleep(time.Duration(attempt+1) * 10 * time.Millisecond)
+		}
+	}
+	_ = os.Remove(tmp)
+	return renameErr
 }
 
 func DefaultCustomActions() []CustomActionConfig {

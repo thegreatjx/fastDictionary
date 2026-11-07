@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"strings"
 	"sync"
@@ -40,20 +42,56 @@ func (a *app) translate(text string) {
 // of a paragraph translated as one run-on line is harder to read than the image
 // was. CleanSelectionText folds newlines into spaces, so it cannot be used here.
 func (a *app) translateKeepingLines(text string) {
-	a.translateText(CleanOcrText(text))
+	a.translateTextWithReflow(CleanOcrText(text), true)
+}
+
+// stopAIPassLocked invalidates the AI pass in flight. The generation and the
+// cancel have to move together: cancelling alone leaves the old goroutine
+// running until its HTTP request returns, and its teardown would then write a
+// stale result over the newer request's card. The caller must hold a.mu.
+func (a *app) stopAIPassLocked() {
+	a.aiGen++
+	if a.aiCancel != nil {
+		a.aiCancel()
+		a.aiCancel = nil
+	}
+	// The old goroutine drops its result at the generation check, so it will
+	// not clear these itself. Leaving them set would pin the loading indicator
+	// (or the 精翻中 button) on the newer card forever.
+	a.aiBusy = false
+	a.aiRefining = false
+	a.aiRefineErr = ""
+}
+
+// stopNotesLocked invalidates and cancels the "猜你想存" request. Like an AI
+// pass, it may still be in its 20-second HTTP call when the user closes the
+// popup or starts another translation. Caller must hold a.mu.
+func (a *app) stopNotesLocked() {
+	a.notesGen++
+	if a.notesCancel != nil {
+		a.notesCancel()
+		a.notesCancel = nil
+	}
+	a.notesBusy = false
+	a.notes = nil
 }
 
 // translateText is the body of translate, with the caller's cleaning already
 // applied.
 func (a *app) translateText(text string) {
+	a.translateTextWithReflow(text, false)
+}
+
+// translateTextWithReflow is translateText with control over whether the
+// engine's line breaks are kept. OCR output carries the page's paragraphs, so
+// the screenshot path asks for reflow; ordinary selections stay on one line.
+func (a *app) translateTextWithReflow(text string, keepParagraphs bool) {
 	cfg := a.store.Get()
 	win := a.win
 
 	a.mu.Lock()
-	if a.aiCancel != nil {
-		a.aiCancel()
-		a.aiCancel = nil
-	}
+	a.stopAIPassLocked()
+	a.stopNotesLocked()
 	a.source, a.target, a.errText = text, "", ""
 	a.sourceExpanded = false
 	a.notesExpanded = false
@@ -70,6 +108,7 @@ func (a *app) translateText(text string) {
 	// answer land last and replace the newer text on screen.
 	a.translateGen++
 	gen := a.translateGen
+	notesGen := a.notesGen
 	a.mu.Unlock()
 	if win != nil {
 		win.Update(func() {})
@@ -114,7 +153,11 @@ func (a *app) translateText(text string) {
 		if r.Err != nil {
 			a.errText = r.Err.Error()
 		} else {
-			a.target = r.Text
+			if keepParagraphs {
+				a.target = reflowTranslation(r.Text)
+			} else {
+				a.target = flattenTranslation(r.Text)
+			}
 			a.engine, a.detected = r.Engine, r.Detected
 			a.dict, a.gdict = yd, gd
 		}
@@ -130,40 +173,98 @@ func (a *app) translateText(text string) {
 		if r.Err == nil && word && cfg.AutoPronounce != "off" {
 			a.play(text, cfg.AutoPronounce == "us")
 		}
-		// If it's a sentence, trigger Read-Frog "猜你想存" extraction in background
-		if cfg.ShowNotes && !word && len(text) > 20 {
-			a.extractNotes(text)
+		// If it's a long sentence, trigger Read-Frog "猜你想存" extraction in
+		// background. A single word or a short phrase is already the job of
+		// the dictionary card; recommending words from it only adds noise.
+		if cfg.ShowNotes && shouldExtractNotes(text) {
+			a.extractNotesForGen(notesGen, text)
 		}
 	}()
 }
 
 // extractNotes runs the opt-in "猜你想存" note extraction. Hiding the
 // recommendation must also stop its otherwise invisible AI request.
+//
+// This one-argument form is kept for callers that are already looking at the
+// current card; it captures the current generation before starting.
 func (a *app) extractNotes(text string) {
+	a.mu.Lock()
+	gen := a.notesGen
+	a.mu.Unlock()
+	a.extractNotesForGen(gen, text)
+}
+
+// extractNotesForGen starts a note extraction only if gen still identifies the
+// current card. The request can take 20 seconds, so both its start and its
+// teardown must be checked: a new translation or popup may have replaced the
+// card long before the old answer arrives.
+// shouldExtractNotes decides whether a text is long enough to deserve word
+// recommendations. Counting characters alone treated a single long English
+// word as a sentence; a Chinese paragraph of eight characters is meaningful
+// while four English words are the equivalent minimum.
+func shouldExtractNotes(text string) bool {
+	text = strings.TrimSpace(text)
+	if text == "" || isWord(text) {
+		return false
+	}
+	latinWords, cjk := 0, 0
+	for _, r := range text {
+		if isCJK(r) {
+			cjk++
+		}
+	}
+	for _, field := range strings.Fields(text) {
+		for _, r := range field {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				latinWords++
+				break
+			}
+		}
+	}
+	return latinWords >= 4 || cjk >= 8
+}
+
+func (a *app) extractNotesForGen(gen uint64, text string) {
 	cfg := a.store.Get()
-	if !cfg.AIEnabled || !cfg.ShowNotes || strings.TrimSpace(text) == "" {
+	if !cfg.AIEnabled || !cfg.ShowNotes || !shouldExtractNotes(text) {
+		a.mu.Lock()
+		if gen == a.notesGen {
+			a.stopNotesLocked()
+		}
+		a.mu.Unlock()
 		return
 	}
 
 	a.mu.Lock()
+	if gen != a.notesGen {
+		a.mu.Unlock()
+		return
+	}
+	// Invalidate the previous extraction before this one becomes current.
+	// stopNotesLocked increments the generation again, so capture the new one
+	// for the goroutine's teardown check.
+	a.stopNotesLocked()
+	gen = a.notesGen
 	a.notesBusy = true
 	a.notes = nil
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	a.notesCancel = cancel
 	a.mu.Unlock()
 	if a.win != nil {
 		a.win.Update(func() {})
 	}
 
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 
 		systemPrompt := "你是一个面向语言学习者的专业词典与背单词助手。\n" +
-			"请从用户选中的英文文本或句子中，分析并挑选出 1 到 2 个最值得学习者记忆的核心生词。\n" +
+			"请从用户选中的文本中，分析并挑选出 3 到 5 个最值得学习者记忆的核心生词。\n" +
 			"必须为每个生词输出完整的词典数据（包含标准IPA音标、词性、精准释义、CEFR难度等级如A2/B1/B2/C1、简练词源记忆法）。\n" +
 			"严格以紧凑的 JSON 数组格式输出，不要有任何 Markdown 标记或多余文字。\n" +
 			"示例格式：[{\"word\":\"ambitious\",\"phonetic\":\"/æmˈbɪʃ.əs/\",\"pos\":\"adj.\",\"meaning\":\"有雄心的，抱负不凡的；宏大的\",\"difficulty\":\"B2\",\"memory_tips\":\"词源：ambi-（周围、环顾）+ -it-（走）+ -ious（形容词）→ 四处奔走谋求发展 → 雄心勃勃的\"}]"
 
 		raw, err := StreamMagpie(ctx, cfg.AIURL, cfg.AIModel, systemPrompt, text, ResolveEffort(cfg.AIEffort, cfg.AIModel), nil)
+		var items []NoteItem
 		if err == nil && raw != "" {
 			cleaned := strings.TrimSpace(raw)
 			if strings.HasPrefix(cleaned, "```json") {
@@ -174,25 +275,81 @@ func (a *app) extractNotes(text string) {
 			}
 			cleaned = strings.TrimSuffix(cleaned, "```")
 			cleaned = strings.TrimSpace(cleaned)
-
-			var items []NoteItem
-			if err := json.Unmarshal([]byte(cleaned), &items); err == nil && len(items) > 0 {
-				for i := range items {
-					items[i].Checked = true
-				}
-				a.mu.Lock()
-				a.notes = items
-				a.mu.Unlock()
+			if err := json.Unmarshal([]byte(cleaned), &items); err != nil {
+				items = nil
 			}
 		}
 
+		dismissed := cfg.DismissedNoteWords
+		kept := items[:0]
+		for _, item := range items {
+			if strings.TrimSpace(item.Word) == "" {
+				continue
+			}
+			skip := false
+			for _, word := range dismissed {
+				if strings.EqualFold(strings.TrimSpace(word), strings.TrimSpace(item.Word)) {
+					skip = true
+					break
+				}
+			}
+			if !skip {
+				item.Checked = true
+				kept = append(kept, item)
+			}
+		}
+		items = kept
+		if len(items) > 5 {
+			items = items[:5]
+		}
+
 		a.mu.Lock()
+		if gen != a.notesGen {
+			// A newer popup or translation owns the note fields now.
+			a.mu.Unlock()
+			return
+		}
+		if len(items) > 0 {
+			a.notes = items
+		}
 		a.notesBusy = false
+		a.notesCancel = nil
 		a.mu.Unlock()
 		if a.win != nil {
 			a.win.Update(func() {})
 		}
 	}()
+}
+
+// dismissNoteWord remembers that the user never wants this recommendation
+// again, both for the current card and for future popups. It is a preference,
+// so it goes through the config store rather than a transient app field.
+func (a *app) dismissNoteWord(word string) {
+	word = strings.TrimSpace(word)
+	if word == "" {
+		return
+	}
+	a.store.Update(func(c *Config) {
+		for _, item := range c.DismissedNoteWords {
+			if strings.EqualFold(strings.TrimSpace(item), word) {
+				return
+			}
+		}
+		c.DismissedNoteWords = append(c.DismissedNoteWords, word)
+	})
+	a.mu.Lock()
+	kept := a.notes[:0]
+	for _, item := range a.notes {
+		if !strings.EqualFold(strings.TrimSpace(item.Word), word) {
+			kept = append(kept, item)
+		}
+	}
+	a.notes = kept
+	a.mu.Unlock()
+	if a.win != nil {
+		a.win.Update(func() {})
+	}
+	a.fitHeight()
 }
 
 func (a *app) saveDictToVocab(res *DictionaryResult) {
@@ -280,7 +437,7 @@ func (a *app) saveWritingToVocab(res *ImproveWritingResult) {
 // translation arrives in well under a second and answers the question the user
 // actually asked, so it is fetched in parallel and dropped into the same field
 // the model will later overwrite with its own translation.
-func (a *app) prefillActionTranslation(text, targetLang string) {
+func (a *app) prefillActionTranslation(gen uint64, text, targetLang string) {
 	cfg := a.store.Get()
 	from := detectLocal(text)
 	to := targetLang
@@ -295,6 +452,12 @@ func (a *app) prefillActionTranslation(text, targetLang string) {
 			return
 		}
 		a.mu.Lock()
+		// A superseded pass must not write at all: its machine prefill would
+		// land in the middle of the newer request's card.
+		if gen != a.aiGen {
+			a.mu.Unlock()
+			return
+		}
 		// Only fill the slot if the model has not already answered it: a fast
 		// model can finish before the engines do, and overwriting its
 		// translation with the machine one would be a downgrade.
@@ -302,7 +465,7 @@ func (a *app) prefillActionTranslation(text, targetLang string) {
 			a.grammarResult = &SentenceAnalysisResult{}
 		}
 		if a.grammarResult.Translation == "" {
-			a.grammarResult.Translation = r.Text
+			a.grammarResult.Translation = flattenTranslation(r.Text)
 			a.grammarResultPrefill = true
 		}
 		win := a.win
@@ -321,8 +484,87 @@ const aiResultCacheLimit = 12
 // aiResultCacheKey identifies one AI pass: same action, same model, same text,
 // same target language. The target language is part of the action's prompt, so
 // leaving it out would serve a Chinese card after the user switched to 日本語.
-func aiResultCacheKey(actionID, model, targetLang, text string) string {
-	return actionID + "\x00" + model + "\x00" + targetLang + "\x00" + text
+//
+// variant is optional and appended only when non-empty. It keeps the four-
+// argument form used by older tests and callers working, while runAction passes
+// the action/URL/effort fingerprint that changes the answer.
+func aiResultCacheKey(actionID, model, targetLang, text string, variant ...string) string {
+	key := actionID + "\x00" + model + "\x00" + targetLang + "\x00" + text
+	for _, v := range variant {
+		if v != "" {
+			key += "\x00" + v
+		}
+	}
+	return key
+}
+
+// defaultActionByID returns a copy of the shipped action with this ID.
+func defaultActionByID(id string) *CustomActionConfig {
+	for _, a := range DefaultCustomActions() {
+		if a.ID == id {
+			copy := a
+			return &copy
+		}
+	}
+	return nil
+}
+
+func sameStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// sameActionContent reports whether an action still produces the same kind of
+// answer as its shipped default. Name, icon and enabled state do not affect the
+// model output, so they are deliberately ignored here.
+func sameActionContent(act, def CustomActionConfig) bool {
+	return act.ID == def.ID &&
+		act.ProviderID == def.ProviderID &&
+		act.Model == def.Model &&
+		act.SystemPrompt == def.SystemPrompt &&
+		act.Prompt == def.Prompt &&
+		sameStrings(act.OutputSchema, def.OutputSchema)
+}
+
+// actionFingerprint identifies every setting that can change an AI answer but
+// is not already part of the cache key: the action's prompt and model, plus the
+// gateway URL and reasoning effort. Without it, editing a prompt or switching
+// AIURL still served the old cached card.
+func actionFingerprint(act *CustomActionConfig, cfg Config) string {
+	if act == nil {
+		return ""
+	}
+	h := fnv.New64a()
+	fmt.Fprintf(h, "%q\x00%q\x00%q\x00%q\x00%q\x00%q\x00%q",
+		act.ID, act.ProviderID, act.Model, act.SystemPrompt, act.Prompt, cfg.AIURL, cfg.AIEffort)
+	for _, field := range act.OutputSchema {
+		fmt.Fprintf(h, "\x00%q", field)
+	}
+	return fmt.Sprintf("%x", h.Sum64())
+}
+
+// actionCacheVariant returns the extra cache-key part for an action. The
+// shipped default action with the default gateway and effort returns "", which
+// keeps the old cache keys (and its tests) valid. Any change that can alter the
+// model answer returns a fingerprint instead.
+func actionCacheVariant(act *CustomActionConfig, cfg Config) string {
+	if act == nil {
+		return ""
+	}
+	if def := defaultActionByID(act.ID); def != nil &&
+		sameActionContent(*act, *def) &&
+		cfg.AIURL == DefaultConfig().AIURL &&
+		cfg.AIEffort == DefaultConfig().AIEffort {
+		return ""
+	}
+	return actionFingerprint(act, cfg)
 }
 
 // cachedAIResult returns the stored raw answer for key, or "". Caller holds a.mu.
@@ -353,6 +595,25 @@ func (a *app) storeAIResult(key, raw string) {
 	}
 }
 
+// aiCacheCount reports how many temporary AI answers are resident. The cache is
+// deliberately in memory only; a restart starts clean.
+func (a *app) aiCacheCount() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.aiResultCache)
+}
+
+// clearAICache drops every temporary AI answer. It is exposed in settings so a
+// user who edited a prompt or model can force a fresh request without
+// restarting the whole application.
+func (a *app) clearAICache() {
+	a.mu.Lock()
+	a.aiResultCache = nil
+	a.aiResultOrder = nil
+	a.skipAIResultCache = false
+	a.mu.Unlock()
+}
+
 // applyParsedAction fills the result field that belongs to actionID and reports
 // whether a card was produced. It is the one place that maps a raw answer to a
 // card, so the streaming path and the cache-hit path cannot drift apart.
@@ -372,6 +633,8 @@ func (a *app) applyParsedAction(actionID, raw string) bool {
 		// otherwise erase a perfectly good translation.
 		if parsed.Translation == "" && a.grammarResultPrefill && a.grammarResult != nil {
 			parsed.Translation = a.grammarResult.Translation
+		} else if parsed.Translation != "" {
+			parsed.Translation = flattenTranslation(parsed.Translation)
 		}
 		a.grammarResult = parsed
 		a.grammarResultPrefill = false
@@ -398,7 +661,7 @@ func (a *app) runAction(actionID string, text string) {
 	if model == "" {
 		model = cfg.AIModel
 	}
-	cacheKey := aiResultCacheKey(actionID, model, cfg.TargetLang, text)
+	cacheKey := aiResultCacheKey(actionID, model, cfg.TargetLang, text, actionCacheVariant(act, cfg))
 
 	// Looking at the same text twice must show the same card. Re-running the
 	// pass is not just slow (8-13s for a sentence analysis): the model is
@@ -407,6 +670,11 @@ func (a *app) runAction(actionID string, text string) {
 	// re-ran a pass the user had already waited for. The footer's 重新翻译
 	// button sets skipAIResultCache, because there "try again" is the point.
 	a.mu.Lock()
+	// Starting a pass invalidates the one in flight, cached or not. Cancel
+	// alone is not enough: the old goroutine still runs until its request
+	// returns, and would otherwise write its stale card over this one.
+	a.stopAIPassLocked()
+	gen := a.aiGen
 	useCache := !a.skipAIResultCache
 	a.skipAIResultCache = false
 	raw := ""
@@ -417,6 +685,10 @@ func (a *app) runAction(actionID string, text string) {
 
 	if raw != "" {
 		a.mu.Lock()
+		if gen != a.aiGen {
+			a.mu.Unlock()
+			return
+		}
 		a.aiBusy = false
 		a.aiText = ""
 		a.errText = ""
@@ -435,14 +707,18 @@ func (a *app) runAction(actionID string, text string) {
 
 	win := a.win
 	a.mu.Lock()
-	if a.aiCancel != nil {
-		a.aiCancel()
+	if gen != a.aiGen {
+		// Another pass started while we were reading the cache. It owns the
+		// shared fields now; starting ours would reset its card.
+		a.mu.Unlock()
+		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	a.aiCancel = cancel
 	a.activeActionID = actionID
 	a.aiText = ""
 	a.aiBusy = true
+	a.errText = ""
 	a.actionSavedMsg = ""
 	a.copiedMsg = ""
 	// A new pass produces a new entry, so the button stops claiming the
@@ -463,6 +739,7 @@ func (a *app) runAction(actionID string, text string) {
 	}
 
 	go func() {
+		defer cancel()
 		targetLangName := langLabels[cfg.TargetLang]
 		if targetLangName == "" {
 			targetLangName = "简体中文"
@@ -475,7 +752,7 @@ func (a *app) runAction(actionID string, text string) {
 		// that order is what makes the popup feel immediate instead of dead
 		// while the model works.
 		if actionID == "default-sentence-analysis" {
-			a.prefillActionTranslation(text, cfg.TargetLang)
+			a.prefillActionTranslation(gen, text, cfg.TargetLang)
 		}
 
 		// The selection fills {{selection}}. {{paragraphs}} is left empty on
@@ -495,6 +772,12 @@ func (a *app) runAction(actionID string, text string) {
 		var lastPaint time.Time
 		_, err := StreamMagpie(ctx, cfg.AIURL, model, systemPrompt, userPrompt, ResolveEffort(cfg.AIEffort, model), func(chunk string) {
 			a.mu.Lock()
+			if gen != a.aiGen {
+				// A newer pass reset a.aiText; appending here would splice two
+				// answers into one card.
+				a.mu.Unlock()
+				return
+			}
 			a.aiText += chunk
 			due := time.Since(lastPaint) >= 40*time.Millisecond
 			if due {
@@ -507,11 +790,19 @@ func (a *app) runAction(actionID string, text string) {
 		})
 
 		a.mu.Lock()
+		if gen != a.aiGen {
+			// A newer pass superseded this one while it was streaming. Its
+			// context was cancelled, so the error below belongs to us, not to
+			// the new card; writing any of it would corrupt that card.
+			a.mu.Unlock()
+			log.Printf("fastDictionary: dropped stale AI result for %s", actionID)
+			return
+		}
 		a.aiBusy = false
 		if err != nil {
 			// Keep whatever arrived, but say it is incomplete: a truncated
 			// answer used to render as an empty card that looked finished.
-			a.errText = err.Error()
+			a.errText = friendlyAIError(err)
 		}
 		if a.aiText != "" {
 			// Only remember answers that parsed into a card: caching a
@@ -557,9 +848,8 @@ func (a *app) refineWithAI() {
 
 	a.mu.Lock()
 	source, targetLang := a.source, cfg.TargetLang
-	if a.aiCancel != nil {
-		a.aiCancel()
-	}
+	a.stopAIPassLocked()
+	gen := a.aiGen
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	a.aiCancel = cancel
 	a.aiRefining = true
@@ -571,18 +861,33 @@ func (a *app) refineWithAI() {
 	}
 
 	go func() {
+		defer cancel()
 		sys := "You are a translator. Translate the text into " + langPromptName(targetLang) +
 			". Keep terminology accurate, keep the original's tone and structure, and output only the translation with no explanation."
 		started := time.Now()
 		out, err := StreamMagpie(ctx, cfg.AIURL, cfg.AIModel, sys, source, ResolveEffort(cfg.AIEffort, cfg.AIModel), nil)
+		if err != nil && isTransientAIError(err) {
+			// A short network hiccup or a 429 should not cost the user the
+			// machine translation they already have. One short retry is enough;
+			// repeating it would make a genuinely broken gateway feel frozen.
+			time.Sleep(350 * time.Millisecond)
+			out, err = StreamMagpie(ctx, cfg.AIURL, cfg.AIModel, sys, source, ResolveEffort(cfg.AIEffort, cfg.AIModel), nil)
+		}
 
 		a.mu.Lock()
+		if gen != a.aiGen {
+			// A newer pass owns the translation now. Writing our (cancelled)
+			// answer here would replace its target and label it "AI 精翻".
+			a.mu.Unlock()
+			log.Printf("fastDictionary: dropped stale AI refinement")
+			return
+		}
 		a.aiRefining = false
 		a.aiCancel = nil
 		if err != nil {
-			a.aiRefineErr = err.Error()
+			a.aiRefineErr = friendlyAIError(err)
 		} else if text := strings.TrimSpace(out); text != "" {
-			a.target = text
+			a.target = flattenTranslation(text)
 			a.engine = "AI 精翻"
 			a.aiRefineErr = ""
 			// The caption under the translation pairs the engine with the
@@ -598,6 +903,49 @@ func (a *app) refineWithAI() {
 			a.fitHeight()
 		}
 	}()
+}
+
+// isTransientAIError lists failures where one short retry is worth trying.
+// Permanent configuration errors (bad key, unknown model, bad URL) are left
+// alone so the user gets the right instruction immediately.
+func isTransientAIError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return true
+	}
+	text := strings.ToLower(err.Error())
+	for _, needle := range []string{"timeout", "timed out", "temporary", "connection reset", "connection refused", "eof", "429", "too many requests", "502", "503", "504", "bad gateway", "service unavailable"} {
+		if strings.Contains(text, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+// friendlyAIError turns transport/API status strings into the action the user
+// can take. The raw error is intentionally not shown as the primary line: it
+// is useful in the log, not in a small popup.
+func friendlyAIError(err error) string {
+	if err == nil {
+		return ""
+	}
+	text := strings.ToLower(err.Error())
+	switch {
+	case errors.Is(err, context.DeadlineExceeded) || strings.Contains(text, "timeout") || strings.Contains(text, "timed out"):
+		return "网络超时，请稍后重试。"
+	case strings.Contains(text, "401") || strings.Contains(text, "403") || strings.Contains(text, "api key") || strings.Contains(text, "unauthorized"):
+		return "API Key 无效或未配置，请检查 AI 网关设置。"
+	case strings.Contains(text, "429") || strings.Contains(text, "too many requests") || strings.Contains(text, "rate limit"):
+		return "请求过于频繁（429），请稍后再试。"
+	case strings.Contains(text, "404") || strings.Contains(text, "model") && strings.Contains(text, "not found"):
+		return "模型不存在或不可用，请检查模型设置。"
+	case strings.Contains(text, "connection refused") || strings.Contains(text, "no such host") || strings.Contains(text, "dial tcp"):
+		return "无法连接 AI 网关，请检查网关地址是否已启动。"
+	default:
+		return err.Error()
+	}
 }
 
 // langPromptName gives the model a language name it will recognise, rather

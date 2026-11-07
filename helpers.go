@@ -167,6 +167,68 @@ func removeZeroWidthChars(s string) string {
 	return b.String()
 }
 
+// flattenTranslation folds the line breaks a translation engine copies from
+// the source into one continuous paragraph. The popup wraps text to its own
+// width, so keeping those empty lines only leaves blank bands between
+// sentences and makes the card far taller than the text needs.
+func flattenTranslation(s string) string {
+	words := strings.Fields(removeZeroWidthChars(s))
+	if len(words) == 0 {
+		return ""
+	}
+	return removeCJKSeparation(strings.Join(words, " "))
+}
+
+// reflowTranslation is flattenTranslation for OCR results: blank lines still
+// separate paragraphs, but ordinary line breaks inside a paragraph become
+// spaces so the card can wrap to the popup width. Indented blocks (code,
+// lists) keep their own line breaks because folding them would destroy their
+// meaning.
+func reflowTranslation(s string) string {
+	if s == "" {
+		return ""
+	}
+	s = removeZeroWidthChars(s)
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+
+	var blocks []string
+	var paragraph []string
+	flush := func() {
+		if len(paragraph) == 0 {
+			return
+		}
+		preformatted := false
+		for _, line := range paragraph {
+			if strings.HasPrefix(line, "\t") || strings.HasPrefix(line, "    ") {
+				preformatted = true
+				break
+			}
+		}
+		if preformatted {
+			blocks = append(blocks, strings.Join(paragraph, "\n"))
+		} else {
+			joined := strings.Join(paragraph, " ")
+			blocks = append(blocks, removeCJKSeparation(strings.Join(strings.Fields(joined), " ")))
+		}
+		paragraph = nil
+	}
+
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimRight(line, " \t")
+		if strings.TrimSpace(line) == "" {
+			flush()
+			if len(blocks) > 0 && blocks[len(blocks)-1] != "" {
+				blocks = append(blocks, "")
+			}
+			continue
+		}
+		paragraph = append(paragraph, line)
+	}
+	flush()
+	return strings.Trim(strings.Join(blocks, "\n"), "\n")
+}
+
 // TruncateEllipsis limits text to maxChars runes, appending "…" if truncated.
 func TruncateEllipsis(s string, maxChars int) string {
 	r := []rune(s)

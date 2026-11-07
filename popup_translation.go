@@ -132,121 +132,141 @@ func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s
 		})
 	}
 	if s.target != "" {
-		ui.Column(c).FillWidth().Gap(8).Children(func() {
-			// The result carries the strongest type on the surface. A word
-			// gets a larger, heavier face than a sentence: it is a headword,
-			// not prose.
-			fontSize := float32(15)
-			fontWeight := 400
-			lineHeight := float32(1.55)
-			if s.isWord {
-				fontSize = 17
-				fontWeight = 600
-				lineHeight = 1.4
+		if s.isScreenshotMode && s.ocrCompare {
+			a.renderOcrParagraphPairs(c, t, s)
+		} else {
+			if s.isScreenshotMode && strings.Contains(s.target, "\n") {
+				if ui.Button(c, "段落对照").Height(24).Padding(1, 6).FontSize(10).Clicked() {
+					a.mu.Lock()
+					a.ocrCompare = true
+					a.mu.Unlock()
+					a.fitHeight()
+				}
 			}
-			ui.Text(c, s.target).FontSize(fontSize).FontWeight(fontWeight).
-				TextColor(t.Text).Wrap().LineHeight(lineHeight)
-			ui.Row(c).FillWidth().Gap(2).AlignItems(ui.Center).Children(func() {
-				copyTip := "复制译文"
-				if s.copiedMsg != "" {
-					copyTip = "译文已复制"
+			ui.Column(c).FillWidth().Gap(8).Children(func() {
+				// The result carries the strongest type on the surface. A word
+				// gets a larger, heavier face than a sentence: it is a headword,
+				// not prose.
+				fontSize := float32(15)
+				fontWeight := 400
+				lineHeight := float32(1.55)
+				if s.isWord {
+					fontSize = 17
+					fontWeight = 600
+					lineHeight = 1.4
 				}
-				if renderIconButton(c, iconCopy, copyTip, 28, 14, false).Clicked() {
-					a.copyToClipboard(s.target)
-				}
-				// Pronunciation: for Chinese users, always pronounce the English/foreign language (never recite Chinese translation)
-				spText, spLang, spTip := primarySpeechTarget(s.source, s.target)
-				if spText != "" {
-					if renderIconButton(c, iconSpeak, spTip, 28, 14, false).Clicked() {
-						PlaySpeechLang(spText, spLang, false)
+				ui.Text(c, s.target).FontSize(fontSize).FontWeight(fontWeight).
+					TextColor(t.Text).Wrap().LineHeight(lineHeight)
+				ui.Row(c).FillWidth().Gap(2).AlignItems(ui.Center).Children(func() {
+					copyTip := "复制译文"
+					if s.copiedMsg != "" {
+						copyTip = "译文已复制"
 					}
-				}
-				if s.source != "" && !s.isWord && !s.isScreenshotMode {
-					// AI refine: a second, slower answer for when the machine one
-					// reads wrong. It replaces the translation in place, so the
-					// button shows the state rather than opening a second view.
-					tip := "AI 精翻（较慢，术语与长句更准）"
-					if s.aiRefining {
-						tip = "AI 精翻中…"
-					} else if s.engine == "AI 精翻" {
-						tip = "已是 AI 精翻 · 点击重新生成"
+					if renderIconButton(c, iconCopy, copyTip, 28, 14, false).Clicked() {
+						a.copyToClipboard(s.target)
 					}
-					btn := ui.Button(c, "").Tooltip(tip).Size(28, 28).Padding(0, 0).Radius(6).Center()
-					btn.Children(func() {
-						col := t.TextMuted
-						if s.engine == "AI 精翻" {
-							col = t.Accent
+					// Pronunciation: for Chinese users, always pronounce the English/foreign language (never recite Chinese translation)
+					spText, spLang, spTip := primarySpeechTarget(s.source, s.target)
+					if spText != "" {
+						if renderIconButton(c, iconSpeak, spTip, 28, 14, false).Clicked() {
+							PlaySpeechLang(spText, spLang, false)
 						}
-						ic := ui.Icon(c, iconSparkles).Size(15, 15).TextColor(col)
+					}
+					if s.source != "" && !s.isWord && !s.isScreenshotMode {
+						// AI refine: a second, slower answer for when the machine one
+						// reads wrong. It replaces the translation in place, so the
+						// button shows the state rather than opening a second view.
+						tip := "AI 精翻（较慢，术语与长句更准）"
 						if s.aiRefining {
-							ic.Rotate(ic.Loop("spin", time.Second, ui.Linear) * 360)
+							tip = "AI 精翻中…"
+						} else if s.engine == "AI 精翻" {
+							tip = "已是 AI 精翻 · 点击重新生成"
+						}
+						btn := ui.Button(c, "").Tooltip(tip).Size(28, 28).Padding(0, 0).Radius(6).Center()
+						btn.Children(func() {
+							col := t.TextMuted
+							if s.engine == "AI 精翻" {
+								col = t.Accent
+							}
+							ic := ui.Icon(c, iconSparkles).Size(15, 15).TextColor(col)
+							if s.aiRefining {
+								ic.Rotate(ic.Loop("spin", time.Second, ui.Linear) * 360)
+							}
+						})
+						if btn.Clicked() && !s.aiRefining {
+							a.refineWithAI()
+						}
+						if s.aiRefineErr != "" {
+							ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+								ui.Text(c, "精翻失败："+s.aiRefineErr).FontSize(10).TextColor(t.Danger).SingleLine()
+								if ui.Button(c, "重试").Height(20).Padding(0, 6).FontSize(10).Radius(4).Clicked() {
+									a.refineWithAI()
+								}
+								if ui.Button(c, "打开 AI 设置").Height(20).Padding(0, 6).FontSize(10).Radius(4).Clicked() {
+									a.openAISettings()
+								}
+							})
+						}
+					}
+
+					// The spacer pushes engine caption and notes controls to the right.
+					ui.Spacer(c).Grow(1)
+
+					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+						if cfg.ShowEngineTag && s.engine != "" {
+							ui.Text(c, translationEngineCaption(s, cfg.TargetLang)).FontSize(10).
+								TextColor(t.TextMuted).SingleLine().Opacity(0.85)
+						}
+
+						// 猜你想存：靠右展示。AI提取时显示原生 Spinner 圈，提取就绪后显示带文字的卡片展开/收起按钮
+						if cfg.ShowNotes && shouldExtractNotes(s.source) {
+							if s.notesBusy && len(s.notes) == 0 {
+								ui.Row(c).Gap(4).AlignItems(ui.Center).Padding(0, 4).Children(func() {
+									ui.Spinner(c).Size(12, 12)
+									ui.Text(c, "发现生词中…").FontSize(11).TextColor(t.TextMuted)
+								})
+							} else if len(s.notes) > 0 {
+								btnText := fmt.Sprintf("猜你想存 · %d", len(s.notes))
+								tip := "展开生词推荐"
+								if s.notesExpanded {
+									btnText = fmt.Sprintf("收起生词 · %d", len(s.notes))
+									tip = "收起生词推荐"
+								}
+								btnNotes := ui.Button(c, "").Tooltip(tip).Height(24).Padding(0, 8).Radius(6).Center()
+								bg := t.SurfaceHover
+								borderCol := t.Border
+								if s.notesExpanded {
+									bg = withAlpha(t.Accent, 0.12)
+									borderCol = withAlpha(t.Accent, 0.3)
+								}
+								if btnNotes.Hovered() {
+									bg = withAlpha(t.Accent, 0.2)
+								}
+								btnNotes.Background(bg).Border(1, borderCol)
+								btnNotes.Children(func() {
+									ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+										ui.Icon(c, iconBookmark).Size(12, 12).TextColor(t.Accent)
+										ui.Text(c, btnText).FontSize(11).FontWeight(600).TextColor(t.Accent)
+									})
+								})
+								if btnNotes.Clicked() {
+									a.mu.Lock()
+									a.notesExpanded = !a.notesExpanded
+									a.mu.Unlock()
+									a.fitHeight()
+								}
+							}
 						}
 					})
-					if btn.Clicked() && !s.aiRefining {
-						a.refineWithAI()
-					}
-					if s.aiRefineErr != "" {
-						ui.Text(c, "精翻失败："+s.aiRefineErr).FontSize(10).TextColor(t.Danger).SingleLine()
-					}
-				}
-
-				// The spacer pushes engine caption and notes controls to the right.
-				ui.Spacer(c).Grow(1)
-
-				ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-					if cfg.ShowEngineTag && s.engine != "" {
-						ui.Text(c, translationEngineCaption(s, cfg.TargetLang)).FontSize(10).
-							TextColor(t.TextMuted).SingleLine().Opacity(0.85)
-					}
-
-					// 猜你想存：靠右展示。AI提取时显示原生 Spinner 圈，提取就绪后显示带文字的卡片展开/收起按钮
-					if cfg.ShowNotes && len(s.source) > 20 && !s.isWord && !s.isScreenshotMode {
-						if s.notesBusy && len(s.notes) == 0 {
-							ui.Row(c).Gap(4).AlignItems(ui.Center).Padding(0, 4).Children(func() {
-								ui.Spinner(c).Size(12, 12)
-								ui.Text(c, "发现生词中…").FontSize(11).TextColor(t.TextMuted)
-							})
-						} else if len(s.notes) > 0 {
-							btnText := fmt.Sprintf("猜你想存 · %d", len(s.notes))
-							tip := "展开生词推荐"
-							if s.notesExpanded {
-								btnText = fmt.Sprintf("收起生词 · %d", len(s.notes))
-								tip = "收起生词推荐"
-							}
-							btnNotes := ui.Button(c, "").Tooltip(tip).Height(24).Padding(0, 8).Radius(6).Center()
-							bg := t.SurfaceHover
-							borderCol := t.Border
-							if s.notesExpanded {
-								bg = withAlpha(t.Accent, 0.12)
-								borderCol = withAlpha(t.Accent, 0.3)
-							}
-							if btnNotes.Hovered() {
-								bg = withAlpha(t.Accent, 0.2)
-							}
-							btnNotes.Background(bg).Border(1, borderCol)
-							btnNotes.Children(func() {
-								ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-									ui.Icon(c, iconBookmark).Size(12, 12).TextColor(t.Accent)
-									ui.Text(c, btnText).FontSize(11).FontWeight(600).TextColor(t.Accent)
-								})
-							})
-							if btnNotes.Clicked() {
-								a.mu.Lock()
-								a.notesExpanded = !a.notesExpanded
-								a.mu.Unlock()
-								a.fitHeight()
-							}
-						}
-					}
 				})
+				if s.copiedMsg != "" {
+					ui.Text(c, s.copiedMsg).FontSize(11).TextColor(t.TextMuted).Wrap()
+				}
+				if s.dict != nil || s.gdict != nil {
+					dictBlock(c, t, s, a)
+				}
 			})
-			if s.copiedMsg != "" {
-				ui.Text(c, s.copiedMsg).FontSize(11).TextColor(t.TextMuted).Wrap()
-			}
-			if s.dict != nil || s.gdict != nil {
-				dictBlock(c, t, s, a)
-			}
-		})
+		}
 	}
 	if s.actionSavedMsg != "" {
 		ui.Text(c, s.actionSavedMsg).FontSize(11).TextColor(t.Accent).Wrap()

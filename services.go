@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -403,6 +404,28 @@ const racePreferred = "微软"
 // raceGrace bounds how long a faster answer waits for the preferred engine.
 const raceGrace = 350 * time.Millisecond
 
+// shouldRecordBreaker says whether one engine attempt should update its
+// breaker. A success must always be recorded: without it, an engine that
+// recovers keeps its old failure count, and a single later failure can open
+// the breaker. A cancellation caused by the race ending is not the engine's
+// failure, but a cancellation/timeout from the engine's own request is.
+func shouldRecordBreaker(ctx context.Context, err error) bool {
+	if err == nil {
+		return true
+	}
+	// A canceled request is the race stopping the loser, not an engine
+	// failure, even if the request reports context.Canceled directly.
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+	// DeadlineExceeded can be a real engine timeout; only skip it when the
+	// race context itself was canceled or hit its deadline.
+	if errors.Is(err, context.DeadlineExceeded) {
+		return ctx.Err() == nil
+	}
+	return true
+}
+
 // TranslateRace asks every usable engine at once and returns the best answer
 // that arrives inside the grace window. Every engine here is keyless: the app
 // asks for nothing but a selection, and there is no credential to configure.
@@ -511,7 +534,15 @@ func TranslateRace(ctx context.Context, text, from, to, mode string) raceResult 
 			// at once and stops reading the channel, so a loser's failure was
 			// never seen and its breaker never opened — the engine stayed in
 			// the race to fail again on the next selection.
-			breakers.record(engineKey(c.name), err)
+			//
+			// But a loser whose context we cancelled is not a failed engine:
+			// cancel() at the winner makes its in-flight request return
+			// context.Canceled. Counting that as a failure opened the breaker
+			// for a healthy slow engine on every single race. Successes are
+			// still recorded, so a recovered engine can reset its count.
+			if shouldRecordBreaker(ctx2, err) {
+				breakers.record(engineKey(c.name), err)
+			}
 			ch <- raceResult{Text: txt, Engine: c.name, Detected: det, Err: err}
 		}()
 	}
@@ -548,7 +579,9 @@ func TranslateRace(ctx context.Context, text, from, to, mode string) raceResult 
 			}
 			continue
 		}
-		breakers.record(engineKey(r.Engine), r.Err)
+		// The contender goroutine already recorded this attempt's outcome.
+		// Recording it again here doubled every failure: with a threshold of
+		// two, one bad answer was enough to open the breaker for a minute.
 		if r.Err != nil {
 			errs = append(errs, r.Err.Error())
 		} else {
@@ -600,9 +633,62 @@ func engineKey(display string) string {
 func (b *engineBreaker) record(name string, err error) {
 	if err != nil {
 		b.fail(name)
+		b.mu.Lock()
+		if b.lastErr == nil {
+			// Tests replace the package-level breaker with a minimal literal;
+			// keep the diagnostic map optional rather than requiring every
+			// constructor to remember it.
+			b.lastErr = map[string]string{}
+		}
+		b.lastErr[name] = err.Error()
+		b.mu.Unlock()
 		return
 	}
 	b.ok(name)
+}
+
+// engineHealth is the read-only view of one engine's breaker that the
+// settings page can render. It deliberately has no dependency on the UI.
+type engineHealth struct {
+	Engine    string
+	Fails     int
+	Open      bool
+	Until     time.Time
+	LastError string
+}
+
+// health reports the current breaker state without changing it.
+func (b *engineBreaker) health(name string) engineHealth {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	h := engineHealth{Engine: name, Fails: b.fails[name], LastError: b.lastErr[name]}
+	if until, ok := b.until[name]; ok {
+		if time.Now().Before(until) {
+			h.Open, h.Until = true, until
+		} else {
+			// Expired breakers are logically closed even before allow() cleans
+			// the map; report the honest state instead of a stale countdown.
+			h.Fails = 0
+			h.LastError = ""
+		}
+	}
+	return h
+}
+
+// engineHealths returns the three built-in engines in display order.
+func engineHealths() []engineHealth {
+	names := []struct{ key, label string }{
+		{"microsoft", "微软"},
+		{"google", "谷歌"},
+		{"tencent", "腾讯"},
+	}
+	out := make([]engineHealth, 0, len(names))
+	for _, item := range names {
+		h := breakers.health(item.key)
+		h.Engine = item.label
+		out = append(out, h)
+	}
+	return out
 }
 
 // isWord reports whether text is a single ASCII dictionary-worthy word.
@@ -634,12 +720,17 @@ func isWord(text string) bool {
 // engine is skipped entirely; the first request after it expires tries again,
 // so recovery needs no timer.
 type engineBreaker struct {
-	mu    sync.Mutex
-	until map[string]time.Time
-	fails map[string]int
+	mu      sync.Mutex
+	until   map[string]time.Time
+	fails   map[string]int
+	lastErr map[string]string
 }
 
-var breakers = &engineBreaker{until: map[string]time.Time{}, fails: map[string]int{}}
+var breakers = &engineBreaker{
+	until:   map[string]time.Time{},
+	fails:   map[string]int{},
+	lastErr: map[string]string{},
+}
 
 // breakerThreshold is how many consecutive failures open the breaker.
 //
@@ -679,12 +770,19 @@ func (b *engineBreaker) ok(name string) {
 	defer b.mu.Unlock()
 	delete(b.fails, name)
 	delete(b.until, name)
+	delete(b.lastErr, name)
 }
 
 // fail records a failure and opens the breaker once the threshold is reached.
 func (b *engineBreaker) fail(name string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.fails == nil {
+		b.fails = map[string]int{}
+	}
+	if b.until == nil {
+		b.until = map[string]time.Time{}
+	}
 	b.fails[name]++
 	if b.fails[name] >= breakerThreshold {
 		b.until[name] = time.Now().Add(breakerCooldown)

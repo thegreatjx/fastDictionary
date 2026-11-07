@@ -77,7 +77,7 @@ func applyTheme(c *ui.Context, mode string, dark bool) {
 		t.Success = ui.Hex("#16A34A")
 		t.Scrollbar = ui.RGBA(100, 116, 139, 0.28)
 	}
-	t.Radius = 7
+	t.Radius = 8
 	t.Spacing = 4
 	c.SetTheme(&t)
 }
