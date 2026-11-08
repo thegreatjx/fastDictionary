@@ -77,6 +77,7 @@
 - 搭载本地轻量离线 **Indra OCR** 引擎（基于 `onnxruntime_purego` 纯 Go 接口），内置 31MB 轻量高精度模型。
 - 毫秒级快速推理，纯本地离线运行，无需外网或云端 API。
 - 自带英文常见 OCR 错误自动校正（OCR Spell Correct）。
+- 截图翻译支持 AI 精翻：先发送本地 OCR 文字，失败时自动附带原截图校正识别错误。
 - 支持在未部署模型时自动回落至系统原生的 `Windows.Media.Ocr`。
 
 ### 7. 📚 生词本与复习管理 (Vocabulary Store)
