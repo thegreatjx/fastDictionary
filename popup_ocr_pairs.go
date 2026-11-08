@@ -90,3 +90,94 @@ func (a *app) renderOcrParagraphPairs(c *ui.Context, t *ui.Theme, s snapshot) {
 		}
 	}
 }
+
+// renderScreenshotPairActions keeps the same action row as the merged view.
+// Paragraph mode used to replace the whole result area, which hid copy, speech,
+// AI refine and vocabulary controls that users expect from every translation
+// card. The pair view now gets its own copy of that row.
+func (a *app) renderScreenshotPairActions(c *ui.Context, t *ui.Theme, cfg Config, s snapshot) {
+	ui.Row(c).FillWidth().Gap(2).AlignItems(ui.Center).Children(func() {
+		copyTip := "复制译文"
+		if s.copiedMsg != "" {
+			copyTip = "译文已复制"
+		}
+		if renderIconButton(c, iconCopy, copyTip, 28, 14, false).Clicked() {
+			a.copyToClipboard(s.target)
+		}
+		spText, spLang, spTip := primarySpeechTarget(s.source, s.target)
+		if spText != "" {
+			if renderIconButton(c, iconSpeak, spTip, 28, 14, false).Clicked() {
+				PlaySpeechLang(spText, spLang, false)
+			}
+		}
+		if s.source != "" && !s.isWord {
+			tip := "AI 精翻（先读 OCR 文字，失败时用截图校正）"
+			if s.aiRefining {
+				tip = "AI 精翻中…"
+			} else if s.engine == "AI 精翻" {
+				tip = "已是 AI 精翻 · 点击重新生成"
+			}
+			btn := ui.Button(c, "").Tooltip(tip).Size(28, 28).Padding(0, 0).Radius(6).Center()
+			btn.Children(func() {
+				col := t.TextMuted
+				if s.engine == "AI 精翻" {
+					col = t.Accent
+				}
+				if s.aiRefining {
+					ui.Spinner(c).Size(15, 15)
+				} else {
+					ui.Icon(c, iconSparkles).Size(15, 15).TextColor(col)
+				}
+			})
+			if btn.Clicked() && !s.aiRefining {
+				a.refineWithAI()
+			}
+			if s.aiRefineErr != "" {
+				ui.Text(c, "精翻失败："+s.aiRefineErr).FontSize(10).TextColor(t.Danger).SingleLine()
+			}
+		}
+		ui.Spacer(c).Grow(1)
+		if cfg.ShowEngineTag && s.engine != "" {
+			ui.Text(c, translationEngineCaption(s, cfg.TargetLang)).FontSize(10).
+				TextColor(t.TextMuted).SingleLine().Opacity(0.85)
+		}
+		if cfg.ShowNotes && shouldExtractNotes(s.source) {
+			if s.notesBusy && len(s.notes) == 0 {
+				ui.Row(c).Gap(4).AlignItems(ui.Center).Padding(0, 4).Children(func() {
+					ui.Spinner(c).Size(12, 12)
+					ui.Text(c, "发现生词中…").FontSize(11).TextColor(t.TextMuted)
+				})
+			} else if len(s.notes) > 0 {
+				btnText := fmt.Sprintf("猜你想存 · %d", len(s.notes))
+				tip := "展开生词推荐"
+				if s.notesExpanded {
+					btnText = fmt.Sprintf("收起生词 · %d", len(s.notes))
+					tip = "收起生词推荐"
+				}
+				btnNotes := ui.Button(c, "").Tooltip(tip).Height(24).Padding(0, 8).Radius(6).Center()
+				bg := t.SurfaceHover
+				borderCol := t.Border
+				if s.notesExpanded {
+					bg = withAlpha(t.Accent, 0.12)
+					borderCol = withAlpha(t.Accent, 0.3)
+				}
+				if btnNotes.Hovered() {
+					bg = withAlpha(t.Accent, 0.2)
+				}
+				btnNotes.Background(bg).Border(1, borderCol)
+				btnNotes.Children(func() {
+					ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+						ui.Icon(c, iconBookmark).Size(12, 12).TextColor(t.Accent)
+						ui.Text(c, btnText).FontSize(11).FontWeight(600).TextColor(t.Accent)
+					})
+				})
+				if btnNotes.Clicked() {
+					a.mu.Lock()
+					a.notesExpanded = !a.notesExpanded
+					a.mu.Unlock()
+					a.fitHeight()
+				}
+			}
+		}
+	})
+}

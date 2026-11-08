@@ -134,6 +134,7 @@ func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s
 	if s.target != "" {
 		if s.isScreenshotMode && s.ocrCompare {
 			a.renderOcrParagraphPairs(c, t, s)
+			a.renderScreenshotPairActions(c, t, cfg, s)
 		} else {
 			if s.isScreenshotMode && strings.Contains(s.target, "\n") {
 				if ui.Button(c, "段落对照").Height(24).Padding(1, 6).FontSize(10).Clicked() {

@@ -281,7 +281,7 @@ func (a *app) openPinnedScreenshot(rect winRect, imgPath string, bmp *ui.Bitmap)
 	a.tabStates = nil
 	a.inputText, a.ocrText, a.ocrPath, a.ocrCrop = "", "", imgPath, rect
 	a.ocrBusy, a.ocrError = true, ""
-	a.ocrCompare, a.ocrExpanded = true, false
+	a.ocrCompare, a.ocrExpanded = false, false
 	a.snipExpanded, a.sourceExpanded, a.notesExpanded = false, false, false
 	a.isScreenshotMode, a.screenshotPinned, a.pinned = true, true, true
 	a.snipBitmap = bmp
@@ -395,6 +395,14 @@ func (a *app) renderScreenshotSource(c *ui.Context, t *ui.Theme, s snapshot) {
 			ui.Icon(c, iconScreenshot).Size(12, 12).TextColor(t.TextMuted)
 			ui.Text(c, "截图原文").FontSize(11).TextColor(t.TextMuted)
 			ui.Spacer(c).Grow(1)
+			if s.source != "" {
+				if renderIconButton(c, iconCopy, "复制原文", 26, 13, false).Clicked() {
+					a.copyToClipboard(s.source)
+				}
+				if renderIconButton(c, iconSpeak, "朗读原文", 26, 13, false).Clicked() {
+					PlaySpeechLang(s.source, a.speechLang(), false)
+				}
+			}
 			label := "查看截图"
 			if s.snipExpanded {
 				label = "收起截图"
