@@ -848,6 +848,7 @@ func (a *app) refineWithAI() {
 
 	a.mu.Lock()
 	source, targetLang := a.source, cfg.TargetLang
+	isScreenshotMode, ocrPath := a.isScreenshotMode, a.ocrPath
 	a.stopAIPassLocked()
 	gen := a.aiGen
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -865,13 +866,28 @@ func (a *app) refineWithAI() {
 		sys := "You are a translator. Translate the text into " + langPromptName(targetLang) +
 			". Keep terminology accurate, keep the original's tone and structure, and output only the translation with no explanation."
 		started := time.Now()
-		out, err := StreamMagpie(ctx, cfg.AIURL, cfg.AIModel, sys, source, ResolveEffort(cfg.AIEffort, cfg.AIModel), nil)
+		effort := ResolveEffort(cfg.AIEffort, cfg.AIModel)
+		out, err := StreamMagpie(ctx, cfg.AIURL, cfg.AIModel, sys, source, effort, nil)
 		if err != nil && isTransientAIError(err) {
 			// A short network hiccup or a 429 should not cost the user the
 			// machine translation they already have. One short retry is enough;
 			// repeating it would make a genuinely broken gateway feel frozen.
 			time.Sleep(350 * time.Millisecond)
-			out, err = StreamMagpie(ctx, cfg.AIURL, cfg.AIModel, sys, source, ResolveEffort(cfg.AIEffort, cfg.AIModel), nil)
+			out, err = StreamMagpie(ctx, cfg.AIURL, cfg.AIModel, sys, source, effort, nil)
+		}
+		if err != nil && isScreenshotMode && ocrPath != "" && ctx.Err() == nil {
+			// OCR text is the cheap first attempt. If the model cannot answer
+			// from it, give it the original pixels as well: the model can read
+			// the screenshot and correct the OCR mistakes that caused the
+			// failure. This costs more tokens, so it is deliberately last.
+			if dataURL, imageErr := imageFileDataURL(ocrPath); imageErr == nil {
+				log.Printf("fastDictionary: text AI refine failed, retrying with screenshot: %v", err)
+				out, err = StreamMagpieWithImage(ctx, cfg.AIURL, cfg.AIModel,
+					screenshotRefineSystemPrompt(targetLang), screenshotRefineUserPrompt(source),
+					dataURL, effort, nil)
+			} else {
+				log.Printf("fastDictionary: screenshot AI fallback unavailable: %v", imageErr)
+			}
 		}
 
 		a.mu.Lock()

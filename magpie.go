@@ -134,7 +134,7 @@ func ResolveEffort(pref, model string) string {
 
 type magpieMessage struct {
 	Role    string `json:"role"`
-	Content string `json:"content"`
+	Content any    `json:"content"`
 }
 
 type magpieRequest struct {
@@ -155,6 +155,32 @@ type magpieRequest struct {
 // one with ResolveEffort, which knows what this model actually accepts. An
 // empty effort sends no reasoning field at all.
 func StreamMagpie(ctx context.Context, endpoint, model, system, user, effort string, onDelta func(chunk string)) (string, error) {
+	return streamMagpie(ctx, endpoint, model, []magpieMessage{
+		{Role: "system", Content: system},
+		{Role: "user", Content: user},
+	}, effort, onDelta)
+}
+
+// StreamMagpieWithImage sends an OpenAI-style multimodal user message: the
+// OCR text is the normal text part and the screenshot is the image part. The
+// gateway's configured model must advertise image input; the fallback path
+// only runs after text-only refinement fails, so a text-only model is never
+// sent an image unless the user's screenshot translation actually needs it.
+func StreamMagpieWithImage(ctx context.Context, endpoint, model, system, user, imageDataURL, effort string, onDelta func(chunk string)) (string, error) {
+	if imageDataURL == "" {
+		return "", fmt.Errorf("magpie: empty image")
+	}
+	content := []map[string]any{
+		{"type": "text", "text": user},
+		{"type": "image_url", "image_url": map[string]string{"url": imageDataURL}},
+	}
+	return streamMagpie(ctx, endpoint, model, []magpieMessage{
+		{Role: "system", Content: system},
+		{Role: "user", Content: content},
+	}, effort, onDelta)
+}
+
+func streamMagpie(ctx context.Context, endpoint, model string, messages []magpieMessage, effort string, onDelta func(chunk string)) (string, error) {
 	if endpoint == "" {
 		endpoint = magpieBaseURL
 	}
@@ -163,12 +189,9 @@ func StreamMagpie(ctx context.Context, endpoint, model, system, user, effort str
 	}
 
 	reqBody := magpieRequest{
-		Model:  model,
-		Stream: true,
-		Messages: []magpieMessage{
-			{Role: "system", Content: system},
-			{Role: "user", Content: user},
-		},
+		Model:    model,
+		Stream:   true,
+		Messages: messages,
 	}
 
 	// Sending a level the model does not list is worse than sending nothing:

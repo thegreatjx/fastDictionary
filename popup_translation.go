@@ -172,11 +172,14 @@ func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s
 							PlaySpeechLang(spText, spLang, false)
 						}
 					}
-					if s.source != "" && !s.isWord && !s.isScreenshotMode {
+					if s.source != "" && !s.isWord {
 						// AI refine: a second, slower answer for when the machine one
 						// reads wrong. It replaces the translation in place, so the
 						// button shows the state rather than opening a second view.
 						tip := "AI 精翻（较慢，术语与长句更准）"
+						if s.isScreenshotMode {
+							tip = "AI 精翻（先读 OCR 文字，失败时用截图校正）"
+						}
 						if s.aiRefining {
 							tip = "AI 精翻中…"
 						} else if s.engine == "AI 精翻" {
