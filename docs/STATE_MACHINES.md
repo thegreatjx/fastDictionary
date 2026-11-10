@@ -536,6 +536,7 @@
 - **状态 / 迁移**：当前分类（4 值字符串）/搜索词（DOM input.value）/卡片 show-hide/无结果提示 show-hide；`allEntries` 是**生成时刻快照**，与桌面词库此后变化无关。`filterCat(c,b)`(201) 设 curCat+移除所有 `.active`+给 b 加 `.active`+`doSearch()`；`doSearch()`(202) 读 input.value→遍历 `.card` 按 `data-cat`/`data-text` 算 show→设 display+更新 noResult；`exportJSON/CSV/Anki`(203-205) 用 `allEntries`；`handleImport`(206) 只 `alert('…离线静态快照…')`
 - **风险**：**快照与桌面词库不同步**——导出后在桌面新增/删除生词，网页版导出按钮仍给旧数据（206 的 alert 只提示导入，不提示导出也是快照）；`filterCat` 依赖 `this` 传参，DOM 结构一改 b 为 undefined 即抛错；202 `getAttribute('data-text').includes(q)` 特殊字符边界未测；**`handleImport` 是「假按钮」**，点导入只弹 alert，用户可能以为成功
 - **显式化**：`const CAT = Object.freeze({ALL:'all', WORDS:'words', SENTENCES:'sentences', WRITING:'writing'})`；`const state = Object.freeze({cat, query})` 单一状态对象 + `render()` 纯函数；`export*()` 标注 `data-snapshot-at` 与「导出的是快照」；`handleImport` 改禁用并说明原因
+- **复核备注（批次 9c）**：导出页现在写明导出时间与「静态快照」，分类值收进 `const CAT=Object.freeze(...)`，假导入按钮改为不可用的「导入仅桌面端」并删除 `handleImport` 与 `type=file`；`vocabulary_export_html_test.go` 三条钉住。`state` 单一对象 + `render()` 纯函数与浏览器实际走查仍留后续。
 - **测试**：`regression_batch_test.go:110/136`、`ux_walkthrough_test.go` 相关。缺口：JS 状态一致性、快照过期提示、假导入按钮
 
 #### A22 语法分析解析多级 fallback · 中

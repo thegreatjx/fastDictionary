@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // CountByCategory returns the number of entries in a specific category
@@ -104,6 +105,8 @@ func (s *VocabularyStore) ExportHTML() (string, error) {
 	sb.WriteString(".header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;}\n")
 	sb.WriteString(".action-btn{border:1px solid #CBD5E1;background:#FFF;color:#334155;font-size:12px;font-weight:600;padding:6px 12px;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;transition:all 0.15s;text-decoration:none;}\n")
 	sb.WriteString(".action-btn:hover{background:#F1F5F9;border-color:#94A3B8;color:#0F172A;}\n")
+	sb.WriteString(".action-btn[disabled]{opacity:.55;cursor:not-allowed;pointer-events:none;}\n")
+	sb.WriteString(".snapshot-note{background:#FEFCE8;border:1px solid #FEF08A;color:#713F12;font-size:12px;line-height:1.6;padding:8px 12px;border-radius:6px;margin-bottom:16px;}\n")
 	sb.WriteString(".tabs{display:flex;gap:8px;margin-bottom:20px;background:#FFF;padding:4px;border-radius:8px;border:1px solid #E2E8F0;}\n")
 	sb.WriteString(".tab-btn{border:none;background:transparent;color:#64748B;font-size:13px;font-weight:600;padding:6px 14px;border-radius:6px;cursor:pointer;}\n")
 	sb.WriteString(".tab-btn.active{background:#2563EB;color:#FFF;}\n")
@@ -126,13 +129,14 @@ func (s *VocabularyStore) ExportHTML() (string, error) {
 	sb.WriteString("<button class=\"action-btn\" onclick=\"exportJSON()\">📤 导出 JSON</button>")
 	sb.WriteString("<button class=\"action-btn\" onclick=\"exportCSV()\">📊 导出 CSV</button>")
 	sb.WriteString("<button class=\"action-btn\" onclick=\"exportAnki()\">📇 导出 Anki</button>")
-	sb.WriteString("<label class=\"action-btn\" style=\"cursor:pointer;\">📥 导入生词<input type=\"file\" id=\"importInput\" accept=\".json,.csv\" style=\"display:none;\" onchange=\"handleImport(event)\"></label>")
+	sb.WriteString("<button class=\"action-btn\" disabled title=\"网页版是离线静态快照；导入请打开桌面客户端的生词本页面\">📥 导入仅桌面端</button>")
 	sb.WriteString("</div></div>\n")
+	sb.WriteString(fmt.Sprintf("<div class=\"snapshot-note\">本页是 %s 导出的静态快照；之后在桌面端增删的生词不会同步到这里。</div>\n", time.Now().Format("2006-01-02 15:04")))
 	sb.WriteString("<div class=\"tabs\">")
-	sb.WriteString("<button class=\"tab-btn active\" onclick=\"filterCat('all',this)\">全部笔记</button>")
-	sb.WriteString("<button class=\"tab-btn\" onclick=\"filterCat('words',this)\">📘 生词库</button>")
-	sb.WriteString("<button class=\"tab-btn\" onclick=\"filterCat('sentences',this)\">🔍 长难句本</button>")
-	sb.WriteString("<button class=\"tab-btn\" onclick=\"filterCat('writing',this)\">✏️ 写作批改</button>")
+	sb.WriteString("<button class=\"tab-btn active\" onclick=\"filterCat(CAT.ALL,this)\">全部笔记</button>")
+	sb.WriteString("<button class=\"tab-btn\" onclick=\"filterCat(CAT.WORDS,this)\">📘 生词库</button>")
+	sb.WriteString("<button class=\"tab-btn\" onclick=\"filterCat(CAT.SENTENCES,this)\">🔍 长难句本</button>")
+	sb.WriteString("<button class=\"tab-btn\" onclick=\"filterCat(CAT.WRITING,this)\">✏️ 写作批改</button>")
 	sb.WriteString("</div>\n")
 	sb.WriteString("<input type=\"text\" id=\"search\" class=\"search\" placeholder=\"搜索词条、释义或例句...\" oninput=\"doSearch()\">\n")
 	sb.WriteString("<div id=\"list\">\n")
@@ -189,13 +193,13 @@ func (s *VocabularyStore) ExportHTML() (string, error) {
 	// whole page); html.EscapeString is not enough inside a script element.
 	sb.WriteString(fmt.Sprintf("let allEntries = %s;\n", strings.ReplaceAll(string(entriesJSON), "</", "<\\/")))
 	sb.WriteString(fmt.Sprintf("let allCats = %s;\n", strings.Join(allCats, ",")))
-	sb.WriteString("let curCat='all';\n")
+	sb.WriteString("const CAT=Object.freeze({ALL:'all',WORDS:'words',SENTENCES:'sentences',WRITING:'writing'});\n")
+	sb.WriteString("let curCat=CAT.ALL;\n")
 	sb.WriteString("function filterCat(c,b){curCat=c;document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');doSearch();}\n")
 	sb.WriteString("function doSearch(){let q=document.getElementById('search').value.toLowerCase().trim();let v=0;document.querySelectorAll('.card').forEach(x=>{let mC=(curCat==='all'||x.getAttribute('data-cat')===curCat);let mQ=(!q||x.getAttribute('data-text').includes(q));let show=(mC&&mQ);x.style.display=show?'block':'none';if(show)v++;});let nr=document.getElementById('noResult');if(nr)nr.style.display=(v===0)?'block':'none';}\n")
 	sb.WriteString("function exportJSON(){const blob=new Blob([JSON.stringify(allEntries,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='fast词典_生词库.json';a.click();URL.revokeObjectURL(url);}\n")
 	sb.WriteString("function exportCSV(){let csv='\uFEFF单词,音标,词性,释义,难度,例句,例句翻译,记忆技巧,分类,添加时间\r\n';allEntries.forEach(e=>{const esc=s=>String(s||'').replace(/,/g,'，').replace(/\n/g,' ');csv+=[esc(e.term),esc(e.phonetic),esc(e.part_of_speech),esc(e.definition),esc(e.difficulty),esc(e.context),esc(e.context_translation),esc(e.memory_tips),esc(e.source),esc(e.created_at)].join(',')+'\r\n';});const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='fast词典_生词库.csv';a.click();URL.revokeObjectURL(url);}\n")
 	sb.WriteString("function exportAnki(){let tsv='#separator:tab\\n#html:true\\n#tags column:4\\n';const clean=s=>String(s||'').replace(/\\t/g,' ').replace(/\\r?\\n/g,'<br>');const escH=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');allEntries.forEach((e,i)=>{const isWord=(allCats[i]==='words');let f='',b='',tags='fastDictionary';if(isWord){f='<div style=\"font-size:22px;font-weight:700;\">'+escH(e.term)+'</div>'+(e.phonetic?'<div style=\"color:#64748b;margin-top:4px;\">'+escH(e.phonetic)+'</div>':'');b='<div style=\"font-size:20px;font-weight:700;\">'+escH(e.term)+'</div>'+(e.definition?'<div style=\"margin:8px 0;\">'+escH(e.definition)+'</div>':'')+(e.context?'<div style=\"background:#f8fafc;padding:8px;border-radius:6px;margin-top:8px;\">'+escH(e.context)+(e.context_translation?'<div style=\"color:#64748b;font-size:12px;\">'+escH(e.context_translation)+'</div>':'')+'</div>':'')+(e.memory_tips?'<div style=\"background:#fefce8;padding:6px;margin-top:8px;font-size:12px;\">💡 '+escH(e.memory_tips)+'</div>':'');tags+=' 生词 '+(e.difficulty?'CEFR-'+e.difficulty.toUpperCase():'');}else if(allCats[i]==='writing'){f='<div>✏️ 写作批改</div><div style=\"font-size:16px;margin-top:8px;\">'+escH(e.term)+'</div>';b='<div style=\"color:#15803d;font-weight:600;\">✓ 改后版本：</div><div>'+escH(e.context)+'</div><div style=\"margin-top:6px;\">'+escH(e.definition)+'</div>';tags+=' 写作批改';}else{f='<div>🔍 长难句拆解</div><div style=\"font-size:16px;margin-top:8px;\">'+escH(e.term)+'</div>';b='<div style=\"font-size:16px;font-weight:600;\">'+escH(e.term)+'</div><div style=\"color:#475569;margin:6px 0;\">'+escH(e.context_translation)+'</div><div>'+escH(e.definition)+'</div>';tags+=' 长难句 '+(e.difficulty?'CEFR-'+e.difficulty.toUpperCase():'');}tsv+=[clean(f),clean(b),clean(e.term),clean(tags.trim())].join('\\t')+'\\n';});const blob=new Blob([tsv],{type:'text/tab-separated-values;charset=utf-8;'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='fast词典_生词库_Anki.txt';a.click();URL.revokeObjectURL(url);}\n")
-	sb.WriteString("function handleImport(evt){const file=evt.target.files[0];if(!file)return;alert('提示：当前导出的网页版为离线静态快照。若需持久化导入生词与长难句，请在 fastDictionary 桌面客户端的生词本页面使用【📥 导入】功能！');}\n")
 	sb.WriteString("</script>\n</body></html>")
 
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
