@@ -394,9 +394,14 @@ func (a *app) rerunCurrentMode(text string) {
 // rerunCurrentModeFresh is the footer's 重新翻译: it promises a new answer, so
 // it must not be served the cached one the way reopening the same text is.
 func (a *app) rerunCurrentModeFresh(text string) {
-	a.mu.Lock()
-	a.skipAIResultCache = true
-	a.mu.Unlock()
+	// Translate mode has no AI cache: setting the flag there would leak into
+	// the next AI pass and silently bypass its cache.
+	switch a.mode {
+	case modeDictionary, modeGrammar, modeWriting:
+		a.mu.Lock()
+		a.skipAIResultCache = true
+		a.mu.Unlock()
+	}
 	a.rerunCurrentMode(text)
 }
 

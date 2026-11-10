@@ -22,6 +22,8 @@ type tabViewState struct {
 	gdict                 *DictResult
 	aiText                string
 	aiBusy                bool
+	busy                  bool
+	ocrBusy               bool
 	grammarResult         *SentenceAnalysisResult
 	grammarResultPrefill  bool
 	dictResult            *DictionaryResult
@@ -53,7 +55,7 @@ func (s *tabViewState) hasContent() bool {
 	// 正在加载的页签不是完成态。switchMode 用这个判定决定能否直接恢复缓存，
 	// 若把进行中的页签算作有内容，半成品 aiText / notes 会被当成最终答案展示，
 	// 且命中缓存后不会再补发请求。切回来应走 clearTabLocked + 重跑当前模式。
-	return s != nil && !s.aiBusy && !s.notesBusy && (s.target != "" || s.errText != "" || s.dictResult != nil ||
+	return s != nil && !cardHasPendingWork(snapshot{aiBusy: s.aiBusy, notesBusy: s.notesBusy, busy: s.busy, ocrBusy: s.ocrBusy}) && (s.target != "" || s.errText != "" || s.dictResult != nil ||
 		s.grammarResult != nil || s.writingResult != nil || s.dict != nil ||
 		s.gdict != nil || s.aiText != "" || s.isScreenshotMode && s.source != "")
 }
@@ -73,6 +75,8 @@ func (a *app) saveTabLocked() {
 		gdict:                 a.gdict,
 		aiText:                a.aiText,
 		aiBusy:                a.aiBusy,
+		busy:                  a.busy,
+		ocrBusy:               a.ocrBusy,
 		grammarResult:         a.grammarResult,
 		grammarResultPrefill:  a.grammarResultPrefill,
 		dictResult:            a.dictResult,
@@ -112,6 +116,8 @@ func (a *app) restoreTabLocked(st *tabViewState) {
 	a.aiText = st.aiText
 	a.aiBusy = false
 	a.aiCancel = nil
+	a.busy = false
+	a.ocrBusy = false
 	a.grammarResult = st.grammarResult
 	a.grammarResultPrefill = st.grammarResultPrefill
 	a.dictResult = st.dictResult

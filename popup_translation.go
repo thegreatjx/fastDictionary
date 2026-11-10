@@ -155,7 +155,7 @@ func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s
 			ui.Text(c, "正在翻译…").FontSize(13).TextColor(t.TextMuted)
 		})
 	}
-	if s.target == "" && !s.busy && s.mode != modeInput && s.source == "" && s.errText == "" {
+	if s.target == "" && !cardHasPendingWork(s) && s.mode != modeInput && s.source == "" && s.errText == "" {
 		a.renderTranslateEmptyState(c, t)
 	}
 	if s.target != "" {

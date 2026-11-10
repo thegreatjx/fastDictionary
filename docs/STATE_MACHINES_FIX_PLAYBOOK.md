@@ -754,6 +754,7 @@ gofmt -d .
 | 7f | A19 导入：CSV 会剥 UTF-8 BOM，JSON/TXT 不会；Windows 编辑器默认带 BOM 的导出文件导不进来（JSON 报「无法识别的格式」，TXT 首个单词带不可见字符） | 有（修 bug）：三个导入器统一剥 BOM | 见下 |
 | 7g | A5 Indra 引擎：首次加载失败被永久缓存，进程内不再重试；一次瞬时失败（模型文件被占用、内存紧张）会让 OCR 一直降级到 Windows 识别，必须重启应用 | 有（修 bug）：失败后按 30 秒冷却重试 | 见下 |
 | 7h | C3 划词触发：只有 `resumeSelection` 清手势冷却，暂停与切换触发模式都不清，残留 300ms 冷却吞掉暂停/切换后的第一个手势；托盘浮层改模式不重建托盘，单选状态停在旧模式 | 有（修 bug）：三处入口统一清冷却 + 浮层重建托盘 | 见下 |
+| 8a | C6 卡片复合状态·第一批：五个 `bool` 忙碌标志散在布局、页签缓存、空态判定里，各自拼 OR，新增一个标志就要改多处；`skipAIResultCache` 只在缓存查找之后清零，AI 关闭 / 动作不存在 / 空文本三条提前返回都会把「重新翻译」意图泄漏到下一次请求，翻译模式的重新翻译也会误置该标志 | 有（`skipAIResultCache` 泄漏是修 bug；忙碌判定收口是零行为变化） | 见下 |
 
 ### 批次 7a 验证记录（A20 词库分类统一）
 
@@ -872,6 +873,25 @@ gofmt -d .
   DATA RACE 0；`gofmt -l .` 空、`go vet ./...` clean。
 - 未验证：`SelectionTrigger` 字符串常量类型化、`TriggerGate` 结构体化与 `IgnoreReason`
   枚举未做，留后续；真人从托盘与设置页切换模式的手势走查仍待做。
+
+### 批次 8a 验证记录（C6 卡片忙碌判定收口）
+
+- 新增 `card_activity.go`：`cardActivity`（idle / translating / streaming /
+  refining / loading_notes / recognizing）+ `cardActivityOf(snapshot)` 统一优先级 +
+  `cardHasPendingWork(snapshot)` 唯一「还有请求在飞」判定。
+- `popup_tabs.go` 的 `tabViewState` 补 `busy` / `ocrBusy`，`hasContent()` 改走
+  `cardHasPendingWork`：翻译中或识别中的页签不再被当成完成态。
+- `popup_translation.go` 空态判定改走 `cardHasPendingWork`。
+- `runAction` 入口先消费 `skipAIResultCache`，AI 关闭 / 动作不存在 / 空文本三条
+  提前返回不再泄漏；`rerunCurrentModeFresh` 只为 AI 三种模式置位。
+- 复现测试：`card_activity_test.go`（优先级表 + 32 组合等价）、
+  `card_activity_wiring_test.go`（翻译中/识别中页签不可恢复、提前返回消费标志、
+  翻译模式不置位）。
+- 验证：`go test -count=1 ./...` ok 10.127s；`go test -race -count=1 ./...` 连续 2 次
+  exit=0、DATA RACE 0；`gofmt -l .` 空、`go vet ./...` clean。
+- 未验证：`CardPhase` 完整状态机与 `requestToken` 类型化未做，留后续；四条
+  `busy` 组合的真实窗口走查仍待做。
+
 
 
 

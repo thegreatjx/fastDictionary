@@ -658,6 +658,14 @@ func (a *app) applyParsedAction(actionID, raw string) bool {
 }
 
 func (a *app) runAction(actionID string, text string) {
+	// Consume the "fresh answer" request up front. It used to be cleared only
+	// after the cache lookup, so an early return (AI disabled, unknown action,
+	// empty text) left it set and the next pass skipped its cache for no
+	// reason. One shot, one consumer.
+	a.mu.Lock()
+	fresh := a.skipAIResultCache
+	a.skipAIResultCache = false
+	a.mu.Unlock()
 	cfg := a.store.Get()
 	if !cfg.AIEnabled || strings.TrimSpace(text) == "" {
 		return
@@ -685,8 +693,7 @@ func (a *app) runAction(actionID string, text string) {
 	// returns, and would otherwise write its stale card over this one.
 	a.stopAIPassLocked()
 	gen := a.aiGen
-	useCache := !a.skipAIResultCache
-	a.skipAIResultCache = false
+	useCache := !fresh
 	raw := ""
 	if useCache {
 		raw = a.cachedAIResult(cacheKey)
