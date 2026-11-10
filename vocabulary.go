@@ -135,42 +135,13 @@ func (s *VocabularyStore) save() error {
 	path := s.path
 	s.mu.RUnlock()
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
 	data, err := json.MarshalIndent(entries, "", "  ")
 	if err != nil {
 		return err
 	}
 	s.saveMu.Lock()
 	defer s.saveMu.Unlock()
-	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return err
-	}
-	// Flush before the rename: without this the rename can be durable while
-	// the data is not, and a power cut leaves an empty notebook.
-	if err := f.Sync(); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return err
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	// Keep the previous good copy. The notebook is the only thing the user
-	// cannot rebuild, and it used to have exactly one file behind it.
-	if prev := dataOfFile(path); len(prev) > 0 {
-		_ = os.WriteFile(path+".bak", prev, 0o644)
-	}
-	return os.Rename(tmp, path)
+	return atomicWriteFile(path, data, atomicWriteOptions{retries: 6, backup: true})
 }
 
 // dataOfFile reads a file, returning nil when it cannot be read.

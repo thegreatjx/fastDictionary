@@ -757,6 +757,7 @@ gofmt -d .
 | 8a | C6 卡片复合状态·第一批：五个 `bool` 忙碌标志散在布局、页签缓存、空态判定里，各自拼 OR，新增一个标志就要改多处；`skipAIResultCache` 只在缓存查找之后清零，AI 关闭 / 动作不存在 / 空文本三条提前返回都会把「重新翻译」意图泄漏到下一次请求，翻译模式的重新翻译也会误置该标志 | 有（`skipAIResultCache` 泄漏是修 bug；忙碌判定收口是零行为变化） | 见下 |
 | 8b | C6 卡片复合状态·第二批：`aiGen` / `aiRefineGen` / `notesGen` / `translateGen` / `ocrGeneration` 五个代次都是裸 `uint64`，跨代次比较编译器不会报错 | 无（纯类型显式化） | 见下 |
 | 8c | A13 热键提示·严重级别：`settings_pages.go` 用 `strings.Contains(a.hotkeyMsg, "冲突") \|\| strings.Contains(a.hotkeyMsg, "失败")` 反推颜色，Windows 注册错误若不含这两个词就显示成普通色 | 无（纯显式化；错误提示颜色修正属既有意图） | 见下 |
+| 8d | A10 配置 / 词库原子保存·两套实现：`saveConfig` 有 `CreateTemp` 唯一临时名、Sync、Chmod 与 6 次 rename 重试；`vocabulary.save()` 用固定 `.tmp`、无 rename 重试，Windows 上词库文件被索引器短暂占用时直接丢写 | 无（等价重构 + 词库补上既有重试语义） | 见下 |
 
 ### 批次 7a 验证记录（A20 词库分类统一）
 
@@ -917,6 +918,22 @@ gofmt -d .
 - 验证：`go test -count=1 ./...` ok 9.703s；`go test -race -count=1 ./...` 连续 2 次
   exit=0、DATA RACE 0；`gofmt -l .` 空、`go vet ./...` clean。
 - 未验证：热键草稿结构体（`HotkeyDraft`）与 `HotkeyApplyResult` 未做，留后续。
+
+### 批次 8d 验证记录（A10 原子保存统一）
+
+- 新增 `atomic_save.go`：`atomicWriteFile(path, data, opts)` 统一「唯一临时名 →
+  Write → Sync → Chmod → Close → 可选备份 → rename 重试」；`renameFile` 作为
+  重试测试接缝，`retries` 默认至少 1 次、调用方传 6。
+- `saveConfig` 只保留 `json.MarshalIndent` + 调用（-51 行）；`vocabulary.save()`
+  只保留快照、Marshal、`saveMu` + 调用（-29 行），词库因此获得与配置一致的
+  rename 重试与唯一临时名，`.bak` 备份移入共用实现且失败不再阻塞保存。
+- 测试：`atomic_save_shared_test.go` 四条 —— 词库/配置各自在 rename 连续失败
+  两次后仍保存成功（证明重试生效）、`.bak` 仅在要求备份时产生且内容为上一版、
+  保存后目录无残留临时文件。
+- 验证：`go test -count=1 ./...` ok 9.282s；`go test -race -count=1 ./...` 连续
+  2 次 exit=0、DATA RACE 0；`gofmt -l .` 空、`go vet ./...` clean。
+- 未验证：`AtomicSavePhase` 枚举与本条目的「显式化」完整形态未做；
+  `vocabulary.save()` 的 `.bak` 写失败仍只忽略（与原行为一致）。
 
 
 

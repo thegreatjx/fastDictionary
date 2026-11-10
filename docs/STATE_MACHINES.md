@@ -440,6 +440,7 @@
 - **风险**：Windows 文件被占用时 config 重试 6 次、词库直接丢写（注释 vocabulary.go:41-45 说加 `saveMu` 只解决并发写同一 .tmp，没解决外部占用）；499-503 Close 失败时手动 Remove，`closed=true` 却在 504 之后置位，路径分叉易漏；160 `os.WriteFile(path+".bak", ...)` 错误被 `_ =` 吞
 - **显式化**：`AtomicSavePhase`（Open/Written/Synced/Closed/Renaming/Done/Failed）+ `func atomicWrite(path string, data []byte, opts AtomicWriteOptions{Retries int; Backup bool}) error` 抽出共用实现，`config` 与 `vocabulary` 都调
 - **测试**：`atomic_save_test.go:46/74/108/120`、`regression_test.go:40`、`vocabulary_test.go:14`。缺口：词库 rename 被占用、closed 分叉、.bak 写失败
+- **复核备注（批次 8d）**：两套实现与「词库无 rename 重试」属实。已抽出 `atomicWriteFile`（唯一临时名 + Write/Sync/Chmod/Close + 可选备份 + 6 次 rename 重试），`saveConfig` 与 `vocabulary.save()` 都改调它，词库因此获得与配置一致的抗瞬时占用能力，两处共减少约 80 行重复。`AtomicSavePhase` 枚举化与 `.bak` 写失败上报未做，留后续。
 
 #### A11 Config 字符串枚举族与 UI idx 映射 · 中
 - **位置**：`fastpot/config.go:31-112`；`fastpot/settings_pages.go:89-120, 183-200, 291-374`；`fastpot/settings.go:96-106, 136-155`

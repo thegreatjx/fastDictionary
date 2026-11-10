@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/egoist/mygo"
 )
@@ -478,61 +477,11 @@ func (s *store) load() bool {
 }
 
 func saveConfig(path string, cfg Config) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}
-	// A unique temp name per save prevents two concurrent settings changes
-	// from writing into the same file and renaming a half-written mixture.
-	f, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	closed := false
-	cleanup := func() {
-		if !closed {
-			_ = f.Close()
-		}
-		_ = os.Remove(tmp)
-	}
-	if _, err := f.Write(data); err != nil {
-		cleanup()
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		cleanup()
-		return err
-	}
-	if err := f.Chmod(0o644); err != nil {
-		cleanup()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		closed = true
-		_ = os.Remove(tmp)
-		return err
-	}
-	closed = true
-
-	// Windows sometimes denies the rename while the just-closed file is still
-	// held by an indexer or antivirus scanner. Retry briefly instead of losing
-	// the user's settings for a transient sharing violation.
-	var renameErr error
-	for attempt := 0; attempt < 6; attempt++ {
-		if renameErr = os.Rename(tmp, path); renameErr == nil {
-			return nil
-		}
-		if attempt < 5 {
-			time.Sleep(time.Duration(attempt+1) * 10 * time.Millisecond)
-		}
-	}
-	_ = os.Remove(tmp)
-	return renameErr
+	return atomicWriteFile(path, data, atomicWriteOptions{retries: 6})
 }
 
 func DefaultCustomActions() []CustomActionConfig {
