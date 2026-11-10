@@ -142,41 +142,11 @@ func (a *app) restoreTabLocked(st *tabViewState) {
 
 // clearTabLocked removes the result fields of the current tab while keeping
 // its source text. It is used before starting the tab's first request.
+//
+// 清零与恢复是同一份字段清单：把零值 tabViewState 交给 restoreTabLocked，
+// 新增字段时只需在 save/restore 一处补齐，不必再同步第三份清单。
+// restoreTabLocked 不写 source，正好保留当前查询文本；它把 aiCancel 与
+// notesCancel 归零，和原先的清理一致。等价性由 x1_tab_field_sync_test.go 断言。
 func (a *app) clearTabLocked() {
-	a.target = ""
-	a.engine = ""
-	a.detected = ""
-	a.errText = ""
-	a.elapsed = 0
-	a.dict = nil
-	a.gdict = nil
-	a.aiText = ""
-	a.aiBusy = false
-	a.aiCancel = nil
-	a.grammarResult = nil
-	a.grammarResultPrefill = false
-	a.dictResult = nil
-	a.writingResult = nil
-	a.activeActionID = ""
-	a.notes = nil
-	a.notesBusy = false
-	a.notesCancel = nil
-	a.notesSaved = false
-	a.grammarSaved = false
-	a.writingSaved = false
-	a.savedDictTerm = ""
-	a.onlyTrunk = false
-	a.showSlashes = false
-	a.filterRole = ""
-	a.grammarHoverKnowledge = ""
-	a.sourceExpanded = false
-	a.notesExpanded = false
-	a.isScreenshotMode = false
-	a.ocrText = ""
-	a.ocrPath = ""
-	a.ocrError = ""
-	a.ocrCompare = false
-	a.ocrExpanded = false
-	a.snipExpanded = false
-	a.snipBitmap = nil
+	a.restoreTabLocked(&tabViewState{})
 }

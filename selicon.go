@@ -524,14 +524,14 @@ func (a *app) onChipPointer(px, py int32) {
 		// A new button under the pointer restarts the wait — unless a label
 		// was showing a moment ago. Moving along the row then moves the plate
 		// with the pointer, which is how a toolbar should feel.
-		warm := !t.hiddenAt.IsZero() && now.Sub(t.hiddenAt) <= chipTipWarm
+		warm := chipTipIsWarm(t.hiddenAt, now)
 		t.key, t.label = label, label
 		if !warm {
 			t.since = now
 		}
 		t.shown = false
 	}
-	due := !t.shown && now.Sub(t.since) >= chipTipDelay
+	due := chipTipIsDue(t.shown, t.since, now)
 	if !due {
 		remaining := chipTipDelay - now.Sub(t.since)
 		// The pointer may stop moving, so the wait is finished on a timer.

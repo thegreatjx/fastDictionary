@@ -296,6 +296,10 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 					Tooltip("从外部 JSON/CSV/TXT 导入生词")
 				if btnImport.Clicked() {
 					go func() {
+						if !a.tryBeginVocabJob() {
+							return
+						}
+						defer endVocabJob()
 						paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
 							Title:   "导入生词文件",
 							Filters: []mygo.FileFilter{{Name: "生词文件 (*.json, *.csv, *.txt)", Extensions: []string{"json", "csv", "txt"}}},
@@ -321,6 +325,10 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 					Tooltip("导出生词库为 CSV 表格（支持 Excel / Anki 直接打开）")
 				if btnExpCSV.Clicked() {
 					go func() {
+						if !a.tryBeginVocabJob() {
+							return
+						}
+						defer endVocabJob()
 						path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
 							Title:       "导出生词库 CSV",
 							DefaultPath: "fast词典_生词库.csv",
@@ -348,6 +356,10 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 					Tooltip("导出为 Anki 记忆卡片格式（含完整排版与高亮样式，可直接导入 Anki）")
 				if btnExpAnki.Clicked() {
 					go func() {
+						if !a.tryBeginVocabJob() {
+							return
+						}
+						defer endVocabJob()
 						path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
 							Title:       "导出 Anki 记忆卡片",
 							DefaultPath: "fast词典_生词库_Anki.txt",
@@ -375,6 +387,10 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 					Tooltip("为生词自动补全音标、CEFR 难度、例句与记忆技巧")
 				if btnEnrich.Clicked() {
 					go func() {
+						if !a.tryBeginVocabJob() {
+							return
+						}
+						defer endVocabJob()
 						n, err := vocabStore.EnrichAll()
 						a.mu.Lock()
 						if err != nil {

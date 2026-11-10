@@ -425,7 +425,7 @@ func (a *app) renderScreenshotSource(c *ui.Context, t *ui.Theme, s snapshot) {
 			ui.Image(c, s.snipBitmap).FillWidth().MaxHeight(112).Fit(ui.Contain).Radius(4)
 		}
 	}
-	if s.ocrBusy {
+	if classifyOCRView(s) == ocrViewRecognizing {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(12, 2).Children(func() {
 			ui.Spinner(c).Size(15, 15)
 			ui.Text(c, "正在本地识别文字…").FontSize(13).TextColor(t.TextMuted).Grow(1)
@@ -438,7 +438,7 @@ func (a *app) renderScreenshotSource(c *ui.Context, t *ui.Theme, s snapshot) {
 		})
 		return
 	}
-	if s.ocrError != "" {
+	if ocrShowErrorBox(s) {
 		ui.Box(c).FillWidth().Padding(8, 10).Radius(6).Background(noticeBg(t)).Border(1, noticeBorder(t)).Children(func() {
 			ui.Column(c).FillWidth().Gap(8).Children(func() {
 				ui.Text(c, s.ocrError).FontSize(12).TextColor(noticeText(t)).Wrap()
@@ -453,7 +453,7 @@ func (a *app) renderScreenshotSource(c *ui.Context, t *ui.Theme, s snapshot) {
 			})
 		})
 	}
-	if s.source != "" || s.ocrText != "" || s.ocrError != "" {
+	if ocrShowEditor(s) {
 		ui.Text(c, "识别原文 · 可直接修正（回车翻译 · Shift+回车换行）").FontSize(11).TextColor(t.TextMuted)
 		ui.TextArea(c, &a.ocrText).Height(72).FillWidth().
 			Placeholder("识别结果会出现在这里，也可直接输入文字 · 回车快速翻译 · Shift+回车换行").
