@@ -434,6 +434,7 @@
 - **风险**：`Update` 352 先清 `lastSaveErr` 再保存，连续 Update 时失败横幅短暂消失再出现（文案闪烁）；settings.go 注释 164-166 自认不加锁曾是 data race；**`vocabulary.go:988-992 saveOrLog()` 保存失败只 `log.Printf`，UI（settings_vocab.go:307/332/359/380/408）仍显示「成功导入 ✓ / 已成功导出」——config 有 lastSaveErr 而词库没有，两套持久化状态不一致**
 - **显式化**：`SaveStatus`（`Idle/Pending/Failed/Saved`）+ `type SaveState struct{ Status; Err error; At time.Time; Generation uint64 }`；`type UserNotice struct{ Kind NoticeKind; Text string; ID uint64 }` 取代两个消息串（按 ID 消费）；`VocabularyStore.LastSaveError()` + `saveOrReport() error`
 - **测试**：`atomic_save_test.go:120/74/108`、`regression_test.go:40`。缺口：lastSaveErr 与横幅一致性、Toast 并发消费、词库保存失败透传
+- **复核备注（批次 9f）**：词库保存失败现已透传到界面 —— `VocabularyStore.lastSaveErr` + `LastSaveError()`，设置页撤销/删除与卡片三个快速保存在提示成功前检查，失败显示原因且不置已保存标志。`config.Update()` 的 lastSaveErr 先清后写造成横幅闪烁、两个消息串的 Toast 并发消费仍未动，`SaveStatus` / `UserNotice` 枚举化留后续。
 
 #### A10 配置 / 词库原子保存局部阶段 · 中
 - **位置**：`fastpot/config.go:464-520`；`fastpot/vocabulary.go:117-163`

@@ -285,8 +285,12 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 						TextColor(t.Accent).Tooltip("恢复刚刚删除的生词条目")
 					if btnUndo.Clicked() {
 						vocabStore.Add(*a.lastDeletedVocab)
-						a.actionSavedMsg = "已恢复「" + a.lastDeletedVocab.Term + "」✓"
-						a.lastDeletedVocab = nil
+						if err := vocabStore.LastSaveError(); err != nil {
+							a.actionSavedMsg = "恢复失败: " + err.Error()
+						} else {
+							a.actionSavedMsg = "已恢复「" + a.lastDeletedVocab.Term + "」✓"
+							a.lastDeletedVocab = nil
+						}
 						a.settingsRefresh()
 					}
 				}
@@ -586,7 +590,11 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 								entryCopy := entry
 								if vocabStore.Delete(entry.ID) {
 									a.lastDeletedVocab = &entryCopy
-									a.actionSavedMsg = "已删除「" + entry.Term + "」"
+									if err := vocabStore.LastSaveError(); err != nil {
+										a.actionSavedMsg = "删除未写入磁盘: " + err.Error()
+									} else {
+										a.actionSavedMsg = "已删除「" + entry.Term + "」"
+									}
 								}
 								if a.vocabExpandedID == entry.ID {
 									a.vocabExpandedID = ""

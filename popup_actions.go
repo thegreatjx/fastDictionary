@@ -381,12 +381,17 @@ func (a *app) saveDictToVocab(res *DictionaryResult) {
 		Source:             "dict",
 		CreatedAt:          time.Now(),
 	}
-	GetVocabularyStore().Add(entry)
+	vocabStore := GetVocabularyStore()
+	vocabStore.Add(entry)
 	a.mu.Lock()
-	a.actionSavedMsg = "已保存「" + term + "」到生词本 ✓"
-	// Remember which entry was just saved so the card's own button can read
-	// 已保存 instead of inviting a second click that would add a duplicate.
-	a.savedDictTerm = term
+	if err := vocabStore.LastSaveError(); err != nil {
+		a.actionSavedMsg = "保存失败: " + err.Error()
+	} else {
+		a.actionSavedMsg = "已保存「" + term + "」到生词本 ✓"
+		// Remember which entry was just saved so the card's own button can read
+		// 已保存 instead of inviting a second click that would add a duplicate.
+		a.savedDictTerm = term
+	}
 	a.mu.Unlock()
 	if a.win != nil {
 		a.win.Update(func() {})
@@ -405,10 +410,15 @@ func (a *app) saveGrammarToVocab(res *SentenceAnalysisResult) {
 		Source:             "grammar",
 		CreatedAt:          time.Now(),
 	}
-	GetVocabularyStore().Add(entry)
+	vocabStore := GetVocabularyStore()
+	vocabStore.Add(entry)
 	a.mu.Lock()
-	a.grammarSaved = true
-	a.actionSavedMsg = "长难句已保存到生词本 ✓"
+	if err := vocabStore.LastSaveError(); err != nil {
+		a.actionSavedMsg = "保存失败: " + err.Error()
+	} else {
+		a.grammarSaved = true
+		a.actionSavedMsg = "长难句已保存到生词本 ✓"
+	}
 	a.mu.Unlock()
 	if a.win != nil {
 		a.win.Update(func() {})
@@ -428,10 +438,15 @@ func (a *app) saveWritingToVocab(res *ImproveWritingResult) {
 		Source:             "writing",
 		CreatedAt:          time.Now(),
 	}
-	GetVocabularyStore().Add(entry)
+	vocabStore := GetVocabularyStore()
+	vocabStore.Add(entry)
 	a.mu.Lock()
-	a.writingSaved = true
-	a.actionSavedMsg = "写作改进已保存到生词本 ✓"
+	if err := vocabStore.LastSaveError(); err != nil {
+		a.actionSavedMsg = "保存失败: " + err.Error()
+	} else {
+		a.writingSaved = true
+		a.actionSavedMsg = "写作改进已保存到生词本 ✓"
+	}
 	a.mu.Unlock()
 	if a.win != nil {
 		a.win.Update(func() {})

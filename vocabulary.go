@@ -44,6 +44,10 @@ type VocabularyStore struct {
 	// could lose the write entirely. Saves are rare and small, so a plain
 	// mutex around them costs nothing.
 	saveMu sync.Mutex
+	// lastSaveErr 记录最近一次保存的结果。Add / Delete 只返回布尔值，
+	// 界面据此提示「已保存」；磁盘写失败时布尔值仍是 true，用户却会
+	// 在重启后丢词。界面在提示成功前先读这里，失败就如实显示原因。
+	lastSaveErr error
 }
 
 var (
@@ -988,11 +992,24 @@ func (s *VocabularyStore) EnrichAll() (int, error) {
 // was stored: read-only disks, a full disk and a locked file all end up here.
 // 导入链路靠返回的 error 把失败送到设置页；其他调用点沿用旧的「只记日志」行为。
 func (s *VocabularyStore) saveOrLog() error {
-	if err := s.save(); err != nil {
+	err := s.save()
+	s.mu.Lock()
+	s.lastSaveErr = err
+	s.mu.Unlock()
+	if err != nil {
 		log.Printf("fastDictionary: vocabulary save failed: %v", err)
-		return err
 	}
-	return nil
+	return err
+}
+
+// LastSaveError 返回最近一次保存的结果；保存成功时是 nil。
+func (s *VocabularyStore) LastSaveError() error {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.lastSaveErr
 }
 
 // EnrichVocabularyEntry automatically enriches missing phonetic symbols, CEFR difficulties,
