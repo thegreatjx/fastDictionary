@@ -211,6 +211,7 @@
 - **风险**：`aiGen` 被 `runAction`、`refineWithAI`(856 复用同一 `a.aiGen`)、`prefillActionTranslation`、`stopAIPassLocked` 共享，点「AI 精翻」会 `stopAIPassLocked()` 静默取消正在进行的卡片流，用户看到卡片停在中途且无提示；`a.aiText += chunk`(784) 在 goroutine 里持 `a.mu` 写入但 `win.Update`(790-792) 在锁外，chunk 与 paint 不同步；`openPopupAction`/`openPopupWithText` 的 Reset 段(482-528、566-604) 手工清零 30+ 字段，漏一处即旧状态泄漏；`stopAIPassLocked` 只置 `aiBusy=false` 不清 `aiText`，切 tab 后 `renderAIResultState`(525-552) 会把上一轮半成品当结果展示
 - **显式化**：`type AIPassState uint8` + `const (aiPassIdle AIPassState = iota; aiPassStreaming; aiPassParsing; aiPassDone; aiPassFailed; aiPassCanceled)`；`type AIPass struct{ Gen uint64; State AIPassState; ActionID string; Text string; Cancel context.CancelFunc; Prefill *TranslationPrefill; Err error }`；`func (a *app) transitionAIPass(gen uint64, to AIPassState) bool` 统一收口；`const engineAIRefined = "AI 精翻"` 消除字符串哨兵；`aiRefining` 拆出独立 `RefineSession` 不再共用 `aiGen`
 - **测试**：`popup_streaming_test.go:13/31/48/66`（只覆盖渲染三态）、`popup_ui_test.go:82/112`（OCR 代次）。缺口：aiGen 竞态/取消、精翻取消卡片、prefill 消费、Reset 段完整性
+- **复核备注（批次 4b）**：精翻复用卡片代次属实——点「AI 精翻」会调 `stopAIPassLocked()` 静默取消在飞的卡片流。已拆出独立 `aiRefineGen requestToken` + `aiRefineCancel context.CancelFunc`，`refineWithAI` 不再碰卡片代次；`TestRefineWithAIDoesNotCancelCardStream` 先红后绿，`TestRefineWithAIIndependentGeneration` 钉住两条代次互不影响。完整 `AIPass` 会话对象与写入侧收敛未做，留后续。
 
 #### U2 翻译请求生命周期 · 高
 - **位置**：`fastpot/popup.go:62-69, 163`；`fastpot/popup_actions.go:36-46, 88-184`；`fastpot/popup_translation.go:152-160, 559-598`；`fastpot/popup_layout.go:326-382`。关键行：106 `a.busy = true`、110-112 `translateGen++ / gen / notesGen`、144-151 丢弃 stale、152 `a.busy = false`、180-182 派生生词请求
@@ -219,6 +220,7 @@
 - **风险**：**`switchMode`(popup.go:427-430) 直接把 `busy=false` 而不 `translateGen++`，旧翻译 goroutine 回来后(144-151) 的 gen 校验仍通过，会把旧译文写进新模式视图**；`renderEngineMenu` 用 `!s.busy` 门控，但 `busy` 在 goroutine(152) 与 UI 线程(590) 无同步读；`elapsed`/`engine` 与 `target` 分多次赋值，中间帧显示「新 engine + 旧 target」
 - **显式化**：`type TranslatePhase uint8`（`translateIdle/translatePending/translateDone/translateFailed`）+ `type TranslateRequest struct{ Gen uint64; Phase TranslatePhase; Source, Target, Engine, Detected, Err string; Elapsed time.Duration }` + `func (a *app) startTranslation(src string) uint64`；`switchMode` 改为 `a.translate.Cancel()`（内部自增 gen）而非手改 busy
 - **测试**：`popup_ui_test.go:13`、`layout_test.go` 全为布局纯函数。缺口：translateGen 竞态、switchMode 期间结果到达、`busy` 门控
+- **复核备注（批次 4d）**：`switchMode` 与两个 `openPopup` 入口只置 `busy=false`、不失效 `translateGen` 属实，旧机器翻译可写进新模式视图。三处现都在清 `busy` 后自增 `translateGen`；`TranslationSession` 结构体化未做，留后续。
 
 #### U3 生词提取请求（notes） · 中
 - **位置**：`fastpot/popup.go:84, 100-105, 152`；`fastpot/popup_actions.go:69-77, 180-182, 206-226, 228-323, 1024-1059`；`fastpot/popup_view.go:283-372`；`fastpot/popup_translation.go:253-291, 509-514`；`fastpot/popup_ocr_pairs.go:185-222`
@@ -252,6 +254,7 @@
 - **风险**：**确凿的状态不同步**——saveTabLocked(58-99) 原样保存 `aiBusy/notesBusy`，restoreTabLocked(101-138) 却强制置 false 并丢弃 `aiCancel/notesCancel`，且**不**自增 `aiGen/notesGen`；恢复后旧请求 goroutine 的 gen 校验仍通过，会把旧结果写进「看起来已完成」的 tab；反过来若保存时 `aiBusy=true`，恢复后 UI 立刻显示「完成」但结果还在路上；`hasContent()`(52-56) 不检查 busy，缓存命中判定(442-450) 会把「正在加载」的 tab 当作已完成直接恢复
 - **显式化**：`type TabPhase uint8`（`tabEmpty/tabLoading/tabStreaming/tabReady/tabFailed`）+ `type TabSnapshot struct{ Mode popupMode; Source string; Phase TabPhase; Result ResultPayload; Options ViewOptions }` + `type TabCache struct{ states map[popupMode]*TabSnapshot }` 提供 `Save(app)/Restore(app, m)/Clear(m)`，Save 与 Restore 共用 `syncSnapshot` 序列化函数；`hasContent()` → `snap.Phase == tabReady`
 - **测试**：**无**，缺口：save/restore 不对称、busy 态缓存、gen 未失效全无测试
+- **复核备注（批次 4c）**：`hasContent()` 把 `aiBusy` / `notesBusy` 的进行中页签当成有内容会阻止重跑，已改为 `!s.aiBusy && !s.notesBusy && (...)`；`restoreTabLocked` 强制置 false 与不自增 gen 由 `switchMode` 的 `stopAIPassLocked` / `stopNotesLocked` 兜住，经核查无需再改。完整 `TabSnapshot` 结构体未做，留后续。
 
 #### U7 结果卡片三态渲染（nil 哨兵 + 内容嗅探） · 中
 - **位置**：`fastpot/popup_view.go:155-188, 525-594`；`fastpot/popup.go:108, 124-125`
@@ -331,6 +334,7 @@
 - **风险**：`screenshotPinned` 泄漏已有实锤(popup.go:600-603 兜底注释)；`stopScreenshotOCR()` 在三处调用但 `openPopupAction` 路径未调用，截图会话可能被新弹窗打断而不取消；`snipBitmap` nil 哨兵与 `ocrText` 空串可组合出「有图无文」「有文无图」等无意义状态，`popupContentHeight`(popup_layout.go:175-180) 却按 `isScreenshotMode && snipExpanded` 直接参与高度计算
 - **显式化**：与 A4 合并为 `ScreenshotOCRSession`（`OCRSessionState` + `Invalidate()`），四个代次计数器统一命名为 `aiGen/translateGen/notesGen/ocrGen` 并抽 `type generation uint64; func (g *generation) Next() generation`
 - **测试**：`popup_ui_test.go:82/112`。缺口：screenshotPinned 泄漏、openPopupAction 未取消会话、OCR 与 AI 精翻串联(popup_ocr_pairs.go:146-178)
+- **复核备注（批次 5d / 6c）**：`screenshotPinned` 泄漏已由批次 5d 的 `resetScreenshotPinLocked()` 修掉（`openPopupAction` 也调用）；渲染侧三块是叠加而非互斥，已按 A4 的 `ocrViewPhase` / `classifyOCRView` / `ocrShowErrorBox` / `ocrShowEditor` 收口，控制流未动；`ScreenshotOCRSession` 与 `snipBitmap` 的完整会话对象留后续。
 
 #### U16 选择手势触发策略 · 中（与 C1/C3/C4 重叠，见 §4.4）
 - **位置**：`fastpot/selicon.go:934-958, 960-1015, 1026-1050, 1072-1095`；`fastpot/popup.go:158, 214`；载体定义 `fastpot/selection_policy.go:226-258`、`fastpot/hook.go:449-452`
@@ -597,6 +601,7 @@
 - **风险**：代次之间会互相伤害——`refineWithAI`(`popup_actions.go:856`) 复用 `aiGen`，点「AI 精翻」会 `stopAIPassLocked()` 静默取消卡片流（U1/U4）；`switchMode`(`popup.go:427-430`) 直改 `busy=false` 而不 `translateGen++`，旧译文会写进新模式（U2）；`restoreTabLocked` 不自增 gen 却丢弃 cancel（U6）；`ocrGeneration` 单次启动自增 3 次（A4）；`skipAIResultCache` 由 `rerunCurrentModeFresh` 生产、只在 `runAction` 消费，中途早退就残留（U14）。**「代次」是上一轮竞态修复刻意引入的机制，不能简单删除，只能收拢**
 - **显式化**：`type generation uint64; func (g *generation) Next() generation` + `type Session struct{ Gen generation; State XxxState; Cancel context.CancelFunc }`；每个生命周期一份独立 `Session`，`func (s *Session) Invalidate()` 统一「自增 + cancel + 置 cancelled」；`switchMode` 拆成 `func (a *app) switchMode(m popupMode, reason ModeChangeReason)`，把五件事变成一张可读的迁移表
 - **测试**：`ai_generation_race_test.go`、`optimization_regression_test.go`、`popup_ui_test.go:112` 覆盖部分代次；缺「任意事件序列下新旧表示一致」的迁移表测试
+- **复核备注（批次 4b / 4d / 8b）**：代次家族已统一为 `type requestToken uint64`（`aiGen` / `aiRefineGen` / `notesGen` / `translateGen` / `ocrGeneration`），`switchMode` 与两个 `openPopup` 入口补自增 `translateGen`，`refineWithAI` 改用独立代次。完整的 `modeChangeReason` 迁移中心与单一 `Session` 对象未做，留后续。
 
 #### X3 两份 openPopup Reset 段 · 高
 - **位置**：`fastpot/popup.go:482-528`（`openPopupAction`）、`fastpot/popup.go:566-604`（`openPopupWithText`）；另有 `fastpot/popup.go:600-603` 的 `screenshotPinned` 兜底
