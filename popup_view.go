@@ -271,10 +271,20 @@ func (a *app) autofitDecision(delta float32, ok bool) (float32, bool) {
 		return 0, false
 	}
 	if a.autofitLocked {
-		return 0, false
+		// The lock only exists to stop the two-height bounce. A visible change
+		// in content height means the content really moved (a streaming answer
+		// grew), so the loop gets a fresh chance; otherwise it stays locked.
+		if diff := a.measuredContentH - a.autofitLockContentH; diff > 8 || diff < -8 {
+			a.autofitLocked = false
+			a.autofitDir = 0
+			a.autofitSteps = 0
+		} else {
+			return 0, false
+		}
 	}
 	if a.autofitDir != 0 && (delta > 0) != (a.autofitDir > 0) {
 		a.autofitLocked = true
+		a.autofitLockContentH = a.measuredContentH
 		return 0, false
 	}
 	a.autofitTarget = delta

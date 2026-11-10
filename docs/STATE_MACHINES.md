@@ -290,6 +290,7 @@
 - **风险**：`autofitLocked=true` 后只有 `fitHeight`(371-378) 解锁，而流式 chunk 只 `win.Update` 不调 fitHeight（收尾 821-822 才调），整个流式期间高度锁死不跟随内容 → 文字被裁切；`autofitSteps` 只递增不参与任何判定，是死字段；`autofitTarget` 每次 decision 开头被清零(264) 却无人读取；`settled` 用 `h == lastAutofitWinH` 判稳定，两帧恰好同高但内容已变会误判
 - **显式化**：`type AutofitPhase uint8`（`autofitIdle/autofitMeasuring/autofitAdjusting/autofitLockedPhase`）+ `type AutofitSession struct{ Phase AutofitPhase; Dir float32; Steps int; Target, LastViewportH, LastContentH float32; LastWinH int; ContentRev uint64 }` + `func (s *AutofitSession) Decide(viewport, content float32, contentRev uint64) (delta float32, ok bool)`，用 `ContentRev` 比较代替「内容变化即解锁」；删除死字段
 - **测试**：`layout_test.go:12-215`（全是纯函数）。缺口：autofitDecision 振荡锁定、解锁路径、settled 判定、流式期间锁死
+- **复核备注（批次 7e）**：流式期间锁死属实（chunk 只 `win.Update`，`fitHeight` 只在收尾调）。已给锁定加上「内容高度变化超过 8 DIP 即解锁」的判据，`autofitLockContentH` 记录锁定时的内容高度；`AutofitSession` 结构体化、`autofitSteps`/`autofitTarget` 死字段清理留后续。
 
 #### U12 展开/折叠与视图选项布尔组 · 中
 - **位置**：`fastpot/popup.go:82-84, 107, 139-141, 170-171`；`fastpot/popup_translation.go:163-173, 284-289, 357-388, 509-514`；`fastpot/popup_ocr_pairs.go:39-125, 131-224`；`fastpot/popup_layout.go:79-215`

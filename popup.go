@@ -204,9 +204,10 @@ type app struct {
 	// bouncing between two heights on every repaint — so the reversal is
 	// dropped and autofitLocked keeps it from trying again until the content
 	// actually changes.
-	autofitSteps  int
-	autofitDir    float32
-	autofitLocked bool
+	autofitSteps        int
+	autofitDir          float32
+	autofitLocked       bool
+	autofitLockContentH float32 // content height when the reversal locked the loop
 
 	// the floating selection chip
 	sel selState

@@ -750,6 +750,7 @@ gofmt -d .
 | 7b | 熔断器注册表：测试无同步替换包级 `breakers` 指针，与在飞请求并发读写，`go test -race` 偶发 DATA RACE | 无（测试隔离修复，生产语义不变） | 见下 |
 | 7c | C7 语音播放：代次检查与 `playMP3` 分处两段临界区，检查后、播放前下一次朗读可插入，旧音频盖住新音频；有道单词快路径完全没检查代次 | 有（修 bug）：检查与播放合进同一临界区 | 见下 |
 | 7d | C2 钩子命令单槽：连续两次 `postHookCommand`，第二条覆盖第一条，命令永久丢失（快速切模式 + 退出时可能丢掉 `removeHooks`） | 有（修 bug）：单槽换成带缓冲队列，按序全部执行 | 见下 |
+| 7e | U11 自动高度：振荡锁定后只有 `fitHeight` 解锁，而流式 chunk 只 `win.Update`，整段流式期间高度不再跟随内容增长 | 有（修 bug）：内容高度明显变化即解除锁定 | 见下 |
 
 ### 批次 7a 验证记录（A20 词库分类统一）
 
@@ -808,6 +809,23 @@ gofmt -d .
   DATA RACE 0；`gofmt -l .` 空、`go vet ./...` clean。
 - 未验证：真实切换触发模式的顺序（快速连续切换 + 立刻退出）需要真人走查；`HookRuntime`
   结构体化与 `Post` 错误分类未做，留后续。
+
+### 批次 7e 验证记录（U11 自动高度锁定）
+
+- 复现测试：`autofit_lock_test.go` 的 `TestAutofitLockReleasesWhenContentGrows`（锁定后内容
+  增高 40 DIP，必须解除锁定并采纳修正；改前编译失败/断言 FAIL）、
+  `TestAutofitLockHoldsWhileContentStable`（内容不变仍锁定）、
+  `TestAutofitLockSurvivesTinyMeasurementNoise`（7 DIP 抖动不解除）。
+- 生产改动：`popup.go` 的 autofit 字段组新增 `autofitLockContentH`；`popup_view.go` 的
+  `autofitDecision` 在锁定分支比较当前 `measuredContentH` 与锁定时的内容高度，差超过 8 DIP
+  就清锁、清方向与步数，让本轮重新决策；锁定时记下当时的 content 高度。
+- 行为：内容真的变了（流式回答变长）→ 窗口继续跟着长；内容没变而两帧高差方向翻转 → 仍然锁定，
+  不会重新引入振荡。
+- 验证：`go test -count=1 ./...` ok 9.864s；`go test -race -count=1 ./...` 连续 2 次 exit=0、
+  DATA RACE 0；`gofmt -l .` 空、`go vet ./...` clean。
+- 未验证：8 DIP 的阈值来自测量噪声的量级（既有判据是 4 DIP 死区），真实长文流式需要真人观察；
+  `AutofitSession` 结构体化与死字段清理未做，留后续。
+
 
 
 
