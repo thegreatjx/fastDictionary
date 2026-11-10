@@ -163,6 +163,7 @@
 - **风险**：`edgeTTSGetAuth` **先解锁(193)再发网络请求(197)**，warmup 与多次朗读会并发判定过期并同时 fetch，后写覆盖先写（惊群，无 singleflight）；401 复位**无代次保护**，旧 token 的慢请求返回 401 会清空刚写入的新 token，导致下次朗读必然多付一次 650ms 握手；失败时不区分「网络失败」与「服务拒绝」
 - **显式化**：`tokenCacheState`（`empty/fresh/expiring/rejected`）+ `edgeTTSAuthCache{mu;state;auth;gen;group singleflight.Group}`；`Get(ctx)` 用 singleflight 合并 fetch；`Invalidate(gen uint64)` 只有 `gen == c.gen` 才复位；`authFailureKind`（`network/rejected/malformed`）供 UX 分层提示
 - **测试**：`tts_test.go:12/55/77/98`（签名/映射/SSML/live）。缺口：缓存过期、并发刷新惊群、401 复位代次、warmup 与按需请求交错全无确定性单测
+- **复核备注（批次 9d）**：三条缺口里的「并发刷新惊群」与「401 复位代次」已修：`edgeTTSGetAuth` 返回 `(auth, gen, error)`，刷新由 `edgeTTSFetchMu` 串行化并在锁内二次检查缓存，`invalidateEdgeTTSAuth(gen)` 只在代次匹配时清空；`tts_token_cache_test.go` 三条测试覆盖。`tokenCacheState` 枚举与 `authFailureKind` 分层提示未做，留给后续。
 
 #### C9 翻译引擎熔断器与竞速阶段 · 中
 - **位置**：`fastpot/services.go:388-427, 429-602, 619-676, 710-793`

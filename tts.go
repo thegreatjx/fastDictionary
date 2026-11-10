@@ -80,7 +80,18 @@ type edgeTTSAuth struct {
 var (
 	edgeTTSMu    sync.Mutex
 	edgeTTSAuth_ edgeTTSAuth
+	// edgeTTSAuthGen increments every time a fresh token is stored. A request
+	// that was handed an older token must not invalidate the newer one when
+	// its call comes back rejected.
+	edgeTTSAuthGen uint64
+	// edgeTTSFetchMu serialises token handshakes so a burst of reads does not
+	// fetch the same token several times over.
+	edgeTTSFetchMu sync.Mutex
 )
+
+// edgeTTSFetchAuthFunc is the token handshake, kept as a variable so the
+// cache's refresh and invalidation rules can be tested without network access.
+var edgeTTSFetchAuthFunc = edgeTTSFetchAuth
 
 // edgeTTSHTTP is the client for the two TTS calls. It is separate from
 // httpClient (the 8s translation client) because a long sentence takes
@@ -186,22 +197,49 @@ func jwtExpiry(token string) (time.Time, bool) {
 }
 
 // edgeTTSGetAuth returns a cached token, fetching a new one when it is
-// missing or about to expire.
-func edgeTTSGetAuth(ctx context.Context) (edgeTTSAuth, error) {
-	edgeTTSMu.Lock()
-	cached := edgeTTSAuth_
-	edgeTTSMu.Unlock()
-	if cached.token != "" && time.Now().Before(cached.expiresAt.Add(-edgeTTSTokenSlack)) {
-		return cached, nil
+// missing or about to expire. The generation identifies the token so a late
+// rejection only clears the copy the caller was actually given.
+func edgeTTSGetAuth(ctx context.Context) (edgeTTSAuth, uint64, error) {
+	if cached, gen := edgeTTSCachedAuth(); cached.token != "" && time.Now().Before(cached.expiresAt.Add(-edgeTTSTokenSlack)) {
+		return cached, gen, nil
 	}
-	fresh, err := edgeTTSFetchAuth(ctx)
+	// Only one reader refreshes; the rest wait here and reuse the token it
+	// stored instead of firing their own handshake.
+	edgeTTSFetchMu.Lock()
+	defer edgeTTSFetchMu.Unlock()
+	if cached, gen := edgeTTSCachedAuth(); cached.token != "" && time.Now().Before(cached.expiresAt.Add(-edgeTTSTokenSlack)) {
+		return cached, gen, nil
+	}
+	fresh, err := edgeTTSFetchAuthFunc(ctx)
 	if err != nil {
-		return edgeTTSAuth{}, err
+		return edgeTTSAuth{}, 0, err
 	}
 	edgeTTSMu.Lock()
+	edgeTTSAuthGen++
+	gen := edgeTTSAuthGen
 	edgeTTSAuth_ = fresh
 	edgeTTSMu.Unlock()
-	return fresh, nil
+	return fresh, gen, nil
+}
+
+// edgeTTSCachedAuth returns the cached token and the generation that produced
+// it.
+func edgeTTSCachedAuth() (edgeTTSAuth, uint64) {
+	edgeTTSMu.Lock()
+	defer edgeTTSMu.Unlock()
+	return edgeTTSAuth_, edgeTTSAuthGen
+}
+
+// invalidateEdgeTTSAuth clears the cached token only when the caller's token
+// is still the current one. A slow request holding an older token must not
+// throw away a token another request has already refreshed.
+func invalidateEdgeTTSAuth(gen uint64) {
+	edgeTTSMu.Lock()
+	defer edgeTTSMu.Unlock()
+	if gen != edgeTTSAuthGen {
+		return
+	}
+	edgeTTSAuth_ = edgeTTSAuth{}
 }
 
 // edgeTTSVoice picks a neural voice for a language tag, honouring a user
@@ -370,7 +408,7 @@ func fetchEdgeTTSFormat(ctx context.Context, text, voice, format string) (string
 		return path, nil
 	}
 
-	auth, err := edgeTTSGetAuth(ctx)
+	auth, authGen, err := edgeTTSGetAuth(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -391,9 +429,7 @@ func fetchEdgeTTSFormat(ctx context.Context, text, voice, format string) (string
 	defer resp.Body.Close()
 	if resp.StatusCode == 401 || resp.StatusCode == 403 {
 		// The token went stale between the cache check and the call.
-		edgeTTSMu.Lock()
-		edgeTTSAuth_ = edgeTTSAuth{}
-		edgeTTSMu.Unlock()
+		invalidateEdgeTTSAuth(authGen)
 		return "", fmt.Errorf("edge tts: token rejected (http %d)", resp.StatusCode)
 	}
 	if resp.StatusCode != 200 {
@@ -443,7 +479,7 @@ func warmEdgeTTSAuth() {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		if _, err := edgeTTSGetAuth(ctx); err != nil {
+		if _, _, err := edgeTTSGetAuth(ctx); err != nil {
 			log.Printf("fastDictionary: edge tts warmup failed (will retry on demand): %v", err)
 			return
 		}
