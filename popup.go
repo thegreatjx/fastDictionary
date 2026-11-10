@@ -76,8 +76,8 @@ type app struct {
 	// aiGen counts AI passes and anything that supersedes them. A cancelled
 	// pass keeps running until its HTTP request returns, so without this its
 	// teardown would write over the newer request's card.
-	aiGen           uint64
-	aiRefineGen     uint64 // 精翻专用代次，与卡片流分开
+	aiGen           requestToken
+	aiRefineGen     requestToken // 精翻专用代次，与卡片流分开
 	aiRefineCancel  context.CancelFunc
 	inputText       string
 	inputTargetMode popupMode
@@ -90,7 +90,7 @@ type app struct {
 	ocrCrop         winRect
 	ocrBusy         bool
 	ocrError        string
-	ocrGeneration   uint64
+	ocrGeneration   requestToken
 	ocrCancel       context.CancelFunc
 
 	win        *mygo.Window
@@ -105,7 +105,7 @@ type app struct {
 	// notesGen counts note extractions and every popup/translation that
 	// supersedes them. The request is slow (up to 20s), so its teardown must
 	// not write into a newer card after the user has moved on.
-	notesGen      uint64
+	notesGen      requestToken
 	notesCancel   context.CancelFunc
 	onlyTrunk     bool
 	grammarResult *SentenceAnalysisResult
@@ -164,7 +164,7 @@ type app struct {
 	// translateGen counts translations so a slow answer that has been
 	// superseded can be recognised and dropped instead of overwriting the
 	// newer result.
-	translateGen uint64
+	translateGen requestToken
 	// tabStates keeps the answer each reading tab already owns. Switching
 	// tabs must not rerun a slow model or show the previous tab's text under
 	// the new heading.

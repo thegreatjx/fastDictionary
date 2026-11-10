@@ -19,14 +19,14 @@ func TestStopAIPassLockedLegacyBehavior(t *testing.T) {
 	a.aiRefineErr = "old error"
 	a.stopAIPassLocked()
 	got := struct {
-		gen            uint64
+		gen            requestToken
 		busy, refining bool
 		err, text      string
 	}{a.aiGen, a.aiBusy, a.aiRefining, a.aiRefineErr, a.aiText}
 	a.mu.Unlock()
 
 	want := struct {
-		gen            uint64
+		gen            requestToken
 		busy, refining bool
 		err, text      string
 	}{8, false, false, "", "partial"}
@@ -57,14 +57,14 @@ func TestRestoreTabLockedLegacyBehavior(t *testing.T) {
 	}
 	a.restoreTabLocked(st)
 	got := struct {
-		aiGen, notesGen   uint64
+		aiGen, notesGen   requestToken
 		aiBusy, notesBusy bool
 		aiText, target    string
 	}{a.aiGen, a.notesGen, a.aiBusy, a.notesBusy, a.aiText, a.target}
 	a.mu.Unlock()
 
 	want := struct {
-		aiGen, notesGen   uint64
+		aiGen, notesGen   requestToken
 		aiBusy, notesBusy bool
 		aiText, target    string
 	}{7, 3, false, false, "partial", "machine"}
@@ -94,13 +94,13 @@ func TestRefineWithAIIndependentGeneration(t *testing.T) {
 
 	a.mu.Lock()
 	got := struct {
-		gen, refineGen uint64
+		gen, refineGen requestToken
 		busy           bool
 		text           string
 	}{a.aiGen, a.aiRefineGen, a.aiBusy, a.aiText}
 	a.mu.Unlock()
 	want := struct {
-		gen, refineGen uint64
+		gen, refineGen requestToken
 		busy           bool
 		text           string
 	}{7, 1, true, "partial"}

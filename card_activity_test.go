@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestCardActivityPrecedence(t *testing.T) {
 	cases := []struct {
@@ -56,5 +59,21 @@ func TestCardActivityString(t *testing.T) {
 		if got := p.String(); got != w {
 			t.Errorf("%d: got %q want %q", p, got, w)
 		}
+	}
+}
+
+// TestRequestTokenIsNamedType guards the compile-time half of C6: the four
+// generation counters used to be plain uint64, so a token from one kind could
+// be compared with another without the compiler noticing.
+func TestRequestTokenIsNamedType(t *testing.T) {
+	var tok requestToken = 1
+	if tok != 1 {
+		t.Fatal("requestToken 应可容纳普通计数值")
+	}
+	if name := reflect.TypeOf(tok).Name(); name != "requestToken" {
+		t.Fatalf("代次应为具名类型，实际为 %q", name)
+	}
+	if kind := reflect.TypeOf(tok).Kind(); kind != reflect.Uint64 {
+		t.Fatalf("requestToken 底层应为 uint64，实际为 %v", kind)
 	}
 }

@@ -232,7 +232,7 @@ func shouldExtractNotes(text string) bool {
 	return latinWords >= 4 || cjk >= 8
 }
 
-func (a *app) extractNotesForGen(gen uint64, text string) {
+func (a *app) extractNotesForGen(gen requestToken, text string) {
 	cfg := a.store.Get()
 	if !cfg.AIEnabled || !cfg.ShowNotes || !shouldExtractNotes(text) {
 		a.mu.Lock()
@@ -447,7 +447,7 @@ func (a *app) saveWritingToVocab(res *ImproveWritingResult) {
 // translation arrives in well under a second and answers the question the user
 // actually asked, so it is fetched in parallel and dropped into the same field
 // the model will later overwrite with its own translation.
-func (a *app) prefillActionTranslation(gen uint64, text, targetLang string) {
+func (a *app) prefillActionTranslation(gen requestToken, text, targetLang string) {
 	cfg := a.store.Get()
 	from := detectLocal(text)
 	to := targetLang

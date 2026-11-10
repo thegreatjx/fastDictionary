@@ -140,7 +140,8 @@
 - **风险**：`main.go:484-529` demo 绕过正常迁移直接写核心字段（在锁内但无代次递增、无 busy 复位），证明字段可被任意组合篡改而无校验；`xxGen` 与 busy 布尔并存，是否丢弃陈旧结果取决于每个回调是否记得比对——`ai_generation_race_test.go:55/201`、`atomic_save_test.go:178` 正是为「陈旧答案覆盖新卡片」补的测试；`notesSaved/grammarSaved/writingSaved` 拆成三个标志是布尔拆分不彻底的历史遗留（popup.go:148-151 注释自述合并前会串卡）
 - **显式化**：`CardPhase`（`idle/translating/streamingAI/ready/error`）+ `cardSnapshot` 收拢布尔矩阵；`type requestToken uint64` + `generationCounter{ n atomic.Uint64 }` 统一四个代次；`func (a *app) transition(to CardPhase, tok requestToken) bool` 作为唯一写入口（demo 分支也走它）
 - **测试**：`main_test.go:48/76`、`ai_generation_race_test.go:55/201/314/374`、`atomic_save_test.go:139/162/178`、`optimization_regression_test.go:128/146/161/219`、`popup_streaming_test.go:66`、`chip_states_visual_test.go:18`、`ux_walkthrough_test.go:14/85/123/144/585/629`、`actions_test.go:191`。缺口：demo 直写字段路径、四 busy 组合不变式、`skipAIResultCache` 生命周期
-- **复核备注（批次 8a）**：五个忙碌标志的 OR 散落属实，已抽出 `cardActivityOf` / `cardHasPendingWork` 统一判定，`tabViewState` 补记 `busy`/`ocrBusy` 让加载中的页签不进恢复缓存；`skipAIResultCache` 提前返回泄漏已修（入口消费 + 只为 AI 模式置位）。完整的 `CardPhase` 状态机、`requestToken` 类型化与 `transition` 唯一写入口未做，留后续。
+- **复核备注（批次 8a）**：五个忙碌标志的 OR 散落属实，已抽出 `cardActivityOf` / `cardHasPendingWork` 统一判定，`tabViewState` 补记 `busy`/`ocrBusy` 让加载中的页签不进恢复缓存；`skipAIResultCache` 提前返回泄漏已修（入口消费 + 只为 AI 模式置位）。
+- **复核备注（批次 8b）**：五个代次已改为具名 `requestToken`，跨代次比较由编译器拦截。完整的 `CardPhase` 状态机与 `transition` 唯一写入口仍未做，留后续。
 
 #### C7 语音播放代次与 MCI 播放器 · 中
 - **位置**：`fastpot/audio.go:22-27, 58-100, 107-111, 131-187, 223-252`

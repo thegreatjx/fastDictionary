@@ -755,6 +755,7 @@ gofmt -d .
 | 7g | A5 Indra 引擎：首次加载失败被永久缓存，进程内不再重试；一次瞬时失败（模型文件被占用、内存紧张）会让 OCR 一直降级到 Windows 识别，必须重启应用 | 有（修 bug）：失败后按 30 秒冷却重试 | 见下 |
 | 7h | C3 划词触发：只有 `resumeSelection` 清手势冷却，暂停与切换触发模式都不清，残留 300ms 冷却吞掉暂停/切换后的第一个手势；托盘浮层改模式不重建托盘，单选状态停在旧模式 | 有（修 bug）：三处入口统一清冷却 + 浮层重建托盘 | 见下 |
 | 8a | C6 卡片复合状态·第一批：五个 `bool` 忙碌标志散在布局、页签缓存、空态判定里，各自拼 OR，新增一个标志就要改多处；`skipAIResultCache` 只在缓存查找之后清零，AI 关闭 / 动作不存在 / 空文本三条提前返回都会把「重新翻译」意图泄漏到下一次请求，翻译模式的重新翻译也会误置该标志 | 有（`skipAIResultCache` 泄漏是修 bug；忙碌判定收口是零行为变化） | 见下 |
+| 8b | C6 卡片复合状态·第二批：`aiGen` / `aiRefineGen` / `notesGen` / `translateGen` / `ocrGeneration` 五个代次都是裸 `uint64`，跨代次比较编译器不会报错 | 无（纯类型显式化） | 见下 |
 
 ### 批次 7a 验证记录（A20 词库分类统一）
 
@@ -891,6 +892,17 @@ gofmt -d .
   exit=0、DATA RACE 0；`gofmt -l .` 空、`go vet ./...` clean。
 - 未验证：`CardPhase` 完整状态机与 `requestToken` 类型化未做，留后续；四条
   `busy` 组合的真实窗口走查仍待做。
+
+### 批次 8b 验证记录（C6 代次类型化）
+
+- 新增 `type requestToken uint64`（`card_activity.go`），五个代次字段与两个
+  接收代次的函数参数（`extractNotesForGen`、`prefillActionTranslation`）改用该类型。
+- 效果：不同种类的代次不能再互相比较或赋值，编译器直接拦住串代次。
+- 测试：`card_activity_test.go` 增加 `TestRequestTokenIsNamedType`（具名类型、底层 uint64）。
+- 验证：`go test -count=1 ./...` ok 9.366s；`go test -race -count=1 ./...` 连续 2 次
+  exit=0、DATA RACE 0；`gofmt -l .` 空、`go vet ./...` clean。
+- 未验证：`CardPhase` 完整状态机与 `transition` 唯一写入口未做，留后续。
+
 
 
 

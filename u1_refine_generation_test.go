@@ -43,13 +43,13 @@ func TestRefineWithAIDoesNotCancelCardStream(t *testing.T) {
 
 	a.mu.Lock()
 	got := struct {
-		gen  uint64
+		gen  requestToken
 		busy bool
 		text string
 	}{a.aiGen, a.aiBusy, a.aiText}
 	a.mu.Unlock()
 	want := struct {
-		gen  uint64
+		gen  requestToken
 		busy bool
 		text string
 	}{7, true, "partial"}
