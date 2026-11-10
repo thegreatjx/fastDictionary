@@ -226,7 +226,11 @@ type app struct {
 	showPopup func(m popupMode, text string)
 
 	// settings window scratch state
-	aiTest                  string
+	aiTest string
+	// aiTestGen counts gateway probes so a slow answer that has been
+	// superseded by a newer click cannot overwrite the newer result.
+	aiTestGen               uint64
+	aiTestCancel            context.CancelFunc
 	aiRefining              bool
 	aiRefineErr             string
 	hotkeyMsg               string

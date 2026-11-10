@@ -205,20 +205,30 @@ func settingsLogPath() string {
 	return dir + string(os.PathSeparator) + logFile
 }
 
+// streamMagpieProbe is the gateway probe call, kept as a variable so the
+// stale-result rules can be tested without a live gateway.
+var streamMagpieProbe = StreamMagpie
+
 // testGateway pings the magpie gateway and reports the result.
 func (a *app) testGateway() {
 	cfg := a.store.Get()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	a.mu.Lock()
+	if a.aiTestCancel != nil {
+		a.aiTestCancel()
+	}
+	a.aiTestGen++
+	gen := a.aiTestGen
+	a.aiTestCancel = cancel
 	a.aiTest = "测试中…"
 	a.mu.Unlock()
 	if a.cfgWin != nil {
 		a.cfgWin.Update(func() {})
 	}
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		start := time.Now()
-		out, err := StreamMagpie(ctx, cfg.AIURL, cfg.AIModel, "You are a test probe. Reply with 'pong' only.", "ping", ResolveEffort(cfg.AIEffort, cfg.AIModel), nil)
+		out, err := streamMagpieProbe(ctx, cfg.AIURL, cfg.AIModel, "You are a test probe. Reply with 'pong' only.", "ping", ResolveEffort(cfg.AIEffort, cfg.AIModel), nil)
 		msg := ""
 		if err != nil {
 			msg = "失败：" + err.Error()
@@ -229,6 +239,11 @@ func (a *app) testGateway() {
 				truncateFor(out, 20))
 		}
 		a.mu.Lock()
+		if gen != a.aiTestGen {
+			a.mu.Unlock()
+			return
+		}
+		a.aiTestCancel = nil
 		a.aiTest = msg
 		a.mu.Unlock()
 		if a.cfgWin != nil {
