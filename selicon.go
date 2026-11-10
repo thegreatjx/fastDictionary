@@ -66,6 +66,10 @@ type selState struct {
 	text  string
 	x, y  int // top-left in DIPs
 	shown bool
+	// gen 每次显示/隐藏都自增。显示时启动的 pointer 采样只对当次会话有效，
+	// 否则 chip 被收起（或收起后很快又重新显示）时，旧采样会把提示抬到
+	// 已经不该显示提示的 chip 上。
+	gen uint64
 }
 
 // chipTipState is the hover label's state. It has a lock of its own so the
@@ -219,6 +223,8 @@ func (a *app) showSelIcon(px, py int32, text string) {
 	a.sel.text = text
 	a.sel.x, a.sel.y = x, y
 	a.sel.shown = true
+	a.sel.gen++
+	gen := a.sel.gen
 	a.mu.Unlock()
 
 	win.SetSize(width, selIconHeight)
@@ -263,7 +269,7 @@ func (a *app) showSelIcon(px, py int32, text string) {
 	// move for that, so the pointer is sampled here once the frame that gives
 	// the buttons their boxes has run. The wait is retried because that frame
 	// is posted to the main thread and can land after the window is up.
-	go a.sampleChipPointer()
+	go a.sampleChipPointer(gen)
 }
 
 // sampleChipPointer asks the chip which button the pointer is on right now.
@@ -271,17 +277,14 @@ func (a *app) showSelIcon(px, py int32, text string) {
 // It exists for the moment the chip appears: the pointer is already where it
 // will be, and a still pointer generates no moves, so nothing else would ever
 // start the hover wait.
-func (a *app) sampleChipPointer() {
+func (a *app) sampleChipPointer(gen uint64) {
 	for i := 0; i < 10; i++ {
 		time.Sleep(selIconSettle)
 		if a.chipHitBoxesReady() {
 			break
 		}
 	}
-	a.mu.Lock()
-	shown := a.sel.shown
-	a.mu.Unlock()
-	if !shown {
+	if !a.chipSampleStillCurrent(gen) {
 		return
 	}
 	var p winPoint
@@ -289,6 +292,13 @@ func (a *app) sampleChipPointer() {
 		return
 	}
 	a.onChipPointer(p.X, p.Y)
+}
+
+// chipSampleStillCurrent 判断一次 pointer 采样是否仍属于当前 chip 会话。
+func (a *app) chipSampleStillCurrent(gen uint64) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.sel.shown && a.sel.gen == gen
 }
 
 // chipHitBoxesReady reports whether the last frame recorded the button boxes.
@@ -443,6 +453,7 @@ func (a *app) hideSelIcon() {
 	win := a.sel.win
 	was := a.sel.shown
 	a.sel.shown = false
+	a.sel.gen++
 	a.mu.Unlock()
 	// Before the tip: from here on no pointer move is the chip's business.
 	disarmChipHover()

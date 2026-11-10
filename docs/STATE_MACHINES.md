@@ -277,6 +277,7 @@
 - **风险**：`showSelIcon` 先置 `shown=true`(221) 再 `ShowInactive()`(226) 再 `RunOnMain` 摆放(232-254)，`sampleChipPointer`(274-292) 在 goroutine 里最多等 10×120ms；若此间用户点击别处触发 `hideSelIcon`，`sampleChipPointer` 只在 281-286 检查一次 `shown`，之后仍可能调 `onChipPointer` 把已隐藏 chip 的 tip 抬起；`toggleMoreFlyout` 的 nil 判断与 `OnClosed` 回调(1255-1257) 分两处置 nil，重复点击可能创建两个浮层；`hideSelIcon` 只在 `was==true` 时 `win.Hide()`(450)，状态与窗口不一致时窗口残留（代码注释 695-698 承认）
 - **显式化**：`type ChipState uint8`（`chipHidden/chipPlacing/chipVisible/chipActing`）+ `type ChipSession struct{ State ChipState; Text string; X, Y int; Win, MoreFlyout *mygo.Window; Gen uint64 }` + `func (s *ChipSession) Show(text string, x, y int) / Hide() / Act(fn)`；`chipHoverArmed` → `s.State == chipVisible`；所有显示/隐藏入口统一自增 `Gen`，`sampleChipPointer` 校验 Gen
 - **测试**：`popup_ui_test.go:127/153`、`selicon_hover_test.go:14/35/73/88`、`chip_states_visual_test.go:18`。缺口：shown 生命周期、show/hide 竞态、moreFlyout 重复创建、Gen 代次
+- **复核备注（批次 9h）**：chip 的 pointer 采样已按代次隔离 —— `selState.gen` 在显示/隐藏时自增，`sampleChipPointer(gen)` 用 `chipSampleStillCurrent` 校验，收起或重新显示后旧采样不再抬提示。`hideSelIcon` 的 `was==true` 守卫、`toggleMoreFlyout` 重复创建、完整 `ChipSession` 枚举化仍未做。
 
 #### U10 Hover Tip 计时器与代次 · 高（ui 组 Top 2，本组最复杂）
 - **位置**：`fastpot/selicon.go:42-61, 74-109, 345-383, 467-484, 490-580, 590-702, 735-759, 1121-1136, 1199-1227`。关键行：504-517 离开分支、522-533 新按钮/warm、534-544 定时器重排、545-552 到期、648-653 与 663-669 两处 gen 复查、683-688 `gen++`、1134-1136 每帧清空 hits
