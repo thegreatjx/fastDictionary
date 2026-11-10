@@ -462,7 +462,7 @@ func (a *app) showSettings() {
 	a.hotkeyDraftsInit = false
 	a.initHotkeyDrafts()
 	a.loadMagpieModels()
-	a.vocabConfirmDeleteID = ""
+	a.resetVocabularyViewState()
 	if a.cfgWin != nil && !a.cfgWin.IsDestroyed() {
 		a.cfgWin.Show()
 		a.cfgWin.Focus()

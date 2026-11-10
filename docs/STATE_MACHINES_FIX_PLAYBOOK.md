@@ -767,6 +767,23 @@ gofmt -d .
 | 9g | A3 OCR 预处理静默降级：`prepareOCRImage` 的四种失败（超大图、临时文件创建/编码/写入失败）都只返回原图 + `noop` + `nil`，调用方完全不知道没有放大；识别不到文字时用户只看到「没有识别到文字」，不知道可以缩小截图范围 | 有（修可诊断性）：新增 `ocrPreprocessResult` 记录 `Degraded` / `Reason`；`windowsRecognizeFileIn` 按是否降级给不同空结果提示；原有 `prepareOCRImage` 包装保持签名不变 | 见下 |
 | 9h | U9 划词 chip 的 pointer 采样与显示会话脱节：`sampleChipPointer` 只在开头检查一次 `shown`，之后最多等 10×120ms 再调 `onChipPointer`；这期间 chip 被收起或收起后重新显示，旧采样仍会把 hover 提示抬到已经不该显示的 chip 上 | 有（修竞态）：`selState` 加代次 `gen`，显示与隐藏各自增；采样携带显示时的代次，只有 `shown && gen` 仍匹配才继续 | 见下 |
 | 9i | A14 网关测试的连点竞态：`testGateway` 每次点击都直接写 `aiTest`，无代次、无取消，先发后到的旧结果会覆盖新结果 | 有（修竞态）：`aiTestGen` 代次 + `aiTestCancel` 取消上一次探测；结果写回前比对代次 | 见下 |
+| 9j | A16 生词本页的确认状态跨会话残留：`showSettings` 只清 `vocabConfirmDeleteID`，不清 `confirmClearVocab` 与 `vocabExpandedID`；关闭设置窗口再打开时「确认清空」面板仍可能挂着，切换分类/搜索也不清清空确认 | 有（修状态残留）：新增 `resetVocabularyViewState()` 一次清掉删除确认、清空确认与展开行；`showSettings`、分类切换、搜索切换三处统一调用 | 见下 |
+
+### 批次 9j 验证记录（A16 生词本页确认状态复位）
+
+- `settings_vocab.go` 新增 `resetVocabularyViewState()`，一次清空
+  `vocabConfirmDeleteID` / `confirmClearVocab` / `vocabExpandedID`；
+  `settings.go` 的 `showSettings` 与词库页分类、搜索的 `OnChange` 都改调它。
+- 修的是状态残留：以前关掉设置窗口再打开，「确认清空」面板仍可能显示；
+  切换分类或搜索时清空确认也不会收起。`lastDeletedVocab` 保持不清，
+  撤销删除在本次会话内仍然可用。
+- 测试：`vocab_view_state_test.go` 两条 —— 表驱动状态复位、源码契约
+  断言 `showSettings` 与两处 `OnChange` 都走统一入口。
+- 验证：`go test -count=1 ./...` ok 9.841s；`go test -race -count=1 ./...` 连续
+  2 次 exit=0、DATA RACE 0（18.260s / 11.660s）；`gofmt -l .` 空、`go vet ./...`
+  clean。
+- 未验证：`vocabConfirmDeleteID` 指向已删除条目的场景需要真实数据与窗口，
+  仍靠代码审查；完整 `VocabularyViewState` 结构体（含 Category/Query）留后续。
 
 ### 批次 7a 验证记录（A20 词库分类统一）
 

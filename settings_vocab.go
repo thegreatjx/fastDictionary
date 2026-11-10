@@ -244,6 +244,15 @@ func (a *app) pageCustomActions(c *ui.Context, t *ui.Theme, cfg Config) {
 	}
 }
 
+// resetVocabularyViewState clears the page-scoped confirmation and expansion
+// state. Without this a reopened settings window could still be showing the
+// "confirm clear" panel, or a row expanded for a category the user has left.
+func (a *app) resetVocabularyViewState() {
+	a.vocabConfirmDeleteID = ""
+	a.confirmClearVocab = false
+	a.vocabExpandedID = ""
+}
+
 func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 	vocabStore := GetVocabularyStore()
 	// Show the path the store actually uses rather than a hardcoded guess:
@@ -270,12 +279,12 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 			}
 			ui.Row(c).FillWidth().Children(func() {
 				ui.Segmented(c, &a.vocabCategoryIdx, catNames...).FillWidth().Height(28).FontSize(12).
-					OnChange(func() { a.vocabConfirmDeleteID = "" })
+					OnChange(func() { a.resetVocabularyViewState() })
 			})
 
 			// Row 2: search on its own line. Sharing the row with six
 			// buttons overflowed the form as soon as the window was narrow.
-			ui.SearchField(c, &a.vocabSearchQuery).FillWidth().OnChange(func() { a.vocabConfirmDeleteID = "" })
+			ui.SearchField(c, &a.vocabSearchQuery).FillWidth().OnChange(func() { a.resetVocabularyViewState() })
 
 			// Row 3: the actions, which wrap freely now.
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {

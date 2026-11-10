@@ -497,6 +497,7 @@
 - **风险**：`vocabConfirmDeleteID` 可能指向已删除 ID（列表刷新后 561 不匹配，字段残留）；**`showSettings` 421 只清 `vocabConfirmDeleteID`，不清 `confirmClearVocab`/`vocabExpandedID`/`lastDeletedVocab`——关闭再打开设置页「确认清空」仍可能显示**；273/278 只清 confirmDelete 不清 `confirmClearVocab`；485 展开与删除两态可同时命中同一行
 - **显式化**：`VocabCategory`（`All/Words/Sentences/Writing`）+ `type VocabularyViewState struct{ Category; Query, ExpandedID, PendingDeleteID string; PendingClear bool; Undo *VocabularyEntry }` + `Reset()`；`showSettings` 调 `Reset()`
 - **测试**：`regression_batch_test.go:77/95`、`actions_test.go:211`、`vocab_speak_test.go:32/58`。缺口：状态组合残留、showSettings 后残留确认、展开+删除同时命中
+- **复核备注（批次 9j）**：`showSettings` 不清 `confirmClearVocab`/`vocabExpandedID` 成立，已用 `resetVocabularyViewState()` 在打开设置、切换分类、切换搜索三处统一复位；`lastDeletedVocab` 有意保留（撤销删除在同一会话内仍可用）。`vocabConfirmDeleteID` 指向已删除 ID、485 展开与删除同时命中这两条仍靠代码审查，完整 `VocabularyViewState` 结构体留后续。
 
 #### A17 词库导入 / 导出 / 补全异步任务 · 高（ai 组 Top 3）
 - **位置**：`fastpot/settings_vocab.go:294-317, 319-344, 346-371, 373-386`；`fastpot/vocabulary.go:720-943, 951-992`
