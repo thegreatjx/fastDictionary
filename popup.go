@@ -523,6 +523,18 @@ func (a *app) switchMode(m popupMode) {
 	a.rerunCurrentMode(text)
 }
 
+// resetPopupTransientLocked 清理「只对当前这张卡片有效」的开关和动作 ID。
+// 两个弹窗入口必须用同一份清单：onlyTrunk 曾经只在一条入口里复位，另一条
+// 打开的新卡片会继续折叠，缺了从句标记和下划线，看起来像标注坏了。
+// 调用方持 a.mu。
+func (a *app) resetPopupTransientLocked() {
+	a.onlyTrunk = false
+	a.showSlashes = false
+	a.filterRole = ""
+	a.grammarHoverKnowledge = ""
+	a.activeActionID = ""
+}
+
 // resetScreenshotPinLocked 把「截图翻译临时置顶」的复位规则收在一处：
 // 普通弹窗是新卡片，不能继承上一张截图卡片为自身窗口申请的置顶。
 // 调用方持 a.mu；用户手动置顶（screenshotPinned 为 false）不动。
@@ -592,14 +604,7 @@ func (a *app) openPopupAction(m popupMode, text string) {
 	a.notesSaved = false
 	a.grammarSaved = false
 	a.writingSaved = false
-	// The three view switches below are per-look, not preferences. onlyTrunk
-	// used to survive: once "只看主干" was on, every later popup opened folded
-	// to the core, with the clause marks and underlines missing, which reads
-	// as broken annotation rather than as a setting still in effect.
-	a.onlyTrunk = false
-	a.showSlashes = false
-	a.filterRole = ""
-	a.grammarHoverKnowledge = ""
+	a.resetPopupTransientLocked()
 	a.notes = nil
 	a.notesBusy = false
 	a.isScreenshotMode = false
@@ -677,6 +682,7 @@ func (a *app) openPopupWithText(m popupMode, text string) {
 	a.notes, a.notesBusy, a.notesSaved, a.notesExpanded = nil, false, false, false
 	a.grammarSaved = false
 	a.writingSaved = false
+	a.resetPopupTransientLocked()
 	a.isScreenshotMode, a.snipExpanded = false, false
 	a.snipBitmap = nil
 	a.ocrText, a.ocrPath, a.ocrError = "", "", ""

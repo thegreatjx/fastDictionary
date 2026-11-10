@@ -604,6 +604,7 @@
 - **风险**：**已有实锤事故**——`popup.go:600-603` 的注释「防止截图翻译置顶状态泄漏到后续每个 popup，OnBlur 不再关闭」说明 `openPopupWithText` 曾漏清 `screenshotPinned`，导致后续所有弹窗都置顶且失焦不关；该兜底只在 `openPopupWithText` 里，`openPopupAction` 路径没有对应处理（U8）；`stopScreenshotOCR()` 也只在部分路径调用（U15）。两段清单一旦新增字段漏改一处，就会重现同类泄漏
 - **显式化**：`func (a *app) openPopup(m popupMode, text string)` 单一入口，Reset 改为 `a.session = Session{}`（或 `a.viewOpts = ViewOptions{}` + `a.windowPolicy = WindowPolicy{}` 两行），彻底删掉两份字段清单；截图相关清场统一进 `a.screenshotOCR.Invalidate()`
 - **测试**：无「两条入口 Reset 结果一致」的测试。建议补一条：分别调用两条入口后，比较 `app` 的状态字段集合是否相同
+- **复核备注（批次 9l）**：两段 Reset 的字段差异已实地比对——`openPopupAction` 复位四个视图开关（`onlyTrunk` / `showSlashes` / `filterRole` / `grammarHoverKnowledge`），`openPopupWithText` 全部漏掉，这正是「注释说曾泄漏」的同一类问题在另一条入口重演；反向 `activeActionID` 只在 `openPopupWithText` 里清。已抽出 `resetPopupTransientLocked()` 让两条入口共用一份清单（`popup_reset_consistency_test.go` 行为 + 源码契约两条）。完整 `Session{}` / `ViewOptions{}` 结构体化仍留后续，因为 `source` / `mode` / `inputTargetMode` 两条入口语义不同。
 
 #### X4 跨组去重映射（52 条为何保留）
 三组按文件边界并行审计，同一状态机可能被不同组从不同侧面各报一次。以下列出已知重叠，**主条目**是迁移逻辑所在处，**关联条目**是同一状态机的视图侧、上游或下游，两者记录的触发路径与测试缺口不同，故全部保留：
