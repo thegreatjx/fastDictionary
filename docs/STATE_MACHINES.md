@@ -411,6 +411,7 @@
 - **风险**：错误吞为默认 CJK 会让拉丁文本被 CJK 识别器读成乱码且不报错；`scriptBase` 从未作为返回值使用（不可达状态）；`lineLooksCJK`(634-669) 注释 632-633 称它 "decides which recognizer reads it"，但 `readLine` 实际未调用——**决策逻辑与注释不同步（疑似死代码）**；`indraStatus` 与 readLine 能力判断不一致
 - **显式化**：`type ScriptKind uint8`（`Unknown/CJK/RTL/World`）+ `type RecognizerKind uint8`；`func (e *indraEngine) chooseRecognizer(s ScriptKind, box lineBox) RecognizerChoice` 返回显式结构；删除或接入 `lineLooksCJK`；`indraStatus()` 直接读 `IndraCaps`
 - **测试**：`indra_test.go:251/20/39/75/179/209`。缺口：scriptWorld/RTL 分支、classifyScript 失败路径、Caps 与 status 一致性
+- **复核备注（批次 9m）**：脚本组已改为 `scriptKind` 具名类型 + `String()`，`classifyScript` 返回该类型，`readLine` 统一走 `preferCJKRecognizer`（严格复刻旧 switch：大行或 cjk 组走 CJK，base/rtl/world 走 Latin）；死代码 `lineLooksCJK` 已删除；`indraStatus` 改为要求 `recLatin`、`script`、`vocabLatin` 三者齐备。完整 `RecognizerKind` / `IndraCaps` 结构与 `chooseRecognizer` 返回显式结构未做，留后续。
 
 #### A7 拼写修复词典懒加载 · 低
 - **位置**：`fastpot/ocr_spell.go:28-48, 116-142`

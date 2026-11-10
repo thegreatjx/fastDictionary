@@ -521,16 +521,7 @@ func (e *indraEngine) readLine(page grayImage, box lineBox) (string, error) {
 	height, window, vocab := indraLineHeight, 1, e.vocabCJK
 
 	if e.script != nil && e.recLatin != nil && len(e.vocabLatin) > 0 {
-		script := e.classifyScript(page, box)
-		// A large line goes to the CJK model whatever its script; see
-		// indraLatinMinHeight. Script only decides the rest.
-		large := box.Y1-box.Y0 >= indraLatinMinHeight
-		switch {
-		case script == scriptWorld || script == scriptRTL:
-			sess, height, vocab, window = e.recLatin, indraLatinHeight, e.vocabLatin, maxInt(1, e.window)
-		case script == scriptCJK || large:
-			// already CJK
-		default:
+		if !preferCJKRecognizer(e.classifyScript(page, box), box.Y1-box.Y0) {
 			sess, height, vocab, window = e.recLatin, indraLatinHeight, e.vocabLatin, maxInt(1, e.window)
 		}
 	}
@@ -539,21 +530,12 @@ func (e *indraEngine) readLine(page grayImage, box lineBox) (string, error) {
 	return e.runRecognizer(sess, vocab, ink, width, height)
 }
 
-// Script groups, in the order script.onnx emits them. meta.json lists
-// script_groups as base, cjk, rtl, world.
-const (
-	scriptBase = iota
-	scriptCJK
-	scriptRTL
-	scriptWorld
-)
-
 // classifyScript asks script.onnx which writing system a line uses.
 //
 // When the classifier is not loaded, or its answer is not confident, the line is
 // treated as CJK: the CJK recognizer also carries the ASCII characters, so it is
 // the safer default, while the Latin recognizer cannot read Chinese at all.
-func (e *indraEngine) classifyScript(page grayImage, box lineBox) int {
+func (e *indraEngine) classifyScript(page grayImage, box lineBox) scriptKind {
 	ink, width := cropLine(page, box, indraLineHeight, 1)
 	in, err := ort.NewTensor([]int64{1, 1, indraLineHeight, int64(width)}, ink)
 	if err != nil {
@@ -581,7 +563,7 @@ func (e *indraEngine) classifyScript(page grayImage, box lineBox) int {
 	best, bestP := scriptCJK, float32(0)
 	for i := 0; i < 4; i++ {
 		if probs[i] > bestP {
-			best, bestP = i, probs[i]
+			best, bestP = scriptKind(i), probs[i]
 		}
 	}
 	return best
@@ -647,45 +629,6 @@ func decodeIndraIDs(ids []int64, vocab []string) string {
 	return b.String()
 }
 
-// lineLooksCJK reports whether a line's crop contains CJK or Hangul ink, which
-// decides which recognizer reads it.
-func lineLooksCJK(page grayImage, box lineBox) bool {
-	x0, y0 := int(box.X0), int(box.Y0)
-	x1, y1 := int(box.X1), int(box.Y1)
-	if x0 < 0 {
-		x0 = 0
-	}
-	if y0 < 0 {
-		y0 = 0
-	}
-	if x1 >= page.W {
-		x1 = page.W - 1
-	}
-	if y1 >= page.H {
-		y1 = page.H - 1
-	}
-	if x1 <= x0 || y1 <= y0 {
-		return true
-	}
-	// A crop that is mostly dark ink is probably dense CJK glyphs; Latin text
-	// leaves far more white. Counting ink is cheaper than classifying script
-	// and good enough to choose between two recognizers that overlap heavily.
-	ink := 0
-	total := 0
-	for y := y0; y <= y1; y++ {
-		for x := x0; x <= x1; x++ {
-			if page.Pix[y*page.W+x] < 128 {
-				ink++
-			}
-			total++
-		}
-	}
-	if total == 0 {
-		return true
-	}
-	return float64(ink)/float64(total) > 0.28
-}
-
 // indraAvailable reports whether the engine can be used, for the settings page.
 func indraAvailable() bool {
 	_, err := indraGet()
@@ -699,7 +642,10 @@ func indraStatus() string {
 		return "未启用：" + err.Error()
 	}
 	parts := []string{"已就绪"}
-	if e.recLatin == nil {
+	// readLine only considers the Latin recognizer when all three pieces are
+	// present; reporting ready with just recLatin would promise a mode the
+	// engine cannot actually use.
+	if e.recLatin == nil || e.script == nil || len(e.vocabLatin) == 0 {
 		parts = append(parts, "（仅中文识别器）")
 	}
 	return strings.Join(parts, "")
