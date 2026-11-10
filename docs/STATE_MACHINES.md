@@ -380,6 +380,7 @@
 - **风险**：四处预处理失败静默降级为大图，用户只看到「没有识别到文字」而非「图片过大」；`indraRecognize` 360-362 `len(boxes)==0 → "", nil` 空文本与成功同形；374-376 单行失败被吞；`classifyScript` 541-562 任一失败 `return scriptCJK` 把错误吞成默认中文；降级原因只进 log 不进返回值
 - **显式化**：`OCREngine`（Indra/Windows）+ `OCRStage`（Preprocess/Detect/Recognize/Postprocess）+ `type OCRResult struct{ Text string; Engine OCREngine; Stage OCRStage; Degraded bool; Cause error }`；预处理返回 `PreprocessResult{Path, Cleanup, Degraded, Err}`。UX 结果角标显示「Indra / Windows OCR（已降级）」
 - **测试**：`indra_test.go:150`、`ocr_quality_test.go:25/63`、`ocr_text_test.go:8`。缺口：降级原因透传、四种预处理失败、空文本 vs 失败区分
+- **复核备注（批次 9g）**：Windows OCR 预处理的四条静默降级已显式记录（`ocrPreprocessResult.Degraded` / `Reason`），空结果提示按降级区分并提示缩小截图范围；`prepareOCRImage` 原签名保留。Indra 空文本与成功同形、`classifyScript` 失败吞成默认中文、`OCRResult` 完整结构仍未做。
 
 #### A4 截图 OCR 会话状态机 · 高（ai 组 Top 1）
 - **位置**：`fastpot/ocr.go:230-237, 239-251, 255-297, 301-311, 313-356, 358-388, 392-472`；声明 `fastpot/popup.go:85-91, 159, 167, 170-171, 176, 289-298`

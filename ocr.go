@@ -79,23 +79,42 @@ func ensureOCRScript() (string, error) {
 // The scaled copy is written beside the original rather than replacing it: the
 // preview shown to the user, and the crop bounds recorded for the next snip,
 // both have to stay at native size.
+// ocrPreprocessResult 记录预处理实际走了哪条路。Degraded 为真表示没能
+// 生成放大图、只能把原图交给识别引擎；Reason 用于给用户一句能行动的提示。
+type ocrPreprocessResult struct {
+	Path     string
+	Cleanup  func()
+	Degraded bool
+	Reason   string
+}
+
 func prepareOCRImage(path string) (string, func(), error) {
-	noop := func() {}
+	res, err := prepareOCRImageDetailed(path)
+	if err != nil {
+		return "", func() {}, err
+	}
+	return res.Path, res.Cleanup, nil
+}
+
+func prepareOCRImageDetailed(path string) (ocrPreprocessResult, error) {
+	if _, err := os.Stat(path); err != nil {
+		return ocrPreprocessResult{Cleanup: func() {}}, fmt.Errorf("读取截图失败：%w", err)
+	}
 	f, err := os.Open(path)
 	if err != nil {
-		return "", noop, fmt.Errorf("读取截图失败：%w", err)
+		return ocrPreprocessResult{Cleanup: func() {}}, fmt.Errorf("读取截图失败：%w", err)
 	}
 	src, _, err := image.Decode(f)
 	f.Close()
 	if err != nil {
-		return "", noop, fmt.Errorf("解码截图失败：%w", err)
+		return ocrPreprocessResult{Cleanup: func() {}}, fmt.Errorf("解码截图失败：%w", err)
 	}
 
 	b := src.Bounds()
 	if b.Dx()*snipOCRScale > maxOCRSide || b.Dy()*snipOCRScale > maxOCRSide {
 		// Too large to scale: the engine throws instead of returning text, and
 		// a 1x read of a huge image still beats an error.
-		return path, noop, nil
+		return ocrPreprocessResult{Path: path, Cleanup: func() {}, Degraded: true, Reason: "图片较大，已按原尺寸识别"}, nil
 	}
 
 	dst := image.NewRGBA(image.Rect(0, 0, b.Dx()*snipOCRScale, b.Dy()*snipOCRScale))
@@ -105,19 +124,28 @@ func prepareOCRImage(path string) (string, func(), error) {
 	if err != nil {
 		// A read-only cache dir must not cost the user the translation: fall
 		// back to the original image and let the engine do its best.
-		return path, noop, nil
+		return ocrPreprocessResult{Path: path, Cleanup: func() {}, Degraded: true, Reason: "放大图无法写入临时目录"}, nil
 	}
 	name := out.Name()
 	if err := png.Encode(out, dst); err != nil {
 		out.Close()
 		os.Remove(name)
-		return path, noop, nil
+		return ocrPreprocessResult{Path: path, Cleanup: func() {}, Degraded: true, Reason: "放大图编码失败"}, nil
 	}
 	if err := out.Close(); err != nil {
 		os.Remove(name)
-		return path, noop, nil
+		return ocrPreprocessResult{Path: path, Cleanup: func() {}, Degraded: true, Reason: "放大图写入失败"}, nil
 	}
-	return name, func() { os.Remove(name) }, nil
+	return ocrPreprocessResult{Path: name, Cleanup: func() { os.Remove(name) }}, nil
+}
+
+// ocrEmptyTextMessage 在识别不到文字时按预处理是否降级给不同提示：
+// 图片过大时让用户知道可以缩小截图范围，而不是只看到「没有识别到文字」。
+func ocrEmptyTextMessage(degraded bool) string {
+	if degraded {
+		return "没有识别到文字：图片较大，已按原尺寸识别；可以缩小截图范围后重试"
+	}
+	return "没有识别到文字，请重新框选清晰文本"
 }
 
 // RecognizeImageFile extracts text with Windows OCR and honors cancellation.
@@ -189,11 +217,12 @@ func windowsRecognizeFileIn(ctx context.Context, path, language string) (string,
 	// retry path too: a failed recognition retries the file already on disk,
 	// and a capture-time-only scale would leave that retry reading the
 	// original small image and failing the same way.
-	ocrPath, cleanup, err := prepareOCRImage(path)
+	prep, err := prepareOCRImageDetailed(path)
 	if err != nil {
 		return "", err
 	}
-	defer cleanup()
+	defer prep.Cleanup()
+	ocrPath := prep.Path
 
 	if language == "" {
 		language = "auto"
@@ -224,7 +253,7 @@ func windowsRecognizeFileIn(ctx context.Context, path, language string) (string,
 	// collapse them and turn a multi-line snip into an unreadable blob.
 	text := CleanOcrText(unwrapOCRText(string(out)))
 	if text == "" {
-		return "", fmt.Errorf("没有识别到文字，请重新框选清晰文本")
+		return "", fmt.Errorf("%s", ocrEmptyTextMessage(prep.Degraded))
 	}
 	return text, nil
 }
