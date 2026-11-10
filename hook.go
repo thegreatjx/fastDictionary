@@ -556,8 +556,10 @@ const wmHookCommand = 0x8000 + 1
 
 // hookCommand carries the work posted to the hook thread.
 var (
-	hookCommandMu          sync.Mutex
-	hookCommandFn          func()
+	// hookCommands is a bounded queue: the hook thread may be busy in a
+	// callback when another mode switch asks for install/remove, and a single
+	// slot would silently drop the earlier request.
+	hookCommands           = make(chan func(), 16)
 	procPostThreadMessageW = user32.NewProc("PostThreadMessageW")
 )
 
@@ -571,23 +573,30 @@ func postHookCommand(fn func()) error {
 	if tid == 0 {
 		return fmt.Errorf("hook thread not running")
 	}
-	hookCommandMu.Lock()
-	hookCommandFn = fn
-	hookCommandMu.Unlock()
+	select {
+	case hookCommands <- fn:
+	default:
+		log.Printf("fastDictionary: hook command queue full, dropping request")
+		return fmt.Errorf("hook command queue full")
+	}
 	if r, _, err := procPostThreadMessageW.Call(tid, wmHookCommand, 0, 0); r == 0 {
 		return fmt.Errorf("PostThreadMessage: %w", err)
 	}
 	return nil
 }
 
-// runHookCommand executes the posted command. It runs on the hook thread.
+// runHookCommand executes every queued command. It runs on the hook thread.
+// Draining the whole queue keeps the order the requests were made in.
 func runHookCommand() {
-	hookCommandMu.Lock()
-	fn := hookCommandFn
-	hookCommandFn = nil
-	hookCommandMu.Unlock()
-	if fn != nil {
-		fn()
+	for {
+		select {
+		case fn := <-hookCommands:
+			if fn != nil {
+				fn()
+			}
+		default:
+			return
+		}
 	}
 }
 

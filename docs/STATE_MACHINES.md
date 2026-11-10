@@ -97,6 +97,7 @@
 - **风险**：`hookCommandFn` 是**单槽**，连续两次 `postHookCommand`（快速切模式 + 退出）第二个覆盖第一个，命令永久丢失；`removeHooks` 把 `live*` 置 0 但 `lowLevelMouseProc`:150/288 仍可能持旧 handle 调 `CallNextHookEx`（`hook_test.go:14` 即为此 bug 而存在）；`main.go:109` 对任意 error 都直接 `removeHooks()`，与「只有钩子线程能卸载」的注释(hook.go:456-459)矛盾
 - **显式化**：`hookState`（`stopped/starting/running/stopping`）+ `HookRuntime{ mu; state; loopID; mouse,key uintptr; cmds chan func() }`，用带缓冲 `chan func()` 替代单槽；`Post(fn)` 区分 `ErrHookThreadNotRunning` 与 `ErrPostFailed`；`doubleClickMSLive` 收进 `doubleClickThresholdCache`
 - **测试**：`hook_lifecycle_test.go:16/42/68`、`hook_test.go:14/34`、`regression_test.go:104`。缺口：并发 `postHookCommand` 覆盖、Post 失败分支、`quitApp` 降级分支
+- **复核备注（批次 7d）**：单槽覆盖属实。已把 `hookCommandMu + hookCommandFn` 换成 `hookCommands = make(chan func(), 16)`，`postHookCommand` 非阻塞入队、`runHookCommand` 排空按序执行。`HookRuntime`/`hookState` 结构体化与 `Post` 错误分类未做，留后续。
 
 #### C3 划词触发模式 / 暂停 / 应用拦截 · 中
 - **位置**：`fastpot/main.go:75-96, 155-196, 321-327`；`fastpot/tray.go:76-91`；`fastpot/selection_guard.go:22-127`；`fastpot/selection_policy.go:221-262`

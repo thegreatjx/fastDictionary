@@ -749,6 +749,7 @@ gofmt -d .
 | 7a | A20 词库分类：计数器、筛选、行标签与导出网页各有一份规则，写作条目词数多时被标成长难句；`grammar` / `dict` / `notes` 短条目还会同时出现在两个 Tab | 有（修 bug）：分类收敛到 `classifyVocabEntry` 一处，先看 Source 再看词数 | 见下 |
 | 7b | 熔断器注册表：测试无同步替换包级 `breakers` 指针，与在飞请求并发读写，`go test -race` 偶发 DATA RACE | 无（测试隔离修复，生产语义不变） | 见下 |
 | 7c | C7 语音播放：代次检查与 `playMP3` 分处两段临界区，检查后、播放前下一次朗读可插入，旧音频盖住新音频；有道单词快路径完全没检查代次 | 有（修 bug）：检查与播放合进同一临界区 | 见下 |
+| 7d | C2 钩子命令单槽：连续两次 `postHookCommand`，第二条覆盖第一条，命令永久丢失（快速切模式 + 退出时可能丢掉 `removeHooks`） | 有（修 bug）：单槽换成带缓冲队列，按序全部执行 | 见下 |
 
 ### 批次 7a 验证记录（A20 词库分类统一）
 
@@ -792,6 +793,22 @@ gofmt -d .
 - 验证：`go test -count=1 ./...` ok 9.186s；`go test -race -count=1 ./...` 连续 2 次 exit=0、
   DATA RACE 0；`gofmt -l .` 空、`go vet ./...` clean。
 - 未验证：测试用桩替代 MCI，未在真实声卡上听两种音频的抢占顺序；真人按两次发音的走查仍待做。
+
+### 批次 7d 验证记录（C2 钩子命令队列）
+
+- 复现测试：`hook_command_queue_test.go` 的 `TestHookCommandQueueIsBuffered`（源码契约：
+  hook.go 必须有 `make(chan func(),` 队列、不得再有 `hookCommandFn` 单槽；改前编译失败/契约 FAIL）、
+  `TestHookCommandQueueDeliversEveryCommand`（连投三条，断言按序全部执行）、
+  `TestHookCommandQueueSkipsNilCommands`（nil 之后的命令仍执行）。
+- 生产改动：`hook.go` 的 `hookCommandMu + hookCommandFn` 单槽换成 `hookCommands = make(chan func(), 16)`；
+  `postHookCommand` 非阻塞入队（满队列记日志并返回 error）；`runHookCommand` 一次把队列排空、
+  按投递顺序执行。`wmHookCommand`、`hookLoop` 的消息循环、`quitApp` 的降级路径都不变。
+- 行为：同一 tick 内的多次 install/remove 都执行一次，顺序与请求一致；不再丢 `removeHooks`。
+- 验证：`go test -count=1 ./...` ok 8.997s；`go test -race -count=1 ./...` 连续 2 次 exit=0、
+  DATA RACE 0；`gofmt -l .` 空、`go vet ./...` clean。
+- 未验证：真实切换触发模式的顺序（快速连续切换 + 立刻退出）需要真人走查；`HookRuntime`
+  结构体化与 `Post` 错误分类未做，留后续。
+
 
 
 
