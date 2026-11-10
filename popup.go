@@ -132,6 +132,9 @@ type app struct {
 	// click that would add the same entry twice.
 	savedDictTerm         string
 	copiedMsg             string
+	feedbackText          string
+	feedbackAt            time.Time
+	feedbackTimer         *time.Timer
 	editingActionID       string
 	customizingAction     CustomActionConfig
 	vocabSearchQuery      string
@@ -311,15 +314,61 @@ type snapshot struct {
 	ocrExpanded           bool
 }
 
+// feedbackTTL is how long a copy or save confirmation stays on screen. Without
+// an expiry the banner stayed until the next popup was opened, which looked
+// like a stuck notification rather than a confirmation of one action.
+const feedbackTTL = 3 * time.Second
+
+// noteFeedbackLocked records when the current banner text first appeared. The
+// popup renders from a snapshot, so the clock has to live next to the text.
+func (a *app) noteFeedbackLocked() {
+	text := ""
+	if a.copiedMsg != "" || a.actionSavedMsg != "" {
+		text = a.copiedMsg + "\x00" + a.actionSavedMsg
+	}
+	if text == a.feedbackText {
+		return
+	}
+	if a.feedbackTimer != nil {
+		a.feedbackTimer.Stop()
+		a.feedbackTimer = nil
+	}
+	a.feedbackText = text
+	a.feedbackAt = time.Now()
+	if text == "" {
+		return
+	}
+	win := a.win
+	a.feedbackTimer = time.AfterFunc(feedbackTTL, func() {
+		a.mu.Lock()
+		a.feedbackTimer = nil
+		a.mu.Unlock()
+		if win != nil && !win.IsDestroyed() {
+			win.Update(func() {})
+		}
+	})
+}
+
+// feedbackVisibleLocked reports whether the banner recorded at feedbackAt is
+// still within its display window.
+func (a *app) feedbackVisibleLocked() bool {
+	return a.feedbackText != "" && time.Since(a.feedbackAt) < feedbackTTL
+}
+
 func (a *app) snap() snapshot {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.noteFeedbackLocked()
+	copiedMsg, actionSavedMsg := a.copiedMsg, a.actionSavedMsg
+	if !a.feedbackVisibleLocked() {
+		copiedMsg, actionSavedMsg = "", ""
+	}
 	return snapshot{
 		mode: a.mode, source: a.source, target: a.target, engine: a.engine,
 		detected: a.detected, errText: a.errText, notice: a.notice, busy: a.busy, elapsed: a.elapsed,
 		dict: a.dict, gdict: a.gdict, aiText: a.aiText, aiBusy: a.aiBusy,
 		inputText: a.inputText, inputTargetMode: a.inputTargetMode, isWord: isWord(a.source), pinned: a.pinned, showNotes: a.showNotes, notes: a.notes, notesBusy: a.notesBusy, onlyTrunk: a.onlyTrunk, grammarResult: a.grammarResult, grammarResultPrefill: a.grammarResultPrefill, aiRefining: a.aiRefining, aiRefineErr: a.aiRefineErr,
-		activeActionID: a.activeActionID, dictResult: a.dictResult, writingResult: a.writingResult, actionSavedMsg: a.actionSavedMsg, savedDictTerm: a.savedDictTerm, copiedMsg: a.copiedMsg, showSlashes: a.showSlashes, filterRole: a.filterRole, grammarHoverKnowledge: a.grammarHoverKnowledge, notesSaved: a.notesSaved, grammarSaved: a.grammarSaved, writingSaved: a.writingSaved,
+		activeActionID: a.activeActionID, dictResult: a.dictResult, writingResult: a.writingResult, actionSavedMsg: actionSavedMsg, savedDictTerm: a.savedDictTerm, copiedMsg: copiedMsg, showSlashes: a.showSlashes, filterRole: a.filterRole, grammarHoverKnowledge: a.grammarHoverKnowledge, notesSaved: a.notesSaved, grammarSaved: a.grammarSaved, writingSaved: a.writingSaved,
 		isScreenshotMode: a.isScreenshotMode, snipBitmap: a.snipBitmap, sourceExpanded: a.sourceExpanded,
 		snipExpanded: a.snipExpanded, notesExpanded: a.notesExpanded, ocrBusy: a.ocrBusy, ocrError: a.ocrError, ocrText: a.ocrText,
 		ocrCompare: a.ocrCompare, ocrExpanded: a.ocrExpanded,
@@ -539,6 +588,7 @@ func (a *app) openPopupAction(m popupMode, text string) {
 	a.writingResult = nil
 	a.actionSavedMsg = ""
 	a.copiedMsg = ""
+	a.feedbackText = ""
 	a.notesSaved = false
 	a.grammarSaved = false
 	a.writingSaved = false
@@ -623,6 +673,7 @@ func (a *app) openPopupWithText(m popupMode, text string) {
 	a.grammarResultPrefill = false
 	a.actionSavedMsg = ""
 	a.copiedMsg = ""
+	a.feedbackText = ""
 	a.notes, a.notesBusy, a.notesSaved, a.notesExpanded = nil, false, false, false
 	a.grammarSaved = false
 	a.writingSaved = false

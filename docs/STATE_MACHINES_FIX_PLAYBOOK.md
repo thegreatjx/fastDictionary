@@ -768,6 +768,7 @@ gofmt -d .
 | 9h | U9 划词 chip 的 pointer 采样与显示会话脱节：`sampleChipPointer` 只在开头检查一次 `shown`，之后最多等 10×120ms 再调 `onChipPointer`；这期间 chip 被收起或收起后重新显示，旧采样仍会把 hover 提示抬到已经不该显示的 chip 上 | 有（修竞态）：`selState` 加代次 `gen`，显示与隐藏各自增；采样携带显示时的代次，只有 `shown && gen` 仍匹配才继续 | 见下 |
 | 9i | A14 网关测试的连点竞态：`testGateway` 每次点击都直接写 `aiTest`，无代次、无取消，先发后到的旧结果会覆盖新结果 | 有（修竞态）：`aiTestGen` 代次 + `aiTestCancel` 取消上一次探测；结果写回前比对代次 | 见下 |
 | 9j | A16 生词本页的确认状态跨会话残留：`showSettings` 只清 `vocabConfirmDeleteID`，不清 `confirmClearVocab` 与 `vocabExpandedID`；关闭设置窗口再打开时「确认清空」面板仍可能挂着，切换分类/搜索也不清清空确认 | 有（修状态残留）：新增 `resetVocabularyViewState()` 一次清掉删除确认、清空确认与展开行；`showSettings`、分类切换、搜索切换三处统一调用 | 见下 |
+| 9k | U13 保存反馈横幅从不自动清除：`copiedMsg` / `actionSavedMsg` 只在下次打开弹窗时清空，用户复制或保存一次后横幅一直挂着，像卡住的提示 | 有（修反馈生命周期）：`snap` 记录横幅文本首次出现时间，超过 `feedbackTTL`（3 秒）后不再输出；到期定时器触发一次重绘，横幅自己消失；新消息会重置计时 | 见下 |
 
 ### 批次 9j 验证记录（A16 生词本页确认状态复位）
 
@@ -784,6 +785,21 @@ gofmt -d .
   clean。
 - 未验证：`vocabConfirmDeleteID` 指向已删除条目的场景需要真实数据与窗口，
   仍靠代码审查；完整 `VocabularyViewState` 结构体（含 Category/Query）留后续。
+
+### 批次 9k 验证记录（U13 保存反馈横幅自动过期）
+
+- `popup.go` 新增 `feedbackTTL = 3 * time.Second`、`noteFeedbackLocked()`、
+  `feedbackVisibleLocked()`；`snap()` 每次生成快照时记录横幅文本变化时间，
+  超时后把 `copiedMsg` / `actionSavedMsg` 在快照里置空。
+- 到期时用 `time.AfterFunc` 触发一次 `win.Update`，横幅无需用户操作自行消失；
+  新消息或清空横幅都会重置计时；两个 `openPopup` 的 Reset 段同时清 `feedbackText`。
+- 测试：`feedback_expiry_test.go` 四条 —— 过期隐藏、新鲜保留、新消息重置计时、
+  源码契约检查 `snap` 接入。
+- 验证：`go test -count=1 ./...` ok 10.131s；`go test -race -count=1 ./...` 连续
+  2 次 exit=0、DATA RACE 0（18.800s / 14.916s）；`gofmt -l .` 空、`go vet ./...`
+  clean。
+- 未验证：`savedDictTerm` 的大小写/空格判定、`actionSaveFeedback` 与
+  `actionSavedMsg` 语义重叠仍需后续；横幅视觉时长需真人走查。
 
 ### 批次 7a 验证记录（A20 词库分类统一）
 

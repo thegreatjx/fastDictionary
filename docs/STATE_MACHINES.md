@@ -314,6 +314,7 @@
 - **风险**：`savedDictTerm` 用 `EqualFold(trim(...))` 与 `s.source` 比较，用户改了大小写或前后空格，同一词条会被判「未保存」→ 重复入库；四个横幅字符串**没有任何自动清除路径**（全文无清空 `copiedMsg/actionSavedMsg` 的定时器，只在 openPopup* Reset 时清），反馈一直挂到下次开弹窗；`actionSaveFeedback`(135) 与 `actionSavedMsg`(126) 语义重叠易漏更新；`handleQuickSave` 同时检查 bool 与字符串，两套载体可能不同步
 - **显式化**：`type SaveState uint8`（`saveNone/saveSaving/saveSaved/saveFailed`）+ `type SaveBadge struct{ State SaveState; TargetKey string; Message string; ShownAt time.Time }` + `type BannerKind uint8` + `type Banner struct{ Kind BannerKind; Text string; ExpiresAt time.Time }` + `const feedbackTTL = 3 * time.Second` + `func (a *app) showBanner(k BannerKind, text string)`；`renderWordSaveButton` 改读 `SaveBadge.State`
 - **测试**：`popup_streaming_test.go:88/101/115`（savedDictTerm 三条路径）。缺口：横幅过期/清除、三 saved bool 与 handleQuickSave 组合、大小写/空格边界
+- **复核备注（批次 9k）**：四条横幅「没有自动清除路径」成立，已加 `feedbackTTL = 3 * time.Second` 与 `snap` 侧过期过滤、到期定时重绘；新消息重置计时，`openPopup` Reset 同步清 `feedbackText`。`savedDictTerm` 的 `EqualFold(trim(...))` 判定与 `actionSaveFeedback` / `actionSavedMsg` 语义重叠未改，完整 `SaveBadge`/`Banner` 结构体留后续。
 
 #### U14 AI 结果缓存与一次性跳过标志 · 中
 - **位置**：`fastpot/popup.go:118-122, 391-396`；`fastpot/popup_actions.go:485-618, 653-709`。关键行：popup.go:391-396 `skipAIResultCache=true`、popup_actions.go:485 `aiResultCacheLimit = 12`、675-687 `useCache := !a.skipAIResultCache; a.skipAIResultCache = false`、612-618 clearAICache
