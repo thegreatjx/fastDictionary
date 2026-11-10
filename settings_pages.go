@@ -349,7 +349,7 @@ func (a *app) pageAI(c *ui.Context, t *ui.Theme, cfg Config) {
 					a.store.Update(func(c *Config) { c.AIModel = currentModel })
 				})
 				if ui.Button(c, "🔄 刷新").Height(26).Padding(2, 8).Radius(4).Tooltip("从 Magpie 网关实时刷新完整模型列表").Clicked() {
-					a.loadMagpieModels()
+					a.refreshMagpieModels()
 				}
 			})
 		}).Description(fmt.Sprintf("从本地 magpie 网关动态拉取（当前已加载 %d 个模型）", len(a.getAvailableModels())))

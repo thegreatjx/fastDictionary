@@ -459,6 +459,7 @@
 - **风险**：`settingsPageSeen` 靠 UI 帧轮询比对，同一帧内两次改 page（411 赋值后 413 `settingsRefresh`）可能丢滚动重置；`showSettings` 每次调用都 `loadMagpieModels()`(420) 发起 3s 网关请求，反复打开设置堆积 goroutine 并互相覆盖 `magpieModels`
 - **显式化**：`type SettingsPage string` + `PageGeneral/PageSelection/...`；`type SettingsNav struct{ Current, Previous SettingsPage; Scroll ui.ScrollState }` + `func (n *SettingsNav) Go(p SettingsPage) bool`；`SettingsWindowState`（Hidden/Showing/Closing/Quitting）
 - **测试**：`settings_layout_test.go:24/65`、`regression_batch_test.go:31`、`actions_test.go:211`。缺口：同帧切页、重复 showSettings 并发探测、isQuitting 与 Hide 组合
+- **复核备注（批次 9e）**：重复 `showSettings` 的并发探测已修：`loadMagpieModelsWithPolicy` 在 `loadingModels` 时直接返回，五分钟内且网关地址未变时复用缓存，并用 `magpieModelsGen` 丢弃旧代次结果；「🔄 刷新」仍强制拉取。同帧切页与滚动重置未动，`SettingsPage`/`SettingsNav` 枚举化留给后续。
 
 #### A13 热键草稿 / 应用状态 · 中
 - **位置**：`fastpot/settings.go:241-304, 306-368`；`fastpot/settings_pages.go:401-503`

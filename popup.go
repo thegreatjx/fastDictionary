@@ -236,6 +236,9 @@ type app struct {
 	pendingHotkeyScreenshot string
 	hotkeyDraftsInit        bool
 	magpieModels            []string
+	magpieModelsURL         string
+	magpieModelsLoadedAt    time.Time
+	magpieModelsGen         uint64
 	loadingModels           bool
 	// newBlockedApp is the text being typed into the selection blocklist
 	// editor on the 划词 settings page.

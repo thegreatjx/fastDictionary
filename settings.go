@@ -367,17 +367,46 @@ func (a *app) resetHotkeysToDefault() {
 	a.applyHotkeys()
 }
 
+// fetchAvailableModelsFunc is the gateway model probe, kept as a variable so
+// the cache's refresh policy can be tested without a gateway.
+var fetchAvailableModelsFunc = FetchAvailableModels
+
+// loadMagpieModels refreshes the model list when the cached one is missing,
+// belongs to another gateway, or is old enough to be worth refreshing again.
 func (a *app) loadMagpieModels() {
+	a.loadMagpieModelsWithPolicy(false)
+}
+
+// refreshMagpieModels forces a fetch, for the explicit refresh button.
+func (a *app) refreshMagpieModels() {
+	a.loadMagpieModelsWithPolicy(true)
+}
+
+func (a *app) loadMagpieModelsWithPolicy(force bool) {
 	cfg := a.store.Get()
 	a.mu.Lock()
+	if a.loadingModels {
+		a.mu.Unlock()
+		return
+	}
+	if !force && len(a.magpieModels) > 0 && a.magpieModelsURL == cfg.AIURL && time.Since(a.magpieModelsLoadedAt) < 5*time.Minute {
+		a.mu.Unlock()
+		return
+	}
 	a.loadingModels = true
+	a.magpieModelsGen++
+	gen := a.magpieModelsGen
 	a.mu.Unlock()
 	go func() {
-		models, err := FetchAvailableModels(cfg.AIURL)
+		models, err := fetchAvailableModelsFunc(cfg.AIURL)
 		a.mu.Lock()
-		a.loadingModels = false
-		if err == nil && len(models) > 0 {
-			a.magpieModels = models
+		if gen == a.magpieModelsGen {
+			a.loadingModels = false
+			if err == nil && len(models) > 0 {
+				a.magpieModels = models
+				a.magpieModelsURL = cfg.AIURL
+				a.magpieModelsLoadedAt = time.Now()
+			}
 		}
 		a.mu.Unlock()
 		if a.cfgWin != nil {
