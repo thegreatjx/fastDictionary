@@ -758,6 +758,7 @@ gofmt -d .
 | 8b | C6 卡片复合状态·第二批：`aiGen` / `aiRefineGen` / `notesGen` / `translateGen` / `ocrGeneration` 五个代次都是裸 `uint64`，跨代次比较编译器不会报错 | 无（纯类型显式化） | 见下 |
 | 8c | A13 热键提示·严重级别：`settings_pages.go` 用 `strings.Contains(a.hotkeyMsg, "冲突") \|\| strings.Contains(a.hotkeyMsg, "失败")` 反推颜色，Windows 注册错误若不含这两个词就显示成普通色 | 无（纯显式化；错误提示颜色修正属既有意图） | 见下 |
 | 8d | A10 配置 / 词库原子保存·两套实现：`saveConfig` 有 `CreateTemp` 唯一临时名、Sync、Chmod 与 6 次 rename 重试；`vocabulary.save()` 用固定 `.tmp`、无 rename 重试，Windows 上词库文件被索引器短暂占用时直接丢写 | 无（等价重构 + 词库补上既有重试语义） | 见下 |
+| 9a | C11 取词路径与剪贴板事务：`CaptureSelection`（快捷键）与 `captureForGesture`（划词图标）对同一个 `SelectionCapture` 设置解释不同——前者「模拟复制」时跳过 UIA，后者总是先试 UIA；「仅 UIA」在前者仍会回退模拟 Ctrl+C，违反「绝不模拟按键」。`captureByCopy` 的 `Clipboard.Clear()` 到 `restoreClipboard` 没有 `defer`，任何提前返回或 panic 都会永久清空用户剪贴板 | 有（修 bug）：两条入口统一策略解析；剪贴板改为延迟还原的事务对象 | 见下 |
 
 ### 批次 7a 验证记录（A20 词库分类统一）
 
@@ -935,12 +936,17 @@ gofmt -d .
 - 未验证：`AtomicSavePhase` 枚举与本条目的「显式化」完整形态未做；
   `vocabulary.save()` 的 `.bak` 写失败仍只忽略（与原行为一致）。
 
+### 批次 9a 验证记录（C11 取词路径与剪贴板事务）
 
-
-
-
-
-
-
-
-
+- 新增 `capture_state.go`：`captureStrategy`（auto / copy / uia）+ `String()` +
+  `parseCaptureStrategy` + `capturePlan()`（返回 tryUIA / allowCopy 两个决策）。
+  两个取词入口现在共用同一解析：模拟复制不再先问 UIA，仅 UIA 不再偷偷模拟按键。
+- 新增 `clipboardTransaction`：`beginClipboardTransaction()` 保存快照与纯文本，
+  `restore()` 幂等；`captureByCopy` 用 `defer tx.restore()` 登记，任何提前返回、
+  panic 或被杀的 goroutine 都会把剪贴板还原。
+- 测试：`capture_state_test.go` 五条 —— 策略解析（含未知值）、两个决策矩阵、
+  事务只还原一次、`captureByCopy` 的 defer 位置、两个入口共用解析且无旧字符串判定。
+- 验证：`go test -count=1 ./...` ok 10.229s；`go test -race -count=1 ./...` 连续
+  2 次 exit=0、DATA RACE 0；`gofmt -l .` 空、`go vet ./...` clean。
+- 未验证：`uiaOutcome` 枚举（UIA 超时 / 空结果 / 成功）与 `captureUIA` 超时
+  goroutine 的回收未做；两条入口的端到端取词差异需真人 GUI 走查。

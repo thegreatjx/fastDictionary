@@ -226,8 +226,10 @@ func captureByCopy() string {
 	// Ctrl+Alt+C, which copies nothing.
 	waitForModifiersReleased(modifierReleaseTimeout)
 
-	snap := snapshotClipboard()
-	previous := mygo.Clipboard.ReadText()
+	// The transaction restores the clipboard through a defer: an early
+	// return, a panic or a killed goroutine can no longer leave it empty.
+	tx := beginClipboardTransaction()
+	defer tx.restore()
 
 	// Clearing lets us tell a real copy from stale text: an app that ignores
 	// Ctrl+C leaves the clipboard empty instead of making us re-read it.
@@ -244,7 +246,6 @@ func captureByCopy() string {
 		}
 	}
 
-	restoreClipboard(snap, previous)
 	return strings.TrimSpace(got)
 }
 
@@ -257,10 +258,14 @@ func captureByCopy() string {
 // Call it before showing any fastDictionary window: showing one takes the focus
 // away from the application holding the selection.
 func (a *app) CaptureSelection() selection {
-	if a.store.Get().SelectionCapture != "copy" {
+	tryUIA, allowCopy := parseCaptureStrategy(a.store.Get().SelectionCapture).capturePlan()
+	if tryUIA {
 		if s := captureUIA(); s.Text != "" {
 			return s
 		}
+	}
+	if !allowCopy {
+		return selection{}
 	}
 	return selection{Text: captureByCopy()}
 }
@@ -387,13 +392,16 @@ func (a *app) captureForGesture(owner string) selection {
 	if a.captureSelection != nil {
 		return a.captureSelection()
 	}
-	mode := a.store.Get().SelectionCapture
-	if s := captureUIA(); s.Text != "" {
-		log.Printf("fastDictionary: capture path=uia owner=%q bounds=%v", owner, s.Bounds)
-		return s
+	strategy := parseCaptureStrategy(a.store.Get().SelectionCapture)
+	tryUIA, allowCopy := strategy.capturePlan()
+	if tryUIA {
+		if s := captureUIA(); s.Text != "" {
+			log.Printf("fastDictionary: capture path=uia owner=%q bounds=%v", owner, s.Bounds)
+			return s
+		}
 	}
-	if mode == "uia" {
-		log.Printf("fastDictionary: capture path=uia-empty owner=%q mode=uia", owner)
+	if !allowCopy {
+		log.Printf("fastDictionary: capture path=uia-empty owner=%q mode=%s", owner, strategy)
 		return selection{}
 	}
 	if neverSimulateCopy(owner) {

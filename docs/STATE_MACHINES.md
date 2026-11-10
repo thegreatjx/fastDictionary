@@ -195,6 +195,7 @@
 - **风险**：`captureByCopy`:234 `Clear()` 到 247 `restoreClipboard` **没有 `defer`**——当前无提前 return 侥幸安全，但未来任何提前返回、panic 或 goroutine 被杀都会永久清空用户剪贴板（注释 9-11 行自述要「leave the clipboard exactly as it was」）；`restoreClipboard`(190-216) 富格式 Write 失败回退 `WriteText(previous)`，previous 为空时剪贴板仍可能为空；`captureUIA` 超时后 goroutine 被遗弃（注释 295-297 自述「leaks one pinned thread」）；两处对同一配置字段解释略不同（capture.go:390 额外有 `"uia"` 分支）
 - **显式化**：`CaptureStrategy`（`uiaFirst/uiaOnly/copyOnly`）+ `strategyFromConfig(s string)` 一处解析；`ClipboardTransaction{snapshot;previousText;done bool}` + `defer tx.Restore()`；`uiaOutcome` 枚举替代 `selection{Text,Bounds}` 双字段解释
 - **测试**：`gesture_test.go:206/219/236/257/275/304/328/354`、`selicon_test.go:143`、`hook_test.go:54/69`。缺口：剪贴板恢复失败/超时/中途异常、`comApt owned=false`、超时后遗弃 goroutine
+- **复核备注（批次 9a）**：两处解读不一致属实——`CaptureSelection` 在「模拟复制」时跳过 UIA，「仅 UIA」时仍会回退 Ctrl+C；`captureForGesture` 则总是先试 UIA、忽略「模拟复制」。已新增 `captureStrategy` + `parseCaptureStrategy` + `capturePlan()` 让两条入口共用同一解析。剪贴板 `Clear()` 无 `defer` 也属实，已改为 `clipboardTransaction` 并由 `captureByCopy` 用 `defer tx.restore()` 登记，幂等还原。`uiaOutcome` 枚举与超时 goroutine 回收未做，留后续。
 
 **本组未发现实质隐式状态机的文件**：`icons.go`（全为 const SVG + 只读 `var`）、`theme.go`（`applyTheme` 纯派生，`chipTone int` 已有显式枚举）、`helpers.go`（`inSpace bool` 是函数内局部标志）、`naming.go`（静态表 + 启动时一次性 `migrateUserData`）、`actions.go`（`saved` 为渲染期派生，跨事件载体在 `popup.go`）、`resources/ocr.ps1`（线性脚本，只有语言选择分支）。
 
