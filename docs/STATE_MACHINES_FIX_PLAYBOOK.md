@@ -756,6 +756,7 @@ gofmt -d .
 | 7h | C3 划词触发：只有 `resumeSelection` 清手势冷却，暂停与切换触发模式都不清，残留 300ms 冷却吞掉暂停/切换后的第一个手势；托盘浮层改模式不重建托盘，单选状态停在旧模式 | 有（修 bug）：三处入口统一清冷却 + 浮层重建托盘 | 见下 |
 | 8a | C6 卡片复合状态·第一批：五个 `bool` 忙碌标志散在布局、页签缓存、空态判定里，各自拼 OR，新增一个标志就要改多处；`skipAIResultCache` 只在缓存查找之后清零，AI 关闭 / 动作不存在 / 空文本三条提前返回都会把「重新翻译」意图泄漏到下一次请求，翻译模式的重新翻译也会误置该标志 | 有（`skipAIResultCache` 泄漏是修 bug；忙碌判定收口是零行为变化） | 见下 |
 | 8b | C6 卡片复合状态·第二批：`aiGen` / `aiRefineGen` / `notesGen` / `translateGen` / `ocrGeneration` 五个代次都是裸 `uint64`，跨代次比较编译器不会报错 | 无（纯类型显式化） | 见下 |
+| 8c | A13 热键提示·严重级别：`settings_pages.go` 用 `strings.Contains(a.hotkeyMsg, "冲突") \|\| strings.Contains(a.hotkeyMsg, "失败")` 反推颜色，Windows 注册错误若不含这两个词就显示成普通色 | 无（纯显式化；错误提示颜色修正属既有意图） | 见下 |
 
 ### 批次 7a 验证记录（A20 词库分类统一）
 
@@ -902,6 +903,20 @@ gofmt -d .
 - 验证：`go test -count=1 ./...` ok 9.366s；`go test -race -count=1 ./...` 连续 2 次
   exit=0、DATA RACE 0；`gofmt -l .` 空、`go vet ./...` clean。
 - 未验证：`CardPhase` 完整状态机与 `transition` 唯一写入口未做，留后续。
+
+### 批次 8c 验证记录（A13 热键提示严重级别）
+
+- 新增 `hotkeyMsgKind`（`hotkey_msg.go`：none / success / error）与
+  `setHotkeyMsgLocked(kind, text)`；清空文案时严重级别强制回 none。
+- 四处写入统一走该入口：`settings.go` 的冲突分支（error）、应用成功（success）、
+  应用失败（error），`main.go` 启动时注册失败（error）。
+- 渲染改为 `a.hotkeyMsgKind.isError()` 决定是否用危险色；成功仍用强调色，视觉不变。
+- 测试：`hotkey_msg_test.go` 的 `TestHotkeyMsgKind`（含未知值）、
+  `TestSetHotkeyMsgKeepsSeverity`（错误 / 成功 / 清空）、
+  `TestHotkeyMsgSeverityIsExplicit`（源码契约：不再出现文案子串判断）。
+- 验证：`go test -count=1 ./...` ok 9.703s；`go test -race -count=1 ./...` 连续 2 次
+  exit=0、DATA RACE 0；`gofmt -l .` 空、`go vet ./...` clean。
+- 未验证：热键草稿结构体（`HotkeyDraft`）与 `HotkeyApplyResult` 未做，留后续。
 
 
 

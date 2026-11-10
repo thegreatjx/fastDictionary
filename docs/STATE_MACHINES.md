@@ -464,6 +464,7 @@
 - **风险**：用文案子串反推状态，`strings.Contains(a.hotkeyMsg, "冲突")||Contains(...,"失败")`(settings_pages.go:492) 改字就误判颜色；`showSettings` 每次重置 `hotkeyDraftsInit=false`，**未保存草稿被静默丢弃**；`applyHotkeys` 成功分支 340-348 `registerHotkeys(prev...)` 传的是更新前的 `prev`，需核对是否注册旧值；`regression_test.go:120 TestHotkeySaveIsNotAlwaysTrue` 说明历史上存在「总是报成功」缺陷
 - **显式化**：`type HotkeyDraft struct{ Selection, Input, Screenshot string; Initialized bool }` + `type HotkeyApplyResult struct{ OK, Conflict bool; Registered [3]string; Err error }` + `func (a *app) applyHotkeys() HotkeyApplyResult`；`hotkeyMsg` 只作 `UserNotice`
 - **测试**：`regression_test.go:120`、`main_test.go:66`。缺口：文案反推、草稿丢弃、registerHotkeys 用新值验证
+- **复核备注（批次 8c）**：`strings.Contains` 文案反推属实；已改为 `hotkeyMsgKind`（none/success/error）+ `setHotkeyMsgLocked`，渲染只看枚举，成功仍用强调色。`HotkeyDraft` 与 `HotkeyApplyResult` 结构体化、草稿丢弃问题未做，留后续。
 
 #### A14 网关测试与模型列表探测 · 中
 - **位置**：`fastpot/settings.go:209-239, 370-405`；`fastpot/settings_pages.go:375-395`

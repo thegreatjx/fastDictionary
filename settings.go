@@ -312,7 +312,7 @@ func (a *app) applyHotkeys() {
 	ocr := strings.TrimSpace(a.pendingHotkeyScreenshot)
 	if conflict := checkHotkeyConflict(sel, inp, ocr); conflict != "" {
 		a.mu.Lock()
-		a.hotkeyMsg = conflict
+		a.setHotkeyMsgLocked(hotkeyMsgError, conflict)
 		a.mu.Unlock()
 		if a.cfgWin != nil {
 			a.cfgWin.Update(func() {})
@@ -323,9 +323,9 @@ func (a *app) applyHotkeys() {
 	msg := registerHotkeys(sel, inp, ocr, a)
 	a.mu.Lock()
 	if msg == "" {
-		a.hotkeyMsg = "快捷键已成功生效 ✓"
+		a.setHotkeyMsgLocked(hotkeyMsgSuccess, "快捷键已成功生效 ✓")
 	} else {
-		a.hotkeyMsg = msg
+		a.setHotkeyMsgLocked(hotkeyMsgError, msg)
 	}
 	a.mu.Unlock()
 	if msg == "" {

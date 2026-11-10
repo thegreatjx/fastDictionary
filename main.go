@@ -311,7 +311,7 @@ func main() {
 		})
 
 		if msg := registerHotkeys(cfg.HotkeySelection, cfg.HotkeyInput, cfg.HotkeyScreenshot, a); msg != "" {
-			a.hotkeyMsg = msg
+			a.setHotkeyMsgLocked(hotkeyMsgError, msg)
 		}
 
 		// The selection chip's triggers. Hooks must be installed from the

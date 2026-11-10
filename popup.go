@@ -230,6 +230,7 @@ type app struct {
 	aiRefining              bool
 	aiRefineErr             string
 	hotkeyMsg               string
+	hotkeyMsgKind           hotkeyMsgKind
 	pendingHotkeySelection  string
 	pendingHotkeyInput      string
 	pendingHotkeyScreenshot string

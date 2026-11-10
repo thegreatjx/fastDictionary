@@ -489,7 +489,7 @@ func (a *app) pageHotkey(c *ui.Context, t *ui.Theme, cfg Config) {
 				}
 				if a.hotkeyMsg != "" {
 					msgCol := t.Accent
-					if strings.Contains(a.hotkeyMsg, "冲突") || strings.Contains(a.hotkeyMsg, "失败") {
+					if a.hotkeyMsgKind.isError() {
 						msgCol = t.Danger
 					}
 					ui.Text(c, a.hotkeyMsg).FontSize(12).TextColor(msgCol).Wrap()
