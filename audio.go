@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -99,6 +100,25 @@ func stopAudio() {
 	}
 }
 
+// errSpeechSuperseded reports that a newer PlaySpeech request owns playback.
+var errSpeechSuperseded = errors.New("speech request superseded")
+
+// playMP3Func plays one audio file. Tests swap it to observe the ordering
+// without touching the audio device.
+var playMP3Func = playMP3
+
+// playSpeechMP3 plays path only while gen is still the newest request. The
+// check and the MCI call run under speakMu, so a newer request cannot slip in
+// between them and be replaced by this stale clip.
+func playSpeechMP3(gen int, path string) error {
+	speakMu.Lock()
+	defer speakMu.Unlock()
+	if gen != speakGeneration {
+		return errSpeechSuperseded
+	}
+	return playMP3Func(path)
+}
+
 // speakGeneration guards against a slow synthesis finishing after the user
 // already asked for something else: every PlaySpeech bumps the generation,
 // and a result from an older one is dropped instead of played over the new
@@ -152,7 +172,8 @@ func PlaySpeechLang(text, lang string, us bool) {
 			path, err := FetchYoudaoAudio(shortCtx, text, us)
 			shortCancel()
 			if err == nil && path != "" {
-				if err := playMP3(path); err == nil {
+				playErr := playSpeechMP3(gen, path)
+				if playErr == nil || errors.Is(playErr, errSpeechSuperseded) {
 					return
 				}
 			}
@@ -162,13 +183,8 @@ func PlaySpeechLang(text, lang string, us bool) {
 		voice := edgeTTSVoice(speechLang, us, "")
 		path, err := FetchEdgeTTS(ctx, text, voice)
 		if err == nil && path != "" {
-			speakMu.Lock()
-			current := gen == speakGeneration
-			speakMu.Unlock()
-			if !current {
-				return
-			}
-			if err := playMP3(path); err == nil {
+			playErr := playSpeechMP3(gen, path)
+			if playErr == nil || errors.Is(playErr, errSpeechSuperseded) {
 				return
 			}
 		}

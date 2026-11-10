@@ -148,6 +148,7 @@
 - **风险**：**代次检查与播放之间存在竞态窗口**——`audio.go:165-174` 在锁内确认 `current := gen == speakGeneration` 后解锁再调 `playMP3(path)`，而 `playMP3` 不接收 gen；确认后、播放前另一次 `PlaySpeechLang` 递增代次并播放，旧 goroutine 仍会播旧音频覆盖新音频。180-185 SAPI 分支同理；`stopAudio` 无法撤销已进入 `playMP3` 的播放；`curAlias` 固定常量，mciCall 任一步失败可能残留旧值
 - **显式化**：`speechState`（`idle/synthesising/playing/cancelled`）+ `SpeechSession{gen,ctx,cancel,cmd}` + `SpeechController{mu;current;state;mciAlias}`；`playMP3` 改为 `func (c *SpeechController) play(path string, gen uint64) error`，在持锁同一临界区内完成 `IsCurrent(gen)` 判断 + stop/close/open/play
 - **测试**：`tts_test.go:12/55/77/98`、`live_probe_test.go:23`、`vocab_speak_test.go:32/58`。缺口：代次竞态窗口、并发 `playMP3`、`stopAudio` 与 `PlaySpeechLang` 交错、`curAlias` 失败残留（现有多为 live/需网络）
+- **复核备注（批次 7c）**：代次窗口属实，且有道单词快路径连代次检查都没有。已新增 `playSpeechMP3(gen, path)`，把「是否仍是最新请求」的判定与 `playMP3` 调用放进同一 `speakMu` 临界区，两条播放路径统一走它；`playMP3Func` 只作为测试接缝。`SpeechController`/`speechState` 完整枚举化未做，留后续。
 
 #### C8 Edge TTS token 缓存 · 中
 - **位置**：`fastpot/tts.go:68-88, 115-165, 188-205, 356-420, 437-452`；`fastpot/main.go:331-334`

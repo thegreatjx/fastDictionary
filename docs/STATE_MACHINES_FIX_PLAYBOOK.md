@@ -748,6 +748,7 @@ gofmt -d .
 | --- | --- | --- | --- |
 | 7a | A20 词库分类：计数器、筛选、行标签与导出网页各有一份规则，写作条目词数多时被标成长难句；`grammar` / `dict` / `notes` 短条目还会同时出现在两个 Tab | 有（修 bug）：分类收敛到 `classifyVocabEntry` 一处，先看 Source 再看词数 | 见下 |
 | 7b | 熔断器注册表：测试无同步替换包级 `breakers` 指针，与在飞请求并发读写，`go test -race` 偶发 DATA RACE | 无（测试隔离修复，生产语义不变） | 见下 |
+| 7c | C7 语音播放：代次检查与 `playMP3` 分处两段临界区，检查后、播放前下一次朗读可插入，旧音频盖住新音频；有道单词快路径完全没检查代次 | 有（修 bug）：检查与播放合进同一临界区 | 见下 |
 
 ### 批次 7a 验证记录（A20 词库分类统一）
 
@@ -777,5 +778,20 @@ gofmt -d .
 - 验证：`go test -race -count=1 ./...` 连续 3 次均 `exit=0`、`DATA RACE` 计数 0；
   `go test -count=1 ./...` ok 9.582s；`gofmt -l .` 空、`go vet ./...` clean。
 - 未验证：这是测试隔离与内存安全的修复，不是用户可见行为；未在真实网关下压测熔断恢复。
+
+### 批次 7c 验证记录（C7 语音播放代次）
+
+- 复现测试：`audio_speech_test.go` 的 `TestAudioPlaybackIsGenerationGuarded`（源码契约：
+  `PlaySpeechLang` 内不得有裸 `playMP3(path)`，两条路径都走 `playSpeechMP3(gen, path)`；改前 FAIL）、
+  `TestPlaySpeechMP3DropsSuperseded`（过期代次不播放）、
+  `TestSpeechPlaybackSerializesWithNewerRequest`（新请求不能插到已在播的旧请求之前）。
+- 生产改动：`audio.go` 新增 `errSpeechSuperseded`、`playMP3Func`（测试接缝）与
+  `playSpeechMP3(gen, path)`——在同一把 `speakMu` 内完成代次判定与播放调用；`PlaySpeechLang`
+  的有道单词快路径与 Edge TTS 路径都改用它，过期结果直接返回而不是继续 fallback。
+- 行为：同一时刻仍只有一路音频；唯一变化是慢返回的旧请求不会再盖住新请求。
+- 验证：`go test -count=1 ./...` ok 9.186s；`go test -race -count=1 ./...` 连续 2 次 exit=0、
+  DATA RACE 0；`gofmt -l .` 空、`go vet ./...` clean。
+- 未验证：测试用桩替代 MCI，未在真实声卡上听两种音频的抢占顺序；真人按两次发音的走查仍待做。
+
 
 
