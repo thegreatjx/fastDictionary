@@ -394,6 +394,7 @@
 - **风险**：**首次加载失败被永久缓存，进程生命周期内不再重试**；`indraAvailable()`(672-675) 与 `indraStatus()`(678-688) 都调 `indraGet`，设置页「未启用/已就绪」取决于「何时第一次被调用」，先开设置页会提前触发加载；`indraStatus` 684-686 只用 `recLatin==nil` 判「仅中文识别器」，与 `readLine` 505 的三条件不一致；`indraPadX` 全局可变无同步、测试可改写
 - **显式化**：`IndraLoadState`（`Unloaded/Loading/Ready/Degraded/Failed`）+ `type IndraRuntime struct{ State; Inst; Err; FailedAt time.Time; RetryCount int; Caps IndraCaps }` + `type IndraCaps struct{ HasLatin, HasScript, LatinVocabReady bool; Window int }`；`indraGet` 对 `IndraFailed` 按冷却重试；`indraPadX` 收进只读 `indraConfig`
 - **测试**：`indra_test.go:150/20/39/75/108/179/209/251`。缺口：失败后重试成功、可选模型缺失、设置页提前触发加载、indraPadX 并发
+- **复核备注（批次 7g）**：首败永久缓存属实。已加 `indraFailedAt` + 30 秒冷却重试，`indraLoadEngine` 作测试接缝；`IndraLoadState`/`IndraCaps` 结构化与 `indraStatus`、`readLine` 能力判断统一未做，留后续。
 
 #### A6 Indra 识别器 / 脚本选择能力矩阵 · 中
 - **位置**：`fastpot/indra_ocr.go:500-522, 526-531, 538-570, 576-610, 634-669, 678-688`

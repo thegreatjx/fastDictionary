@@ -752,6 +752,7 @@ gofmt -d .
 | 7d | C2 钩子命令单槽：连续两次 `postHookCommand`，第二条覆盖第一条，命令永久丢失（快速切模式 + 退出时可能丢掉 `removeHooks`） | 有（修 bug）：单槽换成带缓冲队列，按序全部执行 | 见下 |
 | 7e | U11 自动高度：振荡锁定后只有 `fitHeight` 解锁，而流式 chunk 只 `win.Update`，整段流式期间高度不再跟随内容增长 | 有（修 bug）：内容高度明显变化即解除锁定 | 见下 |
 | 7f | A19 导入：CSV 会剥 UTF-8 BOM，JSON/TXT 不会；Windows 编辑器默认带 BOM 的导出文件导不进来（JSON 报「无法识别的格式」，TXT 首个单词带不可见字符） | 有（修 bug）：三个导入器统一剥 BOM | 见下 |
+| 7g | A5 Indra 引擎：首次加载失败被永久缓存，进程内不再重试；一次瞬时失败（模型文件被占用、内存紧张）会让 OCR 一直降级到 Windows 识别，必须重启应用 | 有（修 bug）：失败后按 30 秒冷却重试 | 见下 |
 
 ### 批次 7a 验证记录（A20 词库分类统一）
 
@@ -840,6 +841,23 @@ gofmt -d .
   exit=0、DATA RACE 0；`gofmt -l .` 空、`go vet ./...` clean。
 - 未验证：`ImportFormat`/`ImportPlan` 的结构化格式探测与 CRLF/非字符串 map 值处理未做，
   留后续；真人从记事本另存为 UTF-8 的 .txt/.json 导入走查仍待做。
+
+### 批次 7g 验证记录（A5 Indra 加载失败重试）
+
+- 复现测试：`indra_retry_test.go` 的 `TestIndraRetriesAfterCooldown`（改前编译失败：没有
+  `indraLoadEngine` / `indraFailedAt`；逻辑上第一次失败后恒返回旧错误）、
+  `TestIndraSuccessIsNotReloaded`（成功后只加载一次，防止重试策略把成功也变成反复加载）。
+- 生产改动：`indra_ocr.go` 的加载状态新增 `indraFailedAt time.Time` 与
+  `const indraRetryCooldown = 30 * time.Second`；`indraGet` 从「`indraLoaded` 即返回」改为
+  「成功常驻；失败且未过冷却返回旧错误；冷却到期重新 `indraLoadEngine()`」，成功后清
+  `indraFailedAt`。`indraLoadEngine` 是 `indraLoad` 的变量别名，只作测试接缝。
+- 行为：模型缺失时每 30 秒最多尝试一次（不会每次 OCR 都付加载成本）；瞬时故障恢复后
+  无需重启即可用 Indra。
+- 验证：`go test -count=1 ./...` ok 9.523s；`go test -race -count=1 ./...` 连续 2 次 exit=0、
+  DATA RACE 0；`gofmt -l .` 空、`go vet ./...` clean。
+- 未验证：`IndraLoadState`/`IndraCaps` 结构化、`indraStatus` 与 `readLine` 能力判断统一
+  未做，留后续；真实模型目录被占用的场景未复现。
+
 
 
 

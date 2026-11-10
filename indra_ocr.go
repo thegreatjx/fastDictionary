@@ -74,11 +74,21 @@ type indraEngine struct {
 }
 
 var (
-	indraMu     sync.Mutex
-	indraInst   *indraEngine
-	indraErr    error
-	indraLoaded bool
+	indraMu       sync.Mutex
+	indraInst     *indraEngine
+	indraErr      error
+	indraLoaded   bool
+	indraFailedAt time.Time
 )
+
+// indraRetryCooldown keeps a broken install from paying the full model-load
+// cost on every OCR request while still letting a transient failure recover
+// without restarting the app.
+const indraRetryCooldown = 30 * time.Second
+
+// indraLoadEngine is a variable so the retry policy can be tested without
+// loading the real ONNX models.
+var indraLoadEngine = indraLoad
 
 // indraVocab is the shape of the vocabulary JSON in meta.json.
 type indraVocab struct {
@@ -176,16 +186,24 @@ func indraRuntimeCandidates() []string {
 }
 
 // indraGet loads the engine once, or returns why it could not be loaded.
+// A failed load is retried after indraRetryCooldown instead of being cached
+// for the lifetime of the process.
 func indraGet() (*indraEngine, error) {
 	indraMu.Lock()
 	defer indraMu.Unlock()
-	if indraLoaded {
+	if indraLoaded && indraErr == nil {
+		return indraInst, nil
+	}
+	if indraLoaded && indraErr != nil && time.Since(indraFailedAt) < indraRetryCooldown {
 		return indraInst, indraErr
 	}
+	indraInst, indraErr = indraLoadEngine()
 	indraLoaded = true
-	indraInst, indraErr = indraLoad()
 	if indraErr != nil {
+		indraFailedAt = time.Now()
 		log.Printf("fastDictionary: Indra OCR unavailable, using Windows OCR: %v", indraErr)
+	} else {
+		indraFailedAt = time.Time{}
 	}
 	return indraInst, indraErr
 }
