@@ -516,6 +516,7 @@
 - **风险**：**分类不一致**：`ExportHTML`(150-153) 与 `settings_vocab.go:494-497` 先判 `grammar||词数>2` 再判 writing，一条 `Source=="writing"` 且词数>2 的写作条目在网页版/卡片标签被标成「长难句」，而 `CategoryCounts`(41-42) 与 `matchesCategory`(59) 算作 writing——**桌面与网页版同一条落在不同分类**；`431-439` catKey 字符串与 `matchesCategory` 的 case 靠约定同步
 - **显式化**：`type VocabSource string`（`SourceDict/SourceGrammar/SourceWriting/SourceNotes/SourceImport`）+ `type VocabCategory uint8`（`CatAll/CatWords/CatSentences/CatWriting`）+ `func Classify(e VocabularyEntry) VocabCategory` **唯一实现**（先 Source 后词数）；`CategoryCounts/Filter/ExportHTML/设置页/JS data-cat` 全调它；JS 侧改 `const CAT = Object.freeze({...})`
 - **测试**：`regression_batch_test.go:95/77/110/145`。缺口：**三处分类一致性**、writing+长句边界、Source 非法值
+- **复核备注（批次 7a）**：三处规则不一致属实，已收敛到 `fastpot/vocab_category.go` 的 `classifyVocabEntry` 唯一实现；现在 `Source` 优先（writing/grammar/dict/notes），其余按词数。`CategoryCounts`、`Filter`、设置页行标签、`ExportHTML` 的 `data-cat` 与 Anki 导出共用同一判定，`vocab_category_test.go` 钉住四个面的一致性。`VocabSource` 枚举化与 JS 侧常量表留后续。
 
 #### A21 网页版 HTML 内嵌 JS 状态 · 中
 - **位置**：`fastpot/vocabulary_export.go:139-146, 193-206`（140 初始 `class="tab-btn active"`、200 `let curCat='all';`、201 `filterCat`、202 `doSearch`、206 `handleImport`）

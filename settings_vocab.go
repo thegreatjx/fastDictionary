@@ -511,9 +511,10 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 					// Left: badges
 					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 						srcLabel := "📘 生词"
-						if entry.Source == "grammar" || len(strings.Fields(entry.Term)) > 2 {
+						switch classifyVocabEntry(entry) {
+						case vocabCategorySentences:
 							srcLabel = "🔍 长难句"
-						} else if entry.Source == "writing" {
+						case vocabCategoryWriting:
 							srcLabel = "✏️ 写作"
 						}
 						ui.Box(c).Padding(1, 6).Radius(4).Background(t.SurfaceHover).Children(func() {

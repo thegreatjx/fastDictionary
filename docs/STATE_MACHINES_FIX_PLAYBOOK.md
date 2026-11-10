@@ -736,3 +736,30 @@ gofmt -d .
 [state_mirror_test.go](<../state_mirror_test.go>)，分别是 `TestStopAIPassLockedLegacyBehavior`
 （批次 0 已有）、`TestRestoreTabLockedLegacyBehavior`、`TestRefineWithAILegacyBehavior`，
 验证记录见 §7。**批次 4b 已动生产代码**：U1 已修，`TestRefineWithAILegacyBehavior` 改名为 `TestRefineWithAIIndependentGeneration` 并更新断言，另写 `TestRefineWithAIDoesNotCancelCardStream` 作复现测试（修复前 FAIL、修复后 PASS）。批次 4c / 4d / 4e / 4f 已按「修哪条就先更新对应护栏的断言，并另写复现测试」执行完，阶段 B 收尾；三条护栏逐字未动 —— 4c 的修复落在 `hasContent()`、4d 落在 `switchMode` 的代次自增、4e 落在词库持久化链路、4f 落在截图 OCR 会话，都不在 save / restore / refine 里，护栏录的正是这三者的现状，所以不需要改断言。阶段 C 已用 A8（批次 5a，配置损坏不覆盖用户文件）、A18（批次 5b，词库损坏保留可恢复副本）、C5（批次 5c，isQuitting 显式化为 atomic.Bool）与 U8（批次 5d，两入口置顶复位收口）、C1（批次 5e，钩子卸载复位双击候选）、C10（批次 5f，截图框选会话边界收口）起步：各条都落在开工时无本批改动混入的干净落点（`config.go` 整文件 diff=0；[vocabulary.go](<../vocabulary.go>) 的 `load()` 区间 diff=0 命中），不碰 18 个用户改动，按「一条一复现测试、一条一提交」验证完。阶段 C 收口（用户明确「做到成熟工具软件的程度就可以，不要无止境一直做」）：剩余 X1（三套字段清单合并）、A17 残余（四个 `go func()` 的 `VocabJob` 并发守卫）、A4 的 `ocrBusy`/`ocrError` 结构性显式化、U10 的 `ChipTipPhase` 枚举化，经复核要么无用户可见缺陷（4f 已证 A4 两条审计判断不成立、5f 已证 U10 已有 `gen++` + `win.Hide()` 兜底），要么属大重构且需用户先提交 / stash 那 18 个改动（X1），均刻意不做。Top10 中 9 条已有修复或复核结论，56 条清单与显式化方案已全部交付，功能无回归、三类体验（UX / DX / AX）已按可确定性验证的最局部路径改善。（用户随后「那就做吧开工」重新授权这四项，见 §0 阶段 D 与 §5 批次 6a；已完成 6a；6b 用 X1 的 clear / restore 等价性把三份清单减到两份并补反射同步契约，零行为变化；6c 把 A4 的 OCR 三态收成具名谓词，6d 把 U10 的两个时间窗口收成具名谓词并加阶段枚举，均零行为变化，阶段 D 四项到此全部完成。）
+
+---
+
+## 11. 后续缺陷修复记录
+
+阶段 A–D 收尾后继续做真实缺陷修复，节奏不变：一条一复现测试、一条一提交，提交前跑
+`gofmt -l .`、`go vet ./...`、`go test -count=1 ./...`、`go test -race -count=1 ./...`。
+
+| 批次 | 缺陷 | 行为变化 | 记录 |
+| --- | --- | --- | --- |
+| 7a | A20 词库分类：计数器、筛选、行标签与导出网页各有一份规则，写作条目词数多时被标成长难句；`grammar` / `dict` / `notes` 短条目还会同时出现在两个 Tab | 有（修 bug）：分类收敛到 `classifyVocabEntry` 一处，先看 Source 再看词数 | 见下 |
+
+### 批次 7a 验证记录（A20 词库分类统一）
+
+- 复现测试：`vocab_category_test.go` 的 `TestVocabCategorySurfacesAgree`，遍历 6 种条目检查
+  （1）每个条目只出现在一个 Tab，（2）`CategoryCounts` 与 `Filter` 结果一致，
+  （3）`ExportHTML` 每张卡的 `data-cat` 与 `classifyVocabEntry` 一致；修复前第三条失败。
+- 另加 `TestClassifyVocabEntry`（10 组 source × 词数）、`TestVocabBadgesUseCanonicalClassifier`
+  （源码契约，防止行标签与导出再次长出各自的规则）、`TestVocabCategoryKeys`。
+- 生产改动：新增 `vocab_category.go`（`vocabCategory` 枚举 + `classifyVocabEntry` 唯一实现 +
+  `vocabCategoryFromKey`）；`vocabulary_export.go` 的 `matchesCategory` / `CategoryCounts` /
+  `ExportHTML` 改为调用它，并把分类数组 `allCats` 传给页面脚本，Anki 导出不再自己判词数；
+  `settings_vocab.go` 的行标签改为 `switch classifyVocabEntry(entry)`。
+- 行为边界：`Source` 为 `writing` / `grammar` / `dict` / `notes` 时以 Source 为准；其余
+  （`import`、空、未知）按词数 > 2 归长难句，否则归生词。
+- 未验证：未启动 GUI 查看生词本四个 Tab 的真实渲染；Excel/Anki 文件未导入第三方工具复核。
+

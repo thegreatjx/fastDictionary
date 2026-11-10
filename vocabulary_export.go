@@ -34,32 +34,24 @@ func (s *VocabularyStore) CategoryCounts() (all, words, sentences, writing int) 
 	defer s.mu.RUnlock()
 	all = len(s.entries)
 	for _, e := range s.entries {
-		// matchesCategory's own rules overlap (a writing entry with a
-		// two-word term also matches "words"), so the writing check comes
-		// first: Source is authoritative, the field-count heuristic is not.
-		switch {
-		case e.Source == "writing":
-			writing++
-		case s.matchesCategory(e, "words"):
+		switch classifyVocabEntry(e) {
+		case vocabCategoryWords:
 			words++
-		case s.matchesCategory(e, "sentences"):
+		case vocabCategorySentences:
 			sentences++
+		case vocabCategoryWriting:
+			writing++
 		}
 	}
 	return
 }
 
 func (s *VocabularyStore) matchesCategory(e VocabularyEntry, category string) bool {
-	switch category {
-	case "words":
-		return e.Source == "dict" || e.Source == "notes" || len(strings.Fields(e.Term)) <= 2
-	case "sentences":
-		return e.Source == "grammar" || (e.Source != "writing" && len(strings.Fields(e.Term)) > 2)
-	case "writing":
-		return e.Source == "writing"
-	default:
+	cat, ok := vocabCategoryFromKey(category)
+	if !ok {
 		return true
 	}
+	return classifyVocabEntry(e) == cat
 }
 
 // Filter filters entries by category and keyword query
@@ -145,19 +137,18 @@ func (s *VocabularyStore) ExportHTML() (string, error) {
 	sb.WriteString("<input type=\"text\" id=\"search\" class=\"search\" placeholder=\"搜索词条、释义或例句...\" oninput=\"doSearch()\">\n")
 	sb.WriteString("<div id=\"list\">\n")
 
-	for _, e := range entries {
-		cat := "words"
-		if e.Source == "grammar" || len(strings.Fields(e.Term)) > 2 {
-			cat = "sentences"
-		} else if e.Source == "writing" {
-			cat = "writing"
-		}
+	// allCats mirrors allEntries so the page's own scripts group entries with
+	// the same rule as the desktop app instead of re-implementing it in JS.
+	allCats := make([]string, len(entries))
+	for i, e := range entries {
+		cat := classifyVocabEntry(e)
+		allCats[i] = cat.String()
 		// Every field is user data: a saved sentence containing markup (or
 		// the literal </script> the AI sometimes emits) used to break the
 		// whole page. Escape for text and attributes alike.
 		esc := html.EscapeString
 		searchContent := strings.ToLower(strings.Join([]string{e.Term, e.Definition, e.Context, e.ContextTranslation, e.MemoryTips}, " "))
-		sb.WriteString(fmt.Sprintf("<div class=\"card\" data-cat=\"%s\" data-text=\"%s\">", cat, esc(searchContent)))
+		sb.WriteString(fmt.Sprintf("<div class=\"card\" data-cat=\"%s\" data-text=\"%s\">", cat.String(), esc(searchContent)))
 		sb.WriteString(fmt.Sprintf("<div style=\"display:flex;align-items:center;\"><span class=\"card-term\">%s</span>", esc(e.Term)))
 		if e.Phonetic != "" {
 			sb.WriteString(fmt.Sprintf("<span class=\"card-phonetic\">%s</span>", esc(e.Phonetic)))
@@ -197,12 +188,13 @@ func (s *VocabularyStore) ExportHTML() (string, error) {
 	// containing </script> would otherwise end the script tag and break the
 	// whole page); html.EscapeString is not enough inside a script element.
 	sb.WriteString(fmt.Sprintf("let allEntries = %s;\n", strings.ReplaceAll(string(entriesJSON), "</", "<\\/")))
+	sb.WriteString(fmt.Sprintf("let allCats = %s;\n", strings.Join(allCats, ",")))
 	sb.WriteString("let curCat='all';\n")
 	sb.WriteString("function filterCat(c,b){curCat=c;document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');doSearch();}\n")
 	sb.WriteString("function doSearch(){let q=document.getElementById('search').value.toLowerCase().trim();let v=0;document.querySelectorAll('.card').forEach(x=>{let mC=(curCat==='all'||x.getAttribute('data-cat')===curCat);let mQ=(!q||x.getAttribute('data-text').includes(q));let show=(mC&&mQ);x.style.display=show?'block':'none';if(show)v++;});let nr=document.getElementById('noResult');if(nr)nr.style.display=(v===0)?'block':'none';}\n")
 	sb.WriteString("function exportJSON(){const blob=new Blob([JSON.stringify(allEntries,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='fast词典_生词库.json';a.click();URL.revokeObjectURL(url);}\n")
 	sb.WriteString("function exportCSV(){let csv='\uFEFF单词,音标,词性,释义,难度,例句,例句翻译,记忆技巧,分类,添加时间\r\n';allEntries.forEach(e=>{const esc=s=>String(s||'').replace(/,/g,'，').replace(/\n/g,' ');csv+=[esc(e.term),esc(e.phonetic),esc(e.part_of_speech),esc(e.definition),esc(e.difficulty),esc(e.context),esc(e.context_translation),esc(e.memory_tips),esc(e.source),esc(e.created_at)].join(',')+'\r\n';});const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='fast词典_生词库.csv';a.click();URL.revokeObjectURL(url);}\n")
-	sb.WriteString("function exportAnki(){let tsv='#separator:tab\\n#html:true\\n#tags column:4\\n';const clean=s=>String(s||'').replace(/\\t/g,' ').replace(/\\r?\\n/g,'<br>');const escH=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');allEntries.forEach(e=>{const isWord=(e.source!=='grammar'&&e.source!=='writing'&&String(e.term||'').trim().split(/\\s+/).length<=2);let f='',b='',tags='fastDictionary';if(isWord){f='<div style=\"font-size:22px;font-weight:700;\">'+escH(e.term)+'</div>'+(e.phonetic?'<div style=\"color:#64748b;margin-top:4px;\">'+escH(e.phonetic)+'</div>':'');b='<div style=\"font-size:20px;font-weight:700;\">'+escH(e.term)+'</div>'+(e.definition?'<div style=\"margin:8px 0;\">'+escH(e.definition)+'</div>':'')+(e.context?'<div style=\"background:#f8fafc;padding:8px;border-radius:6px;margin-top:8px;\">'+escH(e.context)+(e.context_translation?'<div style=\"color:#64748b;font-size:12px;\">'+escH(e.context_translation)+'</div>':'')+'</div>':'')+(e.memory_tips?'<div style=\"background:#fefce8;padding:6px;margin-top:8px;font-size:12px;\">💡 '+escH(e.memory_tips)+'</div>':'');tags+=' 生词 '+(e.difficulty?'CEFR-'+e.difficulty.toUpperCase():'');}else if(e.source==='writing'){f='<div>✏️ 写作批改</div><div style=\"font-size:16px;margin-top:8px;\">'+escH(e.term)+'</div>';b='<div style=\"color:#15803d;font-weight:600;\">✓ 改后版本：</div><div>'+escH(e.context)+'</div><div style=\"margin-top:6px;\">'+escH(e.definition)+'</div>';tags+=' 写作批改';}else{f='<div>🔍 长难句拆解</div><div style=\"font-size:16px;margin-top:8px;\">'+escH(e.term)+'</div>';b='<div style=\"font-size:16px;font-weight:600;\">'+escH(e.term)+'</div><div style=\"color:#475569;margin:6px 0;\">'+escH(e.context_translation)+'</div><div>'+escH(e.definition)+'</div>';tags+=' 长难句 '+(e.difficulty?'CEFR-'+e.difficulty.toUpperCase():'');}tsv+=[clean(f),clean(b),clean(e.term),clean(tags.trim())].join('\\t')+'\\n';});const blob=new Blob([tsv],{type:'text/tab-separated-values;charset=utf-8;'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='fast词典_生词库_Anki.txt';a.click();URL.revokeObjectURL(url);}\n")
+	sb.WriteString("function exportAnki(){let tsv='#separator:tab\\n#html:true\\n#tags column:4\\n';const clean=s=>String(s||'').replace(/\\t/g,' ').replace(/\\r?\\n/g,'<br>');const escH=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');allEntries.forEach((e,i)=>{const isWord=(allCats[i]==='words');let f='',b='',tags='fastDictionary';if(isWord){f='<div style=\"font-size:22px;font-weight:700;\">'+escH(e.term)+'</div>'+(e.phonetic?'<div style=\"color:#64748b;margin-top:4px;\">'+escH(e.phonetic)+'</div>':'');b='<div style=\"font-size:20px;font-weight:700;\">'+escH(e.term)+'</div>'+(e.definition?'<div style=\"margin:8px 0;\">'+escH(e.definition)+'</div>':'')+(e.context?'<div style=\"background:#f8fafc;padding:8px;border-radius:6px;margin-top:8px;\">'+escH(e.context)+(e.context_translation?'<div style=\"color:#64748b;font-size:12px;\">'+escH(e.context_translation)+'</div>':'')+'</div>':'')+(e.memory_tips?'<div style=\"background:#fefce8;padding:6px;margin-top:8px;font-size:12px;\">💡 '+escH(e.memory_tips)+'</div>':'');tags+=' 生词 '+(e.difficulty?'CEFR-'+e.difficulty.toUpperCase():'');}else if(allCats[i]==='writing'){f='<div>✏️ 写作批改</div><div style=\"font-size:16px;margin-top:8px;\">'+escH(e.term)+'</div>';b='<div style=\"color:#15803d;font-weight:600;\">✓ 改后版本：</div><div>'+escH(e.context)+'</div><div style=\"margin-top:6px;\">'+escH(e.definition)+'</div>';tags+=' 写作批改';}else{f='<div>🔍 长难句拆解</div><div style=\"font-size:16px;margin-top:8px;\">'+escH(e.term)+'</div>';b='<div style=\"font-size:16px;font-weight:600;\">'+escH(e.term)+'</div><div style=\"color:#475569;margin:6px 0;\">'+escH(e.context_translation)+'</div><div>'+escH(e.definition)+'</div>';tags+=' 长难句 '+(e.difficulty?'CEFR-'+e.difficulty.toUpperCase():'');}tsv+=[clean(f),clean(b),clean(e.term),clean(tags.trim())].join('\\t')+'\\n';});const blob=new Blob([tsv],{type:'text/tab-separated-values;charset=utf-8;'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='fast词典_生词库_Anki.txt';a.click();URL.revokeObjectURL(url);}\n")
 	sb.WriteString("function handleImport(evt){const file=evt.target.files[0];if(!file)return;alert('提示：当前导出的网页版为离线静态快照。若需持久化导入生词与长难句，请在 fastDictionary 桌面客户端的生词本页面使用【📥 导入】功能！');}\n")
 	sb.WriteString("</script>\n</body></html>")
 
