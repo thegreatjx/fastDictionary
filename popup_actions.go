@@ -634,9 +634,17 @@ func (a *app) applyParsedAction(actionID, raw string) bool {
 		a.dictResult = res
 		return res != nil
 	case "default-sentence-analysis":
-		parsed := ParseSentenceAnalysis(raw)
+		parse := ParseSentenceAnalysisDetailed(raw)
+		parsed := parse.Result
 		if parsed == nil {
+			if parse.Outcome == parseOutcomeFailed {
+				log.Printf("fastDictionary: grammar answer could not be parsed: %v", parse.Cause)
+			}
 			return false
+		}
+		if parse.Outcome == parseOutcomeTranslationOnly {
+			// 只有译文时仍然出卡片，但日志里要留下痕迹，便于排查模型输出退化。
+			log.Printf("fastDictionary: grammar answer carried a translation but no annotations")
 		}
 		// Keep the machine translation when the model's answer has none: a
 		// truncated response that stops after the annotations array would

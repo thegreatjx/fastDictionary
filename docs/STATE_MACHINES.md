@@ -545,6 +545,7 @@
 - **隐性**：**`nil` 同时表示「空输入」「模型输出不是 JSON」「解析出但无有效标注」三种失败**，调用方无法区分；错误全被 `_ =` 吞(54/57)
 - **风险**：54/57 `_ = json.Unmarshal` 把「annotations 是字符串但内容非法 JSON」静默吞掉，用户只见卡片不出现；86 不带原因，UI 无法提示「格式不对可重试」；60-66 只要 `trans!=""` 就返回成功（零标注），下游 `renderGrammarVisualCard`(288) 可能渲染空语法树
 - **显式化**：`ParseOutcome`（`Empty/Structured/FallbackDirect/FallbackArray/Failed`）+ `type SentenceParseResult struct{ Outcome; Result *SentenceAnalysisResult; Cause error }` + `func ParseSentenceAnalysis(raw string) SentenceParseResult`
+- **复核备注（批次 9b）**：`ParseOutcome` 六态与 `SentenceParseResult` 已落地，`ParseSentenceAnalysis` 保留为薄包装所以既有调用行为不变；`translation_only` 在卡片上给出「只有译文、没有语法标注」的说明，`failed` 在 `applyParsedAction` 记录原因日志。`CleanJSONText` 的清理边界与卡片提示位置仍需真人走查。
 - **测试**：`actions_test.go:39`、`actions_parse_test.go:12/37/58/71/102/127/144/162/184`、`popup_streaming_test.go:31`。缺口：三级 fallback 分别命中、nil 原因区分、坏 annotations 字符串
 
 #### A23 语法角色高亮过滤 · 低

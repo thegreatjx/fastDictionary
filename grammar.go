@@ -28,11 +28,57 @@ type SentenceAnalysisResult struct {
 	Raw         string             `json:"-"`
 }
 
+// ParseOutcome 记录解析停在哪一级。
+//
+// 以前只用 nil / 非 nil 表示结果，空输入、不是 JSON、只有译文没有标注这三种
+// 情况在调用方看来完全一样，卡片只能静默降级，用户不知道发生了什么。
+type ParseOutcome uint8
+
+const (
+	parseOutcomeEmpty ParseOutcome = iota
+	parseOutcomeStructured
+	parseOutcomeTranslationOnly
+	parseOutcomeFallbackDirect
+	parseOutcomeFallbackArray
+	parseOutcomeFailed
+)
+
+func (o ParseOutcome) String() string {
+	switch o {
+	case parseOutcomeEmpty:
+		return "empty"
+	case parseOutcomeStructured:
+		return "structured"
+	case parseOutcomeTranslationOnly:
+		return "translation_only"
+	case parseOutcomeFallbackDirect:
+		return "fallback_direct"
+	case parseOutcomeFallbackArray:
+		return "fallback_array"
+	case parseOutcomeFailed:
+		return "failed"
+	default:
+		return "unknown"
+	}
+}
+
+// SentenceParseResult 把解析结果和它的来路一起交出去。
+type SentenceParseResult struct {
+	Outcome ParseOutcome
+	Result  *SentenceAnalysisResult
+	Cause   error
+}
+
 // ParseSentenceAnalysis parses the model output into a structured result
 func ParseSentenceAnalysis(raw string) *SentenceAnalysisResult {
+	return ParseSentenceAnalysisDetailed(raw).Result
+}
+
+// ParseSentenceAnalysisDetailed 在 ParseSentenceAnalysis 的基础上保留每一级的去向。
+func ParseSentenceAnalysisDetailed(raw string) SentenceParseResult {
 	cleaned := CleanJSONText(raw)
 	if cleaned == "" {
-		return nil
+		return SentenceParseResult{Outcome: parseOutcomeEmpty}
 	}
 
 	type rawGrammar struct {
@@ -57,12 +103,20 @@ func ParseSentenceAnalysis(raw string) *SentenceAnalysisResult {
 				_ = json.Unmarshal(data, &list)
 			}
 		}
-		if len(list) > 0 || trans != "" {
-			return &SentenceAnalysisResult{
+		if len(list) > 0 {
+			return SentenceParseResult{Outcome: parseOutcomeStructured, Result: &SentenceAnalysisResult{
 				Annotations: list,
 				Translation: trans,
 				Raw:         raw,
-			}
+			}}
+		}
+		if trans != "" {
+			// 只有译文没有标注算不上完整结果，也不能当失败丢弃。
+			return SentenceParseResult{Outcome: parseOutcomeTranslationOnly, Result: &SentenceAnalysisResult{
+				Annotations: nil,
+				Translation: trans,
+				Raw:         raw,
+			}}
 		}
 	}
 
@@ -70,20 +124,20 @@ func ParseSentenceAnalysis(raw string) *SentenceAnalysisResult {
 	var res SentenceAnalysisResult
 	if err := json.Unmarshal([]byte(cleaned), &res); err == nil && len(res.Annotations) > 0 {
 		res.Raw = raw
-		return &res
+		return SentenceParseResult{Outcome: parseOutcomeFallbackDirect, Result: &res}
 	}
 
 	// Fallback 2: try parsing as raw annotations array
 	var list []SyntaxAnnotation
 	if err := json.Unmarshal([]byte(cleaned), &list); err == nil && len(list) > 0 {
-		return &SentenceAnalysisResult{
+		return SentenceParseResult{Outcome: parseOutcomeFallbackArray, Result: &SentenceAnalysisResult{
 			Annotations: list,
 			Translation: "",
 			Raw:         raw,
-		}
+		}}
 	}
 
-	return nil
+	return SentenceParseResult{Outcome: parseOutcomeFailed, Cause: fmt.Errorf("语法解析没有得到可用的标注")}
 }
 
 // Translated badge labels matching Read-Frog zh-CN
@@ -347,6 +401,16 @@ func (a *app) renderGrammarVisualCard(c *ui.Context, t *ui.Theme, origText strin
 					a.renderGrammarSpans(c, t, origText, res)
 				})
 			})
+
+			// 2.5 只有译文没有标注时要说清楚。否则读者看到的是一张没有
+			// 任何语法信息的卡片，只会以为功能坏了。
+			if len(res.Annotations) == 0 {
+				ui.Box(c).FillWidth().Padding(8, 12).Radius(6).
+					Background(t.SurfaceHover).Border(1, t.Border).Children(func() {
+					ui.Text(c, "这次回答只返回了译文，没有语法标注。可以点「AI 精翻」重新生成。").
+						FontSize(12).FontWeight(500).TextColor(t.TextMuted).Wrap()
+				})
+			}
 
 			// 3. Filter controls & role legend
 			//
