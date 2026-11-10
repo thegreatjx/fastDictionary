@@ -732,6 +732,19 @@ func formatAnkiCard(e VocabularyEntry) (front, back, term, tags string) {
 	return
 }
 
+// readImportFile reads an import file and drops a UTF-8 BOM. Windows editors
+// add one by default, and json.Unmarshal rejects it outright.
+func readImportFile(filePath string) ([]byte, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF {
+		data = data[3:]
+	}
+	return data, nil
+}
+
 // ImportFile imports vocabulary entries from a .json, .csv, or .txt file
 func (s *VocabularyStore) ImportFile(filePath string) (int, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
@@ -747,7 +760,7 @@ func (s *VocabularyStore) ImportFile(filePath string) (int, error) {
 
 // ImportJSON imports entries from a JSON file
 func (s *VocabularyStore) ImportJSON(filePath string) (int, error) {
-	data, err := os.ReadFile(filePath)
+	data, err := readImportFile(filePath)
 	if err != nil {
 		return 0, err
 	}
@@ -812,13 +825,9 @@ func (s *VocabularyStore) ImportJSON(filePath string) (int, error) {
 
 // ImportCSV imports entries from a CSV file
 func (s *VocabularyStore) ImportCSV(filePath string) (int, error) {
-	data, err := os.ReadFile(filePath)
+	data, err := readImportFile(filePath)
 	if err != nil {
 		return 0, err
-	}
-	// Strip UTF-8 BOM if present
-	if len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF {
-		data = data[3:]
 	}
 
 	r := csv.NewReader(bytes.NewReader(data))
@@ -900,7 +909,7 @@ func (s *VocabularyStore) ImportCSV(filePath string) (int, error) {
 
 // ImportTXT imports entries from plain text lines (one word per line or "word - meaning")
 func (s *VocabularyStore) ImportTXT(filePath string) (int, error) {
-	data, err := os.ReadFile(filePath)
+	data, err := readImportFile(filePath)
 	if err != nil {
 		return 0, err
 	}

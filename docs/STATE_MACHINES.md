@@ -512,6 +512,7 @@
 - **风险**：741 判「标准格式」只看 `entries[0].Term != ""`——首条空 Term 会误判为格式 2/3 或「无法识别」；764-767 map 里非字符串字段（数字 ID、布尔）静默丢弃；819 的 8 个 -1 与 858-878 的 `>=0 && <len(row)` 重复表达「列是否存在」；891 `strings.Split(string(data), "\n")` 不处理 `\r\n`（Windows 文件每行末留 `\r`）；`EnrichVocabularyEntry` 无返回值，补全失败被吞
 - **显式化**：`ImportFormat`（`VocabularyJSON/WordList/KVMap/CSV/TXT`）+ `type ImportPlan struct{ Format ImportFormat; ColumnMap map[VocabField]int; HasHeader bool; Entries []VocabularyEntry }` + `func DetectImportFormat(data []byte) (ImportFormat, error)` + `func ParseCSV(data []byte) (ImportPlan, error)`；`type VocabField uint8` 取代 768-785 字符串 key switch
 - **测试**：`vocab_export_import_test.go:10`、`regression_batch_test.go:145`、`regression_test.go:73`。缺口：首条空 Term、CRLF、非字符串 map 值、无表头 CSV
+- **复核备注（批次 7f）**：BOM 不一致属实——CSV 剥了，JSON/TXT 没剥。已抽 `readImportFile` 统一剥 UTF-8 BOM，三个导入器共用；`ImportFormat`/`ImportPlan` 的结构化探测、首条空 Term、CRLF、非字符串 map 值仍未做，留后续。
 
 #### A20 词库分类判定（三处规则不一致） · 中
 - **位置**：`fastpot/vocabulary_export.go:32-50, 52-63, 66-87, 148-154, 199-202`；`fastpot/settings_vocab.go:431-441, 494-497, 534, 596`；`fastpot/vocabulary.go:32`

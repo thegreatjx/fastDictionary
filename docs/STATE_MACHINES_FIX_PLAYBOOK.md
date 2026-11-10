@@ -751,6 +751,7 @@ gofmt -d .
 | 7c | C7 语音播放：代次检查与 `playMP3` 分处两段临界区，检查后、播放前下一次朗读可插入，旧音频盖住新音频；有道单词快路径完全没检查代次 | 有（修 bug）：检查与播放合进同一临界区 | 见下 |
 | 7d | C2 钩子命令单槽：连续两次 `postHookCommand`，第二条覆盖第一条，命令永久丢失（快速切模式 + 退出时可能丢掉 `removeHooks`） | 有（修 bug）：单槽换成带缓冲队列，按序全部执行 | 见下 |
 | 7e | U11 自动高度：振荡锁定后只有 `fitHeight` 解锁，而流式 chunk 只 `win.Update`，整段流式期间高度不再跟随内容增长 | 有（修 bug）：内容高度明显变化即解除锁定 | 见下 |
+| 7f | A19 导入：CSV 会剥 UTF-8 BOM，JSON/TXT 不会；Windows 编辑器默认带 BOM 的导出文件导不进来（JSON 报「无法识别的格式」，TXT 首个单词带不可见字符） | 有（修 bug）：三个导入器统一剥 BOM | 见下 |
 
 ### 批次 7a 验证记录（A20 词库分类统一）
 
@@ -825,6 +826,21 @@ gofmt -d .
   DATA RACE 0；`gofmt -l .` 空、`go vet ./...` clean。
 - 未验证：8 DIP 的阈值来自测量噪声的量级（既有判据是 4 DIP 死区），真实长文流式需要真人观察；
   `AutofitSession` 结构体化与死字段清理未做，留后续。
+
+### 批次 7f 验证记录（A19 导入 BOM）
+
+- 复现测试：`vocab_import_bom_test.go` 的 `TestImportJSONWithUTF8BOM`（改前 FAIL：
+  「无法识别的 JSON 数据格式」）、`TestImportTXTWithUTF8BOM`（改前 FAIL：首个单词带
+  `\ufeff`）、`TestImportCSVWithUTF8BOMStillWorks`（对照，本来就通过）。
+- 生产改动：`vocabulary.go` 新增 `readImportFile(filePath)` 统一 `os.ReadFile` + 剥
+  UTF-8 BOM；`ImportJSON` / `ImportCSV` / `ImportTXT` 都改用它，CSV 里原来那段内联 BOM
+  处理删除（行为不变，少一处重复）。
+- 行为：带 BOM 的 JSON/TXT/CSV 都能导入；不带 BOM 的文件完全不变。
+- 验证：`go test -count=1 ./...` ok 15.402s；`go test -race -count=1 ./...` 连续 2 次
+  exit=0、DATA RACE 0；`gofmt -l .` 空、`go vet ./...` clean。
+- 未验证：`ImportFormat`/`ImportPlan` 的结构化格式探测与 CRLF/非字符串 map 值处理未做，
+  留后续；真人从记事本另存为 UTF-8 的 .txt/.json 导入走查仍待做。
+
 
 
 
