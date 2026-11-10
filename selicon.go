@@ -940,6 +940,9 @@ func primaryGeom(displays []geomDisplay) geomDisplay {
 // anything again, so "仅快捷键" was a one-way door that killed selection
 // translation until the app was restarted.
 func (a *app) applySelectionMode() {
+	// The trigger changed: a cooldown from the previous mode would be charged
+	// against the first gesture under the new one.
+	a.gestureGate.reset()
 	wantHooks := a.store.Get().SelectionTrigger != "hotkey"
 	runOnMainThread()
 	apply := func() {

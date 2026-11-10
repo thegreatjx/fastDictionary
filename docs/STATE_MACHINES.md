@@ -108,6 +108,7 @@
 - **风险**：`pauseSelection` 未调 `gestureGate.reset()`（只有 `resumeSelection` 调），而 `selection_policy.go:256-257` 注释承诺「a pause or a mode change does not leave a cooldown behind」——**mode 切换与暂停开始两条路径都没 reset**，残留 300ms 冷却吞掉首个手势；`pauseSelection`/`resumeSelection` 各起一个 `go rebuildTray()`，无序导致托盘标签停留在旧状态；`tray.go:86-90` 切 mode 不 `rebuildTray()`，与 main.go:75-77 注释不符，托盘 radio 与 flyout Segmented 可能不一致
 - **显式化**：`type SelectionTrigger string` + 三个常量；`TriggerGate{ trigger; pausedUntil; paused bool; gate gestureGate }`，`SetTrigger/Pause/Resume` 单点同时更新三者并触发 `rebuildTray`；`IgnoreReason uint8` 替代字符串
 - **测试**：`gesture_test.go:122/168/189/206/219/236/257`、`selection_policy_test.go:334`、`regression_test.go:104`、`hook_lifecycle_test.go:68`、`selicon_test.go:143`。缺口：pause 未 reset gate、flyout 切换后托盘 radio 一致性、两个 `go rebuildTray()` 乱序
+- **复核备注（批次 7h）**：暂停与切换模式不清手势冷却属实，托盘浮层也不重建托盘。已在 `pauseSelection`、`applySelectionMode` 统一 `gestureGate.reset()`，并在浮层 `OnChange` 补 `rebuildTray()`；`SelectionTrigger` 类型化、`TriggerGate` 结构体化与 `IgnoreReason` 枚举未做，留后续。
 
 #### C4 gestureGate 手势去重与冷却 · 中
 - **位置**：`fastpot/selection_policy.go:56-65, 221-262`

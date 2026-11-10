@@ -753,6 +753,7 @@ gofmt -d .
 | 7e | U11 自动高度：振荡锁定后只有 `fitHeight` 解锁，而流式 chunk 只 `win.Update`，整段流式期间高度不再跟随内容增长 | 有（修 bug）：内容高度明显变化即解除锁定 | 见下 |
 | 7f | A19 导入：CSV 会剥 UTF-8 BOM，JSON/TXT 不会；Windows 编辑器默认带 BOM 的导出文件导不进来（JSON 报「无法识别的格式」，TXT 首个单词带不可见字符） | 有（修 bug）：三个导入器统一剥 BOM | 见下 |
 | 7g | A5 Indra 引擎：首次加载失败被永久缓存，进程内不再重试；一次瞬时失败（模型文件被占用、内存紧张）会让 OCR 一直降级到 Windows 识别，必须重启应用 | 有（修 bug）：失败后按 30 秒冷却重试 | 见下 |
+| 7h | C3 划词触发：只有 `resumeSelection` 清手势冷却，暂停与切换触发模式都不清，残留 300ms 冷却吞掉暂停/切换后的第一个手势；托盘浮层改模式不重建托盘，单选状态停在旧模式 | 有（修 bug）：三处入口统一清冷却 + 浮层重建托盘 | 见下 |
 
 ### 批次 7a 验证记录（A20 词库分类统一）
 
@@ -857,6 +858,21 @@ gofmt -d .
   DATA RACE 0；`gofmt -l .` 空、`go vet ./...` clean。
 - 未验证：`IndraLoadState`/`IndraCaps` 结构化、`indraStatus` 与 `readLine` 能力判断统一
   未做，留后续；真实模型目录被占用的场景未复现。
+
+### 批次 7h 验证记录（C3 暂停/模式切换的手势冷却）
+
+- 复现测试：`selection_mode_reset_test.go` 的 `TestPauseAndModeChangeResetGestureGate`（改前
+  FAIL：`pauseSelection` 没有 `a.gestureGate.reset()`）、
+  `TestTrayFlyoutRebuildsTrayOnModeChange`（改前 FAIL：浮层切换后没有 `a.rebuildTray()`）。
+- 生产改动：`selection_guard.go` 的 `pauseSelection` 在设置 `pausedUntil` 后清手势门；
+  `selicon.go` 的 `applySelectionMode` 开头统一清手势门（覆盖设置页与托盘两条改模式路径）；
+  `tray.go` 浮层改模式后补一次 `rebuildTray()`，让托盘单选与配置一致。
+- 行为：暂停结束或切换模式后第一个手势立即生效；托盘单选不再停留在旧模式。
+- 验证：`go test -count=1 ./...` ok 9.976s；`go test -race -count=1 ./...` 连续 2 次 exit=0、
+  DATA RACE 0；`gofmt -l .` 空、`go vet ./...` clean。
+- 未验证：`SelectionTrigger` 字符串常量类型化、`TriggerGate` 结构体化与 `IgnoreReason`
+  枚举未做，留后续；真人从托盘与设置页切换模式的手势走查仍待做。
+
 
 
 

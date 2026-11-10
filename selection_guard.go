@@ -76,6 +76,9 @@ func (a *app) pauseSelection(d time.Duration) {
 	a.mu.Lock()
 	a.pausedUntil = time.Now().Add(d)
 	a.mu.Unlock()
+	// A pause is a deliberate break, exactly like resume: the gesture after it
+	// must not be judged against the one from before it.
+	a.gestureGate.reset()
 	log.Printf("fastDictionary: selection trigger paused for %s", d)
 	// The tray rebuild hops onto the main thread and blocks until it has
 	// run; doing it in the background keeps this callable from anywhere,

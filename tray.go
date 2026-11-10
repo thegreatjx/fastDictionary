@@ -87,6 +87,9 @@ func (a *app) trayFlyoutView(c *ui.Context) {
 				modes := []string{"icon", "auto", "hotkey"}
 				a.store.Update(func(c *Config) { c.SelectionTrigger = modes[modeIdx] })
 				a.applySelectionMode()
+				// The tray menu's radio is fixed when built; without this it keeps
+				// showing the mode that was active before the flyout changed it.
+				a.rebuildTray()
 			})
 		})
 
