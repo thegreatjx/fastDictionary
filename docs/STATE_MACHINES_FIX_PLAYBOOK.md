@@ -747,6 +747,7 @@ gofmt -d .
 | 批次 | 缺陷 | 行为变化 | 记录 |
 | --- | --- | --- | --- |
 | 7a | A20 词库分类：计数器、筛选、行标签与导出网页各有一份规则，写作条目词数多时被标成长难句；`grammar` / `dict` / `notes` 短条目还会同时出现在两个 Tab | 有（修 bug）：分类收敛到 `classifyVocabEntry` 一处，先看 Source 再看词数 | 见下 |
+| 7b | 熔断器注册表：测试无同步替换包级 `breakers` 指针，与在飞请求并发读写，`go test -race` 偶发 DATA RACE | 无（测试隔离修复，生产语义不变） | 见下 |
 
 ### 批次 7a 验证记录（A20 词库分类统一）
 
@@ -762,4 +763,19 @@ gofmt -d .
 - 行为边界：`Source` 为 `writing` / `grammar` / `dict` / `notes` 时以 Source 为准；其余
   （`import`、空、未知）按词数 > 2 归长难句，否则归生词。
 - 未验证：未启动 GUI 查看生词本四个 Tab 的真实渲染；Excel/Anki 文件未导入第三方工具复核。
+
+### 批次 7b 验证记录（熔断器注册表改为 atomic.Pointer）
+
+- 复现测试：`breaker_registry_test.go` 的 `TestBreakerRegistryIsAtomic`（源码契约，改前
+  `breakers` 是普通指针、无 `currentBreaker()`，必 FAIL）与 `TestBreakerSwapIsRaceSafe`
+  （4 个 goroutine 持续 `record`，主 goroutine 连续 50 次 `Store` 新熔断器，`-race` 下验证）。
+- 生产改动：`services.go` 的 `var breakers = &engineBreaker{...}` 改为
+  `var breakers atomic.Pointer[engineBreaker]` + `init()` 初始化 + `currentBreaker()` 单一读取点；
+  8 个调用点（`:443/:447/:451` 记录、`:469/:475/:483` 放行、`:544` 竞速记录、`:687` 健康度）
+  改为 `currentBreaker().xxx`。测试 `freshBreakers` / `assertBreakerClean` 改用 `Store` / `Load`。
+- 行为：生产从不替换指针，读写语义与原来完全一致；仅把「测试替换」从数据竞争变成原子操作。
+- 验证：`go test -race -count=1 ./...` 连续 3 次均 `exit=0`、`DATA RACE` 计数 0；
+  `go test -count=1 ./...` ok 9.582s；`gofmt -l .` 空、`go vet ./...` clean。
+- 未验证：这是测试隔离与内存安全的修复，不是用户可见行为；未在真实网关下压测熔断恢复。
+
 

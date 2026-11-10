@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 )
@@ -440,15 +441,15 @@ func TranslateRace(ctx context.Context, text, from, to, mode string) raceResult 
 		switch mode {
 		case "microsoft":
 			r, err := MicrosoftTranslate(ctx2, text, from, to)
-			breakers.record("microsoft", err)
+			currentBreaker().record("microsoft", err)
 			res = raceResult{Text: r.Text, Engine: "微软", Detected: r.Detected, Err: err}
 		case "tencent":
 			r, err := tencentTranslate(ctx2, text, from, to)
-			breakers.record("tencent", err)
+			currentBreaker().record("tencent", err)
 			res = raceResult{Text: r.Text, Engine: "腾讯", Detected: r.Detected, Err: err}
 		default:
 			t, d, err := googleTranslate(ctx2, text, from, to, true)
-			breakers.record("google", err)
+			currentBreaker().record("google", err)
 			res = raceResult{Text: t, Engine: "谷歌", Detected: d, Err: err}
 		}
 		// The same echo check the race applies. Pinning an engine asks for
@@ -466,13 +467,13 @@ func TranslateRace(ctx context.Context, text, from, to, mode string) raceResult 
 	}
 	cands := make([]contender, 0, 3)
 
-	if breakers.allow("microsoft") {
+	if currentBreaker().allow("microsoft") {
 		cands = append(cands, contender{"微软", func() (string, string, error) {
 			r, err := MicrosoftTranslate(ctx2, text, from, to)
 			return r.Text, r.Detected, err
 		}})
 	}
-	if breakers.allow("google") {
+	if currentBreaker().allow("google") {
 		cands = append(cands, contender{"谷歌", func() (string, string, error) {
 			return googleTranslate(ctx2, text, from, to, false)
 		}})
@@ -480,7 +481,7 @@ func TranslateRace(ctx context.Context, text, from, to, mode string) raceResult 
 	// 腾讯 only joins pairs it can actually serve: it answers
 	// "Unsupported-Language" for about half of this app's target list, and a
 	// contender that always fails would open its breaker for no reason.
-	if tencentSupportsTarget(to) && breakers.allow("tencent") {
+	if tencentSupportsTarget(to) && currentBreaker().allow("tencent") {
 		cands = append(cands, contender{"腾讯", func() (string, string, error) {
 			r, err := tencentTranslate(ctx2, text, from, to)
 			return r.Text, r.Detected, err
@@ -541,7 +542,7 @@ func TranslateRace(ctx context.Context, text, from, to, mode string) raceResult 
 			// for a healthy slow engine on every single race. Successes are
 			// still recorded, so a recovered engine can reset its count.
 			if shouldRecordBreaker(ctx2, err) {
-				breakers.record(engineKey(c.name), err)
+				currentBreaker().record(engineKey(c.name), err)
 			}
 			ch <- raceResult{Text: txt, Engine: c.name, Detected: det, Err: err}
 		}()
@@ -684,7 +685,7 @@ func engineHealths() []engineHealth {
 	}
 	out := make([]engineHealth, 0, len(names))
 	for _, item := range names {
-		h := breakers.health(item.key)
+		h := currentBreaker().health(item.key)
 		h.Engine = item.label
 		out = append(out, h)
 	}
@@ -726,11 +727,22 @@ type engineBreaker struct {
 	lastErr map[string]string
 }
 
-var breakers = &engineBreaker{
-	until:   map[string]time.Time{},
-	fails:   map[string]int{},
-	lastErr: map[string]string{},
+// breakers is swapped atomically so a test can start from a clean breaker even
+// when a request started by an earlier test is still finishing. Production
+// never replaces it after init; the indirection exists only to make that
+// isolation race-free.
+var breakers atomic.Pointer[engineBreaker]
+
+func init() {
+	breakers.Store(&engineBreaker{
+		until:   map[string]time.Time{},
+		fails:   map[string]int{},
+		lastErr: map[string]string{},
+	})
 }
+
+// currentBreaker is the single read point for the package breaker.
+func currentBreaker() *engineBreaker { return breakers.Load() }
 
 // breakerThreshold is how many consecutive failures open the breaker.
 //

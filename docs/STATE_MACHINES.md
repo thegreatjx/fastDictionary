@@ -168,6 +168,7 @@
 - **风险**：`health()` 只改显示视图不清 map，设置页 `Fails=0` 与 `allow()` 调用前 `fails[name]` 仍为 2 的真实状态不一致；`services.go:582-584` 注释明确记录历史 bug：「Recording it again here doubled every failure: with a threshold of two, one bad answer was enough to open the breaker for a minute」；`shouldRecordBreaker`(412-427) 的 `context.DeadlineExceeded` 分支(423-425)依赖 `ctx.Err()==nil`，边界微妙；三局部变量无法从外部观测
 - **显式化**：`circuitState`（`closed/halfOpen/open`）+ `engineCircuit{state;fails;openUntil;lastErr}` + `EngineBreakers.Allow/Succeed/Fail/Health` 共用同一 `refresh(name)` 消除视图分裂；`racePhase`（`collecting/awaitingPreferred/decided`）+ `raceTracker{phase;held;grace;preferredPending}`
 - **测试**：`ai_generation_race_test.go:314/374`、`atomic_save_test.go:139/162`、`tencent_race_test.go:10`、`race_echo_test.go:9`、`live_race_test.go:14`。缺口：`closed→open→half-open→closed` 全周期、`health()` 视图一致性、`grace` 超时分支
+- **复核备注（批次 7b）**：`engineBreaker` 本身的 `mu` 保护是完整的；真正的竞争在包级注册表 `breakers` 指针——测试用 `freshBreakers` 无同步替换它，而上一测试留下的请求会并发 `record`。已改为 `atomic.Pointer[engineBreaker]` + `currentBreaker()` 单一读取点，生产语义不变，`go test -race` 的偶发 DATA RACE 消失。熔断器状态枚举化（`BreakerState`）未做，留后续。
 
 #### C10 截图框选会话（snipSession） · 高
 - **位置**：`fastpot/snip.go:183-223, 239-361, 377-592`

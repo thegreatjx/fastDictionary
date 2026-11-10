@@ -292,17 +292,18 @@ func stubRaceHTTP(t *testing.T, fn stubRoundTripper) {
 
 func freshBreakers(t *testing.T) {
 	t.Helper()
-	old := breakers
-	breakers = &engineBreaker{until: map[string]time.Time{}, fails: map[string]int{}}
-	t.Cleanup(func() { breakers = old })
+	old := breakers.Load()
+	breakers.Store(&engineBreaker{until: map[string]time.Time{}, fails: map[string]int{}})
+	t.Cleanup(func() { breakers.Store(old) })
 }
 
 func assertBreakerClean(t *testing.T, name string) {
 	t.Helper()
-	breakers.mu.Lock()
-	fails := breakers.fails[name]
-	_, open := breakers.until[name]
-	breakers.mu.Unlock()
+	b := currentBreaker()
+	b.mu.Lock()
+	fails := b.fails[name]
+	_, open := b.until[name]
+	b.mu.Unlock()
 	if fails != 0 || open {
 		t.Fatalf("a cancelled loser counted as a failure: fails=%d open=%v", fails, open)
 	}
@@ -384,13 +385,14 @@ func TestRaceFailureIsRecordedOnce(t *testing.T) {
 	if r.Err != nil {
 		t.Fatalf("race failed: %v", r.Err)
 	}
-	breakers.mu.Lock()
-	fails := breakers.fails["microsoft"]
-	breakers.mu.Unlock()
+	b := currentBreaker()
+	b.mu.Lock()
+	fails := b.fails["microsoft"]
+	b.mu.Unlock()
 	if fails != 1 {
 		t.Fatalf("microsoft failures = %d, want 1 (one attempt, one record)", fails)
 	}
-	if breakers.open("microsoft") {
+	if b.open("microsoft") {
 		t.Fatal("a single failure opened the breaker; breakerThreshold is 2")
 	}
 }
