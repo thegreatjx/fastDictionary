@@ -238,17 +238,33 @@ type store struct {
 	retiredViewMigrated bool
 }
 
+// resolveConfigPath is a variable so newStore's on-disk decisions can be
+// tested against a temp file instead of the real user data directory.
+var resolveConfigPath = func() string {
+	dir, err := mygo.App.Path(mygo.PathUserData)
+	if err != nil {
+		log.Printf("fastDictionary: no user data dir: %v", err)
+		return ""
+	}
+	return filepath.Join(dir, "config.json")
+}
+
 func newStore() *store {
 	s := &store{cfg: DefaultConfig()}
-	if dir, err := mygo.App.Path(mygo.PathUserData); err == nil {
-		s.path = filepath.Join(dir, "config.json")
-	} else {
-		log.Printf("fastDictionary: no user data dir: %v", err)
-	}
+	s.path = resolveConfigPath()
 	if !s.load() && s.path != "" {
-		// First run: materialise the defaults so the file is there to edit.
-		if err := saveConfig(s.path, s.cfg); err != nil {
-			log.Printf("fastDictionary: could not write default config: %v", err)
+		// load() reports false for three states: no path (excluded above),
+		// a missing file (a genuine first run), and a file that exists but
+		// is corrupt or unreadable. Only the second may be overwritten with
+		// defaults. Replacing the third would erase the user's AI URL, theme
+		// and custom actions with no copy left to recover; run on the
+		// in-memory defaults instead and leave the file for manual repair.
+		if _, statErr := os.Stat(s.path); os.IsNotExist(statErr) {
+			if err := saveConfig(s.path, s.cfg); err != nil {
+				log.Printf("fastDictionary: could not write default config: %v", err)
+			}
+		} else {
+			log.Printf("fastDictionary: config at %s could not be read; keeping the file and using defaults in memory. Repair or delete the file to reset.", s.path)
 		}
 	} else if s.notesMigrated && s.path != "" {
 		// Persist the one-time migration so the marker stops re-running on a

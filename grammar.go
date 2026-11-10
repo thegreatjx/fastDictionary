@@ -285,7 +285,7 @@ func nearestIn(units []trunkUnit, from, to int, forward bool) (string, bool) {
 }
 
 // renderGrammarVisualCard renders the interactive visual grammar tree card matching user screenshot
-func (a *app) renderGrammarVisualCard(c *ui.Context, t *ui.Theme, origText string, res *SentenceAnalysisResult, onSave func()) {
+func (a *app) renderGrammarVisualCard(c *ui.Context, t *ui.Theme, origText string, res *SentenceAnalysisResult, saved bool, onSave func()) {
 	// 1. Collect obstacles and structural components
 	var obstacles []SyntaxAnnotation
 	var subjects []trunkUnit
@@ -318,10 +318,18 @@ func (a *app) renderGrammarVisualCard(c *ui.Context, t *ui.Theme, origText strin
 		ui.Column(c).FillWidth().Gap(10).Children(func() {
 			// 1. Header: mode label and the speak button
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+				topBg := ui.Hex("#F1F5F9")
+				topBorder := ui.Hex("#E2E8F0")
+				topText := ui.Hex("#475569")
+				if t.Dark {
+					topBg = t.SurfaceHover
+					topBorder = t.Border
+					topText = t.TextMuted
+				}
 				ui.Box(c).Padding(3, 10).Radius(12).
-					Background(ui.Hex("#F1F5F9")).Border(1, ui.Hex("#E2E8F0")).Children(func() {
+					Background(topBg).Border(1, topBorder).Children(func() {
 					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, "长难句拆解").FontSize(11).FontWeight(600).TextColor(ui.Hex("#475569"))
+						ui.Text(c, "长难句拆解").FontSize(11).FontWeight(600).TextColor(topText)
 					})
 				})
 
@@ -384,11 +392,35 @@ func (a *app) renderGrammarVisualCard(c *ui.Context, t *ui.Theme, origText strin
 			// 4. Hard structures: what makes the sentence difficult, and how to
 			// put it back in plain order.
 			if len(obstacles) > 0 {
+				cardBg := ui.Hex("#FAF6F4")
+				cardBorder := ui.Hex("#E8DDD8")
+				cardTitle := ui.Hex("#8A5044")
+				badgeBg := ui.Hex("#F0E4DF")
+				badgeBorder := ui.Hex("#E0CFC8")
+				badgeText := ui.Hex("#8A5044")
+				obsText := ui.Hex("#3F3A38")
+				restoreLabel := ui.Hex("#A26B5C")
+				restoreText := ui.Hex("#55708C")
+				noteLabel := ui.Hex("#9A8478")
+				noteText := ui.Hex("#5C524C")
+				if t.Dark {
+					cardBg = ink.obstacleBg
+					cardBorder = withAlpha(ink.obstacle, 0.35)
+					cardTitle = ink.obstacle
+					badgeBg = withAlpha(ink.obstacle, 0.22)
+					badgeBorder = withAlpha(ink.obstacle, 0.45)
+					badgeText = ink.obstacle
+					obsText = ink.body
+					restoreLabel = ink.obstacle
+					restoreText = ink.predicateLine
+					noteLabel = ink.muted
+					noteText = ink.body
+				}
 				ui.Box(c).FillWidth().Padding(10, 12).Radius(6).
-					Background(ui.Hex("#FAF6F4")).Border(1, ui.Hex("#E8DDD8")).Children(func() {
+					Background(cardBg).Border(1, cardBorder).Children(func() {
 					ui.Column(c).FillWidth().Gap(8).Children(func() {
 						ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-							ui.Text(c, "句式难点").FontSize(11).FontWeight(700).TextColor(ui.Hex("#8A5044"))
+							ui.Text(c, "句式难点").FontSize(11).FontWeight(700).TextColor(cardTitle)
 						})
 						for _, obs := range obstacles {
 							obsItem := obs
@@ -406,21 +438,21 @@ func (a *app) renderGrammarVisualCard(c *ui.Context, t *ui.Theme, origText strin
 							ui.Column(c).FillWidth().Gap(3).Padding(2, 4).Children(func() {
 								ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 									ui.Box(c).Padding(1, 6).Radius(4).
-										Background(ui.Hex("#F0E4DF")).Border(1, ui.Hex("#E0CFC8")).Children(func() {
-										ui.Text(c, label).FontSize(10).FontWeight(600).TextColor(ui.Hex("#8A5044"))
+										Background(badgeBg).Border(1, badgeBorder).Children(func() {
+										ui.Text(c, label).FontSize(10).FontWeight(600).TextColor(badgeText)
 									})
-									ui.Text(c, obsItem.Text).FontSize(13).FontWeight(600).TextColor(ui.Hex("#3F3A38")).Wrap().Grow(1)
+									ui.Text(c, obsItem.Text).FontSize(13).FontWeight(600).TextColor(obsText).Wrap().Grow(1)
 								})
 								if obsItem.Restore != "" {
 									ui.Row(c).Gap(6).AlignItems(ui.Start).Padding(1, 0, 1, 14).Children(func() {
-										ui.Text(c, "还原语序：").FontSize(11).FontWeight(600).TextColor(ui.Hex("#A26B5C"))
-										ui.Text(c, obsItem.Restore).FontSize(12).FontWeight(600).TextColor(ui.Hex("#55708C")).Wrap().Grow(1)
+										ui.Text(c, "还原语序：").FontSize(11).FontWeight(600).TextColor(restoreLabel)
+										ui.Text(c, obsItem.Restore).FontSize(12).FontWeight(600).TextColor(restoreText).Wrap().Grow(1)
 									})
 								}
 								if obsItem.Note != "" {
 									ui.Row(c).Gap(6).AlignItems(ui.Start).Padding(0, 0, 0, 14).Children(func() {
-										ui.Text(c, "解析说明：").FontSize(11).TextColor(ui.Hex("#9A8478"))
-										ui.Text(c, obsItem.Note).FontSize(12).TextColor(ui.Hex("#5C524C")).Wrap().Grow(1)
+										ui.Text(c, "解析说明：").FontSize(11).TextColor(noteLabel)
+										ui.Text(c, obsItem.Note).FontSize(12).TextColor(noteText).Wrap().Grow(1)
 									})
 								}
 							})
@@ -498,30 +530,29 @@ func (a *app) renderGrammarVisualCard(c *ui.Context, t *ui.Theme, origText strin
 
 			// 7. Bottom action bar: [ 保存到长难句本 ]
 			ui.Row(c).FillWidth().Justify(ui.End).AlignItems(ui.Center).Children(func() {
-				saveLabel := "保存到长难句本"
-				saveBg := ui.Hex("#55708C")
-				if a.grammarSaved {
-					saveLabel = "✓ 已存入长难句本"
-					saveBg = ui.Hex("#3F6E5A")
+				if saved {
+					ui.Box(c).Height(26).Padding(2, 12).Radius(5).
+						Background(t.Surface).Border(1, t.Border).Children(func() {
+						ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+							ui.Icon(c, iconCheckSquare).Size(12, 12).TextColor(t.Success)
+							ui.Text(c, "✓ 已存入长难句本").FontSize(11).FontWeight(600).TextColor(t.TextMuted)
+						})
+					})
+					return
+				}
+				if onSave == nil {
+					return
 				}
 				btnSave := ui.Button(c, "").Height(26).Padding(2, 14).Radius(5).
-					Background(saveBg).TextColor(ui.Hex("#FFFFFF")).Tooltip("将这条长难句分析保存到生词本的长难句分类")
+					Background(saveButtonColor(t)).TextColor(ui.Hex("#FFFFFF")).Tooltip("将这条长难句分析保存到生词本的长难句分类")
 				btnSave.Children(func() {
 					ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
 						ui.Icon(c, iconBookmark).Size(13, 13).TextColor(ui.Hex("#FFFFFF"))
-						ui.Text(c, saveLabel).FontSize(11).FontWeight(600)
+						ui.Text(c, "保存到长难句本").FontSize(11).FontWeight(600)
 					})
 				})
 				if btnSave.Clicked() {
-					if onSave != nil {
-						onSave()
-					}
-					a.mu.Lock()
-					a.grammarSaved = true
-					a.mu.Unlock()
-					if a.win != nil {
-						a.win.Update(func() {})
-					}
+					onSave()
 				}
 			})
 		})

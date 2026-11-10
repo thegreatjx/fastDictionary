@@ -453,6 +453,16 @@ func disarmChipHover() {
 	atomic.StoreUint32(&chipHoverArmed, 0)
 }
 
+// resetClickTrackingLocked 在手势会话结束时清空双击候选。调用方必须持有 hookMu：
+// lowLevelMouseProc 在同一把锁下读写这三个字段。卸载钩子表示会话结束，旧的
+// lastClickTime / lastClickPos / clickCount 不能带进下一次安装，否则重装后短时间
+// 内的首次点击可能沿用旧候选被误判为双击。
+func resetClickTrackingLocked() {
+	lastClickTime = 0
+	lastClickPos = winPoint{}
+	clickCount = 0
+}
+
 // removeHooks uninstalls both hooks. Unhooking is thread-agnostic in win32,
 // but it is still done from the hook thread so the loop can exit cleanly.
 //
@@ -463,6 +473,7 @@ func removeHooks() {
 	mh, kh := mouseHook, keyHook
 	mouseHook, keyHook = 0, 0
 	liveMouseHook, liveKeyHook = 0, 0
+	resetClickTrackingLocked()
 	hookMu.Unlock()
 	if mh == 0 && kh == 0 {
 		return

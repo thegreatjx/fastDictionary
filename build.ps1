@@ -11,13 +11,17 @@
 #
 #   .\build.ps1            构建正式版 fastDictionary.exe（GUI，无黑窗口），替换正在运行的实例
 #   .\build.ps1 -Dev       构建开发版 fastDictionary-dev.exe（有控制台，能看到日志）
+#   .\build.ps1 -Package   构建正式版并生成 dist/ 生产分发包（绿色目录、zip 及 sha256）
 #   .\build.ps1 -Run       构建后启动程序
 #   .\build.ps1 -NoStop    不停掉正在运行的实例（调试用；此时 exe 可能被占用）
+#   .\build.ps1 -Overwrite 出包时若今日版本目录已存在，强制覆盖刷新而不生成 -r2
 
 param(
     [switch]$Dev,
     [switch]$Run,
-    [switch]$NoStop
+    [switch]$NoStop,
+    [switch]$Package,
+    [switch]$Overwrite
 )
 
 $ErrorActionPreference = "Stop"
@@ -66,7 +70,10 @@ if (-not $NoStop) {
         $wasRunning = $true
         Write-Host "停止运行中的实例..." -ForegroundColor Cyan
         $running | Stop-Process -Force
-        Start-Sleep -Milliseconds 500
+        try {
+            $running | Wait-Process -Timeout 3 -ErrorAction SilentlyContinue
+        } catch {}
+        Start-Sleep -Milliseconds 300
     }
 }
 
@@ -161,30 +168,172 @@ Write-Host "ok: $out ($((Get-Item $out).Length) bytes)  Subsystem=$subsystemName
 # 以前这里只报警，于是「构建成功、快捷方式打开旧客户端」照样发生 —— 报警
 # 没人看，用户看到的就是旧界面。现在直接写回正确目标：快捷方式是这个项目
 # 唯一的启动入口，让它指向刚构建的 exe 属于构建的一部分，而不是用户的活。
+# 同时对账桌面、开始菜单、启动项，确保用户在任何位置打开的都是最新构建的 exe。
 if (-not $Dev) {
     $expected = Join-Path $PSScriptRoot $out
     $shell = New-Object -ComObject WScript.Shell
     $lnkName = 'fast词典.lnk'
-    $lnkPath = Join-Path ([Environment]::GetFolderPath('Desktop')) $lnkName
-    if (Test-Path $lnkPath) {
-        $lnk = $shell.CreateShortcut($lnkPath)
-        if ($lnk.TargetPath -ne $expected) {
-            Write-Host "快捷方式指向 $($lnk.TargetPath)，改为 $expected" -ForegroundColor Yellow
-            $lnk.TargetPath = $expected
-            $lnk.WorkingDirectory = $PSScriptRoot
-            $lnk.Save()
+
+    $shortcutLocations = @(
+        @{ Name = "桌面"; Dir = [Environment]::GetFolderPath('Desktop') },
+        @{ Name = "开始菜单"; Dir = [Environment]::GetFolderPath('Programs') },
+        @{ Name = "启动项"; Dir = [Environment]::GetFolderPath('Startup') }
+    )
+
+    foreach ($loc in $shortcutLocations) {
+        if (-not (Test-Path $loc.Dir)) {
+            New-Item -ItemType Directory -Path $loc.Dir -Force | Out-Null
         }
-        Write-Host "快捷方式 -> $((New-Object -ComObject WScript.Shell).CreateShortcut($lnkPath).TargetPath)" -ForegroundColor Green
-    } else {
-        # 快捷方式被误删时重建，省得用户自己找 exe。
+        $lnkPath = Join-Path $loc.Dir $lnkName
+        $isNew = -not (Test-Path $lnkPath)
         $lnk = $shell.CreateShortcut($lnkPath)
-        $lnk.TargetPath = $expected
-        $lnk.WorkingDirectory = $PSScriptRoot
-        $lnk.IconLocation = "$expected,0"
-        $lnk.Description = 'fast词典'
-        $lnk.Save()
-        Write-Host "已重建快捷方式 $lnkName -> $expected" -ForegroundColor Green
+        
+        $changed = $false
+        if ($lnk.TargetPath -ne $expected) {
+            Write-Host "$($loc.Name)快捷方式指向 $($lnk.TargetPath)，改为 $expected" -ForegroundColor Yellow
+            $lnk.TargetPath = $expected
+            $changed = $true
+        }
+        if ($lnk.WorkingDirectory -ne $PSScriptRoot) {
+            $lnk.WorkingDirectory = $PSScriptRoot
+            $changed = $true
+        }
+        if ($lnk.IconLocation -ne "$expected,0") {
+            $lnk.IconLocation = "$expected,0"
+            $changed = $true
+        }
+        if ($lnk.Description -ne 'fast词典') {
+            $lnk.Description = 'fast词典'
+            $changed = $true
+        }
+
+        if ($isNew -or $changed) {
+            $lnk.Save()
+            if ($isNew) {
+                Write-Host "已创建$($loc.Name)快捷方式: $lnkPath -> $expected" -ForegroundColor Green
+            } else {
+                Write-Host "已纠正$($loc.Name)快捷方式: $lnkPath -> $expected" -ForegroundColor Green
+            }
+        } else {
+            Write-Host "$($loc.Name)快捷方式正常: $lnkPath -> $expected" -ForegroundColor Green
+        }
     }
+    [System.Runtime.InteropServices.Marshal]::ReleaseComObject($shell) | Out-Null
+}
+
+# 生产分发包出包逻辑
+if ($Package) {
+    if ($Dev) {
+        Write-Host "无法为开发版生成生产分发包，请去除 -Dev 参数" -ForegroundColor Red
+        exit 1
+    }
+    
+    $parentDir = Split-Path $PSScriptRoot -Parent
+    $distDir = Join-Path $parentDir "dist"
+    if (-not (Test-Path $distDir)) {
+        New-Item -ItemType Directory -Path $distDir -Force | Out-Null
+    }
+    
+    # 确定版本与发布目录名
+    $pkgDate = Get-Date -Format 'yyyy.MM.dd'
+    $basePkgName = "fastDictionary-v$pkgDate-win64"
+    $pkgName = $basePkgName
+    if (-not $Overwrite) {
+        # 如果已有同名包且未指定 -Overwrite，则顺延 -r2, -r3...
+        $rev = 2
+        while ((Test-Path (Join-Path $distDir $pkgName)) -or (Test-Path (Join-Path $distDir "$pkgName.zip"))) {
+            $pkgName = "fastDictionary-v$pkgDate-r$rev-win64"
+            $rev++
+        }
+    } else {
+        # 指定了 -Overwrite，清理既有同名目录与 zip 以便覆盖刷新
+        $existingDir = Join-Path $distDir $pkgName
+        if (Test-Path $existingDir) { Remove-Item -Recurse -Force $existingDir }
+        $existingZip = Join-Path $distDir "$pkgName.zip"
+        if (Test-Path $existingZip) { Remove-Item -Force $existingZip }
+        $existingSha = Join-Path $distDir "$pkgName.zip.sha256"
+        if (Test-Path $existingSha) { Remove-Item -Force $existingSha }
+    }
+    
+    $targetPkgDir = Join-Path $distDir $pkgName
+    Write-Host "正在生成生产分发包: $targetPkgDir" -ForegroundColor Cyan
+    New-Item -ItemType Directory -Path $targetPkgDir -Force | Out-Null
+    
+    # 复制可执行文件与运行时依赖
+    Copy-Item (Join-Path $PSScriptRoot $out) (Join-Path $targetPkgDir $out) -Force
+    $exeHash = (Get-FileHash (Join-Path $targetPkgDir $out) -Algorithm SHA256).Hash
+    "$exeHash  $out" | Set-Content (Join-Path $targetPkgDir "$out.sha256") -Encoding ASCII
+    
+    if (Test-Path (Join-Path $PSScriptRoot 'onnxruntime.dll')) {
+        Copy-Item (Join-Path $PSScriptRoot 'onnxruntime.dll') (Join-Path $targetPkgDir 'onnxruntime.dll') -Force
+    }
+    
+    if (Test-Path (Join-Path $PSScriptRoot 'indra-models')) {
+        Copy-Item (Join-Path $PSScriptRoot 'indra-models') (Join-Path $targetPkgDir 'indra-models') -Recurse -Force
+    }
+    
+    if (Test-Path (Join-Path $PSScriptRoot 'resources')) {
+        Copy-Item (Join-Path $PSScriptRoot 'resources') (Join-Path $targetPkgDir 'resources') -Recurse -Force
+    }
+    
+    if (Test-Path (Join-Path $PSScriptRoot 'docs')) {
+        Copy-Item (Join-Path $PSScriptRoot 'docs') (Join-Path $targetPkgDir 'docs') -Recurse -Force
+    }
+    
+    if (Test-Path (Join-Path $PSScriptRoot 'README.md')) {
+        Copy-Item (Join-Path $PSScriptRoot 'README.md') (Join-Path $targetPkgDir 'README.md') -Force
+    }
+    
+    if (Test-Path (Join-Path $PSScriptRoot 'LICENSE')) {
+        Copy-Item (Join-Path $PSScriptRoot 'LICENSE') (Join-Path $targetPkgDir 'LICENSE') -Force
+    }
+    
+    # 写入 BUILD_INFO.txt
+    $goVer = (& go version).Trim()
+    $mygoVer = "v0.8.3"
+    $goModPath = Join-Path $PSScriptRoot "go.mod"
+    if (Test-Path $goModPath) {
+        $match = Select-String -Path $goModPath -Pattern 'github\.com/egoist/mygo\s+(v[^\s]+)'
+        if ($match -and $match.Matches.Groups.Count -gt 1) {
+            $mygoVer = $match.Matches.Groups[1].Value
+        }
+    }
+    $buildInfo = @"
+fastDictionary portable build
+=============================
+Build:     $stamp
+Mygo:      $mygoVer
+Go:        $goVer
+Platform:  Windows x64
+Package:   $pkgName
+
+Contents:
+  fastDictionary.exe  main application (Windows GUI subsystem)
+  onnxruntime.dll     OCR runtime
+  indra-models\       Indra OCR models (5 files)
+  resources\          icons, spell dictionary and OCR helper scripts
+  docs\               documentation
+  README.md           usage and build notes
+  LICENSE             license
+
+User data: %APPDATA%\fastDictionary\
+"@
+    Set-Content -Path (Join-Path $targetPkgDir 'BUILD_INFO.txt') -Value $buildInfo -Encoding UTF8
+    
+    # 压缩为 zip
+    $zipPath = Join-Path $distDir "$pkgName.zip"
+    if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::CreateFromDirectory($targetPkgDir, $zipPath, [System.IO.Compression.CompressionLevel]::Optimal, $false)
+    
+    # 计算 zip SHA256 校验和
+    $zipHash = (Get-FileHash $zipPath -Algorithm SHA256).Hash
+    "$zipHash  $pkgName.zip" | Set-Content "$zipPath.sha256" -Encoding ASCII
+    
+    Write-Host "生产分发包创建完成:" -ForegroundColor Green
+    Write-Host "  目录: $targetPkgDir" -ForegroundColor Green
+    Write-Host "  压缩包: $zipPath ($((Get-Item $zipPath).Length) bytes)" -ForegroundColor Green
+    Write-Host "  校验和 (SHA256): $zipHash" -ForegroundColor Green
 }
 
 # 刚才被停掉的实例，构建完自动拉起来：否则用户点快捷方式只是重新启动一次

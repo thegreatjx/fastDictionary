@@ -44,8 +44,12 @@ func (a *app) renderOcrParagraphPairs(c *ui.Context, t *ui.Theme, s snapshot) {
 		ui.Icon(c, iconTranslate).Size(12, 12).TextColor(t.TextMuted)
 		ui.Text(c, "段落对照").FontSize(11).TextColor(t.TextMuted)
 		ui.Spacer(c).Grow(1)
-		if renderIconButton(c, iconCopy, "复制译文", 26, 13, false).Clicked() {
-			a.copyToClipboard(s.target)
+		toCopyAll := s.target
+		if toCopyAll == "" {
+			toCopyAll = s.source
+		}
+		if renderIconButton(c, iconCopy, "复制全文", 22, 12, false).Clicked() {
+			a.copyToClipboard(toCopyAll)
 		}
 		if ui.Button(c, "合并显示").Height(24).Padding(1, 6).FontSize(10).Clicked() {
 			a.mu.Lock()
@@ -55,30 +59,59 @@ func (a *app) renderOcrParagraphPairs(c *ui.Context, t *ui.Theme, s snapshot) {
 		}
 	})
 
-	if len(src) == 0 || len(dst) == 0 || len(src) != len(dst) {
-		if len(src) > 0 && len(dst) > 0 {
-			ui.Text(c, fmt.Sprintf("识别到 %d 段原文、%d 段译文，段落数不一致，已按整段显示。", len(src), len(dst))).
-				FontSize(10).TextColor(t.TextMuted).Wrap()
-		}
-		ui.Text(c, s.target).FontSize(15).TextColor(t.Text).Wrap().LineHeight(1.55)
+	if len(src) == 0 && len(dst) == 0 {
+		ui.Text(c, "暂无段落内容").FontSize(13).TextColor(t.TextMuted)
 		return
 	}
 
-	limit := len(src)
+	maxPairs := len(src)
+	if len(dst) > maxPairs {
+		maxPairs = len(dst)
+	}
+
+	if len(src) != len(dst) && len(src) > 0 && len(dst) > 0 {
+		ui.Text(c, fmt.Sprintf("识别到 %d 段原文、%d 段译文（部分段落已自适应对齐对照）", len(src), len(dst))).
+			FontSize(10).TextColor(t.TextMuted).Wrap()
+	}
+
+	limit := maxPairs
 	if !s.ocrExpanded && limit > 8 {
 		limit = 8
 	}
 	for i := 0; i < limit; i++ {
+		srcText := ""
+		if i < len(src) {
+			srcText = src[i]
+		}
+		dstText := ""
+		if i < len(dst) {
+			dstText = dst[i]
+		}
 		ui.Box(c).FillWidth().Padding(8, 10).Radius(8).
 			Background(t.Surface).Border(1, t.Border).Children(func() {
 			ui.Column(c).FillWidth().Gap(4).Children(func() {
-				ui.Text(c, src[i]).FontSize(12).TextColor(t.TextMuted).Wrap().LineHeight(1.5)
-				ui.Text(c, dst[i]).FontSize(14).TextColor(t.Text).Wrap().LineHeight(1.55)
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+					ui.Text(c, fmt.Sprintf("§ %d", i+1)).FontSize(10).FontWeight(600).TextColor(t.TextMuted)
+					ui.Spacer(c).Grow(1)
+					toCopy := dstText
+					if toCopy == "" {
+						toCopy = srcText
+					}
+					if renderIconButton(c, iconCopy, "复制本段译文", 20, 11, false).Clicked() {
+						a.copyToClipboard(toCopy)
+					}
+				})
+				if srcText != "" {
+					ui.Text(c, srcText).FontSize(12).TextColor(t.TextMuted).Wrap().LineHeight(1.5)
+				}
+				if dstText != "" {
+					ui.Text(c, dstText).FontSize(14).TextColor(t.Text).Wrap().LineHeight(1.55)
+				}
 			})
 		})
 	}
-	if len(src) > 8 {
-		label := fmt.Sprintf("展开全文（共 %d 段）", len(src))
+	if maxPairs > 8 {
+		label := fmt.Sprintf("展开全文（共 %d 段）", maxPairs)
 		if s.ocrExpanded {
 			label = "收起段落"
 		}
@@ -133,7 +166,15 @@ func (a *app) renderScreenshotPairActions(c *ui.Context, t *ui.Theme, cfg Config
 				a.refineWithAI()
 			}
 			if s.aiRefineErr != "" {
-				ui.Text(c, "精翻失败："+s.aiRefineErr).FontSize(10).TextColor(t.Danger).SingleLine()
+				ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, "精翻失败："+s.aiRefineErr).FontSize(10).TextColor(t.Danger).SingleLine()
+					if ui.Button(c, "重试").Height(20).Padding(0, 6).FontSize(10).Radius(4).Clicked() {
+						a.refineWithAI()
+					}
+					if ui.Button(c, "打开 AI 设置").Height(20).Padding(0, 6).FontSize(10).Radius(4).Clicked() {
+						a.openAISettings()
+					}
+				})
 			}
 		}
 		ui.Spacer(c).Grow(1)

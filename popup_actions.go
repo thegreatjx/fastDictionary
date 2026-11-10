@@ -55,6 +55,13 @@ func (a *app) stopAIPassLocked() {
 		a.aiCancel()
 		a.aiCancel = nil
 	}
+	// 新卡片同样要让在跑的精翻失效，否则精翻收尾会把旧译文写回 a.target，
+	// 盖掉新卡片的机器译文。精翻用自己的代次，这里一起自增并取消请求。
+	a.aiRefineGen++
+	if a.aiRefineCancel != nil {
+		a.aiRefineCancel()
+		a.aiRefineCancel = nil
+	}
 	// The old goroutine drops its result at the generation check, so it will
 	// not clear these itself. Leaving them set would pin the loading indicator
 	// (or the 精翻中 button) on the newer card forever.
@@ -97,6 +104,7 @@ func (a *app) translateTextWithReflow(text string, keepParagraphs bool) {
 	a.notesExpanded = false
 	a.notesSaved = false
 	a.grammarSaved = false
+	a.writingSaved = false
 	a.engine, a.detected = "", ""
 	a.dict, a.gdict, a.aiText, a.aiBusy = nil, nil, "", false
 	// A fresh translation invalidates the "已复制" confirmation: the text it
@@ -399,6 +407,7 @@ func (a *app) saveGrammarToVocab(res *SentenceAnalysisResult) {
 	}
 	GetVocabularyStore().Add(entry)
 	a.mu.Lock()
+	a.grammarSaved = true
 	a.actionSavedMsg = "长难句已保存到生词本 ✓"
 	a.mu.Unlock()
 	if a.win != nil {
@@ -421,6 +430,7 @@ func (a *app) saveWritingToVocab(res *ImproveWritingResult) {
 	}
 	GetVocabularyStore().Add(entry)
 	a.mu.Lock()
+	a.writingSaved = true
 	a.actionSavedMsg = "写作改进已保存到生词本 ✓"
 	a.mu.Unlock()
 	if a.win != nil {
@@ -849,10 +859,17 @@ func (a *app) refineWithAI() {
 	a.mu.Lock()
 	source, targetLang := a.source, cfg.TargetLang
 	isScreenshotMode, ocrPath := a.isScreenshotMode, a.ocrPath
-	a.stopAIPassLocked()
-	gen := a.aiGen
+	// 精翻只替换 a.target，不碰正在输出的 AI 卡片，所以用自己的代次，
+	// 不调 stopAIPassLocked（那会自增 aiGen 并掐断卡片流）。
+	// 连续点两次精翻时，第二次在这里让第一次失效。
+	a.aiRefineGen++
+	if a.aiRefineCancel != nil {
+		a.aiRefineCancel()
+		a.aiRefineCancel = nil
+	}
+	gen := a.aiRefineGen
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-	a.aiCancel = cancel
+	a.aiRefineCancel = cancel
 	a.aiRefining = true
 	a.aiRefineErr = ""
 	win := a.win
@@ -891,7 +908,7 @@ func (a *app) refineWithAI() {
 		}
 
 		a.mu.Lock()
-		if gen != a.aiGen {
+		if gen != a.aiRefineGen {
 			// A newer pass owns the translation now. Writing our (cancelled)
 			// answer here would replace its target and label it "AI 精翻".
 			a.mu.Unlock()
@@ -899,7 +916,7 @@ func (a *app) refineWithAI() {
 			return
 		}
 		a.aiRefining = false
-		a.aiCancel = nil
+		a.aiRefineCancel = nil
 		if err != nil {
 			a.aiRefineErr = friendlyAIError(err)
 		} else if text := strings.TrimSpace(out); text != "" {
@@ -977,4 +994,108 @@ func langPromptName(tag string) string {
 		return name
 	}
 	return "the target language"
+}
+
+func (a *app) saveCurrentWordToVocab(s snapshot) {
+	if s.source == "" {
+		return
+	}
+	phone := ""
+	if s.dict != nil {
+		if s.dict.UKPhone != "" {
+			phone = "/" + s.dict.UKPhone + "/"
+		} else if s.dict.USPhone != "" {
+			phone = "/" + s.dict.USPhone + "/"
+		}
+	}
+	explanation, pos := s.target, ""
+	if s.gdict != nil && len(s.gdict.Entries) > 0 {
+		pos = s.gdict.Entries[0].POS
+	} else if s.dict != nil && len(s.dict.Explains) > 0 {
+		explanation = strings.Join(s.dict.Explains, "；")
+		parts := strings.SplitN(s.dict.Explains[0], " ", 2)
+		if len(parts) == 2 && strings.HasSuffix(parts[0], ".") {
+			pos = parts[0]
+		}
+	}
+	a.mu.Lock()
+	a.savedDictTerm = s.source
+	a.actionSavedMsg = "已保存「" + s.source + "」到生词本 ✓"
+	a.mu.Unlock()
+	if a.win != nil {
+		a.win.Update(func() {})
+	}
+	entry := VocabularyEntry{
+		Term: s.source, Phonetic: phone, PartOfSpeech: pos,
+		Definition: explanation, Source: "dict", CreatedAt: time.Now(),
+	}
+	go func() {
+		EnrichVocabularyEntry(&entry)
+		GetVocabularyStore().Add(entry)
+	}()
+}
+
+func (a *app) saveNotesToVocab(s snapshot) {
+	if len(s.notes) == 0 {
+		return
+	}
+	a.mu.Lock()
+	a.notesSaved = true
+	a.actionSavedMsg = "已将所选生词存入生词库 ✓"
+	pending := make([]VocabularyEntry, 0, len(s.notes))
+	for _, n := range s.notes {
+		if n.Checked {
+			pending = append(pending, VocabularyEntry{
+				Term:               n.Word,
+				Phonetic:           n.Phonetic,
+				PartOfSpeech:       n.Pos,
+				Definition:         n.Meaning,
+				Difficulty:         n.Difficulty,
+				MemoryTips:         n.MemoryTips,
+				Context:            s.source,
+				ContextTerm:        n.Word,
+				ContextTranslation: s.target,
+				Source:             "notes",
+				CreatedAt:          time.Now(),
+			})
+		}
+	}
+	a.mu.Unlock()
+	if a.win != nil {
+		a.win.Update(func() {})
+	}
+	go func() {
+		for i := range pending {
+			EnrichVocabularyEntry(&pending[i])
+		}
+		GetVocabularyStore().AddBatch(pending)
+	}()
+}
+
+func (a *app) handleQuickSave(s snapshot) {
+	switch s.mode {
+	case modeGrammar:
+		if cardReadyForMode(s) && !s.grammarSaved {
+			a.saveGrammarToVocab(s.grammarResult)
+		}
+	case modeWriting:
+		if cardReadyForMode(s) && !s.writingSaved {
+			a.saveWritingToVocab(s.writingResult)
+		}
+	case modeDictionary:
+		if cardReadyForMode(s) && (s.savedDictTerm == "" || !strings.EqualFold(s.savedDictTerm, s.dictResult.Term)) {
+			a.saveDictToVocab(s.dictResult)
+		}
+	case modeTranslate:
+		if s.isWord && s.source != "" {
+			isSaved := s.savedDictTerm != "" && strings.EqualFold(strings.TrimSpace(s.savedDictTerm), strings.TrimSpace(s.source))
+			if !isSaved {
+				a.saveCurrentWordToVocab(s)
+			}
+		} else if len(s.notes) > 0 && !s.notesSaved {
+			a.saveNotesToVocab(s)
+		} else if s.source != "" && s.target != "" {
+			a.saveTranslationToVocab(s.source, s.target)
+		}
+	}
 }

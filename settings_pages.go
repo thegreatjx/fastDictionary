@@ -68,6 +68,23 @@ func (a *app) pageGeneral(c *ui.Context, t *ui.Theme, cfg Config) {
 	})
 }
 
+// cleanBlockedAppName strips surrounding quotes and directory paths and
+// ensures the .exe extension is lowercased.
+func cleanBlockedAppName(raw string) string {
+	raw = strings.TrimSpace(raw)
+	raw = strings.Trim(raw, `"'`)
+	raw = strings.TrimSpace(raw)
+	if idx := strings.LastIndexAny(raw, `/\`); idx != -1 {
+		raw = raw[idx+1:]
+	}
+	raw = strings.TrimSpace(raw)
+	raw = strings.ToLower(raw)
+	if raw != "" && !strings.HasSuffix(raw, ".exe") {
+		raw += ".exe"
+	}
+	return raw
+}
+
 // pageSelection configures how a text selection triggers fastDictionary.
 func (a *app) pageSelection(c *ui.Context, t *ui.Theme, cfg Config) {
 	heading(c, t, "划词", "选中文字之后发生什么。")
@@ -132,10 +149,8 @@ func (a *app) pageSelection(c *ui.Context, t *ui.Theme, cfg Config) {
 						})
 					}
 					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
-						ui.TextInput(c, &a.newBlockedApp).Placeholder("程序名，例如 pixpin.exe").Grow(1)
-						btnAdd := ui.Button(c, "添加").Height(26).Padding(2, 10).Radius(5)
-						if btnAdd.Clicked() {
-							name := strings.ToLower(strings.TrimSpace(a.newBlockedApp))
+						addApp := func() {
+							name := cleanBlockedAppName(a.newBlockedApp)
 							if name != "" {
 								a.store.Update(func(c *Config) {
 									for _, item := range c.SelectionBlocklist {
@@ -148,6 +163,11 @@ func (a *app) pageSelection(c *ui.Context, t *ui.Theme, cfg Config) {
 								a.newBlockedApp = ""
 								a.settingsRefresh()
 							}
+						}
+						ui.TextInput(c, &a.newBlockedApp).Placeholder("程序名，例如 pixpin.exe").Grow(1).OnSubmit(addApp)
+						btnAdd := ui.Button(c, "添加").Height(26).Padding(2, 10).Radius(5)
+						if btnAdd.Clicked() {
+							addApp()
 						}
 					})
 				})
@@ -382,11 +402,19 @@ func (a *app) pageHotkey(c *ui.Context, t *ui.Theme, cfg Config) {
 	heading(c, t, "快捷键", "全局生效，任何程序中均可秒级唤起。")
 	a.initHotkeyDrafts()
 
+	conflictMsg := checkHotkeyConflict(a.pendingHotkeySelection, a.pendingHotkeyInput, a.pendingHotkeyScreenshot)
+
 	ui.Form(c, func() {
 		ui.Field(c, "推荐预设方案", func() {
 			ui.Column(c).Gap(6).Children(func() {
+				p1Bg := ui.Hex("#EFF6FF")
+				p1Fg := ui.Hex("#1D4ED8")
+				if t.Dark {
+					p1Bg = withAlpha(t.Accent, 0.16)
+					p1Fg = t.Accent
+				}
 				btnP1 := ui.Button(c, "⚡ 极速单手：Alt+D (划词) / Alt+C (截图) / Alt+Q (输入)").Height(28).Padding(2, 10).Radius(5).
-					Background(ui.Hex("#EFF6FF")).TextColor(ui.Hex("#1D4ED8")).
+					Background(p1Bg).TextColor(p1Fg).
 					Tooltip("【最推荐】左手单手盲操极速触发。注意：Alt+D 在 Chrome/Edge 中会聚焦地址栏，浏览器内建议用方案二")
 				if btnP1.Clicked() {
 					a.pendingHotkeySelection = "Alt+D"
@@ -404,8 +432,28 @@ func (a *app) pageHotkey(c *ui.Context, t *ui.Theme, cfg Config) {
 					a.pendingHotkeyInput = "Ctrl+Alt+I"
 					a.applyHotkeys()
 				}
+
+				btnDefault := ui.Button(c, "🔄 恢复默认：Alt+D (划词) / Alt+C (截图) / Alt+Q (输入)").Height(28).Padding(2, 10).Radius(5).
+					Background(t.SurfaceHover).
+					Tooltip("恢复出厂默认快捷键设置")
+				if btnDefault.Clicked() {
+					a.resetHotkeysToDefault()
+				}
 			})
 		}).Description("点击即可一键应用，无键位冲突且符合单手人体工学习惯")
+
+		if conflictMsg != "" {
+			ui.Field(c, "冲突提示", func() {
+				ui.Box(c).FillWidth().Padding(8, 12).Radius(6).
+					Background(ui.RGBA(239, 68, 68, 0.08)).
+					Border(1, ui.RGBA(239, 68, 68, 0.35)).Children(func() {
+					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+						ui.Icon(c, iconInfo).Size(14, 14).TextColor(t.Danger)
+						ui.Text(c, conflictMsg).FontSize(12).TextColor(t.Danger).Wrap().Grow(1)
+					})
+				})
+			})
+		}
 
 		ui.Field(c, "划词翻译快捷键", func() {
 			ui.TextInput(c, &a.pendingHotkeySelection).Width(240)
@@ -440,13 +488,17 @@ func (a *app) pageHotkey(c *ui.Context, t *ui.Theme, cfg Config) {
 					a.applyHotkeys()
 				}
 				if a.hotkeyMsg != "" {
-					ui.Text(c, a.hotkeyMsg).FontSize(12).TextColor(t.Accent).Wrap()
+					msgCol := t.Accent
+					if strings.Contains(a.hotkeyMsg, "冲突") || strings.Contains(a.hotkeyMsg, "失败") {
+						msgCol = t.Danger
+					}
+					ui.Text(c, a.hotkeyMsg).FontSize(12).TextColor(msgCol).Wrap()
 				}
 			})
 		})
 
 		ui.Field(c, "格式说明", func() {
-			ui.Text(c, "支持输入任意自定义组合键（如 Alt+D、Ctrl+Shift+D 等），点击【应用修改】立即注册生效。").FontSize(12).TextColor(t.TextMuted).Wrap()
+			ui.Text(c, "支持输入任意自定义组合键（如 Alt+D、Ctrl+Shift+D 等），留空表示停用该项快捷键，点击【应用修改】立即注册生效。").FontSize(12).TextColor(t.TextMuted).Wrap()
 		})
 	})
 }

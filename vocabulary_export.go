@@ -120,14 +120,20 @@ func (s *VocabularyStore) ExportHTML() (string, error) {
 	sb.WriteString(".card-term{font-size:18px;font-weight:700;}\n")
 	sb.WriteString(".card-phonetic{color:#64748B;font-size:13px;margin-left:8px;}\n")
 	sb.WriteString(".card-pos{background:#EFF6FF;color:#2563EB;font-size:11px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:8px;}\n")
-	sb.WriteString(".card-diff{background:#F0FDF4;color:#16A34A;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:8px;}\n")
+	sb.WriteString(".card-diff{background:#F0FDF4;color:#16A34A;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:8px;text-transform:uppercase;}\n")
+	sb.WriteString(".card-diff.a1,.card-diff.a2{background:#ECFDF5;color:#059669;}\n")
+	sb.WriteString(".card-diff.b1,.card-diff.b2{background:#EFF6FF;color:#2563EB;}\n")
+	sb.WriteString(".card-diff.c1,.card-diff.c2{background:#FAF5FF;color:#7E22CE;}\n")
 	sb.WriteString(".context-box{background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;padding:10px 14px;margin-top:10px;font-size:13px;line-height:1.6;}\n")
 	sb.WriteString(".tips-box{background:#FEFCE8;border:1px solid #FEF08A;color:#713F12;padding:8px 12px;border-radius:6px;font-size:12px;margin-top:10px;}\n")
+	sb.WriteString(".fd-hl, .hl{color:#2563EB;font-weight:700;background:rgba(37,99,235,0.08);padding:1px 4px;border-radius:3px;}\n")
+	sb.WriteString("@media (prefers-color-scheme:dark){body{background:#0F172A;color:#F1F5F9;}.header h1{color:#F1F5F9 !important;}.tabs{background:#1E293B;border-color:#334155;}.tab-btn{color:#94A3B8;}.tab-btn.active{background:#3B82F6;color:#FFF;}.search{background:#1E293B;border-color:#334155;color:#F1F5F9;}.card{background:#1E293B;border-color:#334155;box-shadow:0 1px 3px rgba(0,0,0,0.3);}.card-term{color:#F1F5F9;}.card-phonetic{color:#94A3B8;}.card-pos{background:rgba(59,130,246,0.2);color:#60A5FA;}.context-box{background:#0F172A;border-color:#334155;color:#E2E8F0;}.tips-box{background:rgba(234,179,8,0.12);border-color:rgba(234,179,8,0.3);color:#FDE047;}.action-btn{background:#1E293B;border-color:#334155;color:#E2E8F0;}.action-btn:hover{background:#334155;border-color:#475569;color:#FFF;}.fd-hl, .hl{color:#60A5FA;background:rgba(96,165,250,0.15);}}\n")
 	sb.WriteString("</style>\n</head>\n<body>\n<div class=\"container\">\n")
 	sb.WriteString("<div class=\"header\"><div style=\"display:flex;align-items:center;gap:12px;\"><span style=\"font-size:26px;\">📘</span><h1 style=\"margin:0;font-size:22px;color:#0F172A;font-weight:700;\">fast词典 生词库</h1></div>")
 	sb.WriteString("<div style=\"display:flex;gap:8px;\">")
 	sb.WriteString("<button class=\"action-btn\" onclick=\"exportJSON()\">📤 导出 JSON</button>")
 	sb.WriteString("<button class=\"action-btn\" onclick=\"exportCSV()\">📊 导出 CSV</button>")
+	sb.WriteString("<button class=\"action-btn\" onclick=\"exportAnki()\">📇 导出 Anki</button>")
 	sb.WriteString("<label class=\"action-btn\" style=\"cursor:pointer;\">📥 导入生词<input type=\"file\" id=\"importInput\" accept=\".json,.csv\" style=\"display:none;\" onchange=\"handleImport(event)\"></label>")
 	sb.WriteString("</div></div>\n")
 	sb.WriteString("<div class=\"tabs\">")
@@ -150,7 +156,8 @@ func (s *VocabularyStore) ExportHTML() (string, error) {
 		// the literal </script> the AI sometimes emits) used to break the
 		// whole page. Escape for text and attributes alike.
 		esc := html.EscapeString
-		sb.WriteString(fmt.Sprintf("<div class=\"card\" data-cat=\"%s\" data-text=\"%s %s\">", cat, esc(strings.ToLower(e.Term)), esc(strings.ToLower(e.Definition))))
+		searchContent := strings.ToLower(strings.Join([]string{e.Term, e.Definition, e.Context, e.ContextTranslation, e.MemoryTips}, " "))
+		sb.WriteString(fmt.Sprintf("<div class=\"card\" data-cat=\"%s\" data-text=\"%s\">", cat, esc(searchContent)))
 		sb.WriteString(fmt.Sprintf("<div style=\"display:flex;align-items:center;\"><span class=\"card-term\">%s</span>", esc(e.Term)))
 		if e.Phonetic != "" {
 			sb.WriteString(fmt.Sprintf("<span class=\"card-phonetic\">%s</span>", esc(e.Phonetic)))
@@ -159,14 +166,19 @@ func (s *VocabularyStore) ExportHTML() (string, error) {
 			sb.WriteString(fmt.Sprintf("<span class=\"card-pos\">%s</span>", esc(e.PartOfSpeech)))
 		}
 		if e.Difficulty != "" {
-			sb.WriteString(fmt.Sprintf("<span class=\"card-diff\">%s</span>", esc(e.Difficulty)))
+			diffLower := strings.ToLower(strings.TrimSpace(e.Difficulty))
+			sb.WriteString(fmt.Sprintf("<span class=\"card-diff %s\">%s</span>", diffLower, esc(strings.ToUpper(e.Difficulty))))
 		}
 		sb.WriteString(fmt.Sprintf("<span style=\"margin-left:auto;color:#94A3B8;font-size:11px;\">%s</span></div>", e.CreatedAt.Format("2006-01-02 15:04")))
 		if e.Definition != "" {
 			sb.WriteString(fmt.Sprintf("<div style=\"margin-top:8px;font-size:14px;\">%s</div>", esc(e.Definition)))
 		}
 		if e.Context != "" {
-			sb.WriteString(fmt.Sprintf("<div class=\"context-box\"><div>%s</div>", esc(e.Context)))
+			targetTerm := e.ContextTerm
+			if targetTerm == "" {
+				targetTerm = e.Term
+			}
+			sb.WriteString(fmt.Sprintf("<div class=\"context-box\"><div>%s</div>", highlightTermInContext(e.Context, targetTerm)))
 			if e.ContextTranslation != "" {
 				sb.WriteString(fmt.Sprintf("<div style=\"color:#64748B;font-size:12px;margin-top:4px;\">%s</div>", esc(e.ContextTranslation)))
 			}
@@ -178,6 +190,7 @@ func (s *VocabularyStore) ExportHTML() (string, error) {
 		sb.WriteString("</div>\n")
 	}
 
+	sb.WriteString("<div id=\"noResult\" style=\"display:none;text-align:center;padding:48px 16px;color:#94A3B8;font-size:14px;\"><div style=\"font-size:28px;margin-bottom:8px;\">🔍</div><div>未找到匹配的笔记</div><div style=\"font-size:12px;margin-top:4px;\">尝试缩短搜索词或切换上方分类</div></div>\n")
 	sb.WriteString("</div></div>\n")
 	sb.WriteString("<script>\n")
 	// The JSON blob inside <script> needs </ escaped (a term or example
@@ -186,10 +199,11 @@ func (s *VocabularyStore) ExportHTML() (string, error) {
 	sb.WriteString(fmt.Sprintf("let allEntries = %s;\n", strings.ReplaceAll(string(entriesJSON), "</", "<\\/")))
 	sb.WriteString("let curCat='all';\n")
 	sb.WriteString("function filterCat(c,b){curCat=c;document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');doSearch();}\n")
-	sb.WriteString("function doSearch(){let q=document.getElementById('search').value.toLowerCase().trim();document.querySelectorAll('.card').forEach(x=>{let mC=(curCat==='all'||x.getAttribute('data-cat')===curCat);let mQ=(!q||x.getAttribute('data-text').includes(q));x.style.display=(mC&&mQ)?'block':'none';});}\n")
+	sb.WriteString("function doSearch(){let q=document.getElementById('search').value.toLowerCase().trim();let v=0;document.querySelectorAll('.card').forEach(x=>{let mC=(curCat==='all'||x.getAttribute('data-cat')===curCat);let mQ=(!q||x.getAttribute('data-text').includes(q));let show=(mC&&mQ);x.style.display=show?'block':'none';if(show)v++;});let nr=document.getElementById('noResult');if(nr)nr.style.display=(v===0)?'block':'none';}\n")
 	sb.WriteString("function exportJSON(){const blob=new Blob([JSON.stringify(allEntries,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='fast词典_生词库.json';a.click();URL.revokeObjectURL(url);}\n")
 	sb.WriteString("function exportCSV(){let csv='\uFEFF单词,音标,词性,释义,难度,例句,例句翻译,记忆技巧,分类,添加时间\r\n';allEntries.forEach(e=>{const esc=s=>String(s||'').replace(/,/g,'，').replace(/\n/g,' ');csv+=[esc(e.term),esc(e.phonetic),esc(e.part_of_speech),esc(e.definition),esc(e.difficulty),esc(e.context),esc(e.context_translation),esc(e.memory_tips),esc(e.source),esc(e.created_at)].join(',')+'\r\n';});const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='fast词典_生词库.csv';a.click();URL.revokeObjectURL(url);}\n")
-	sb.WriteString("function handleImport(evt){const file=evt.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=e=>{try{const text=e.target.result;if(file.name.endsWith('.json')){const items=JSON.parse(text);items.forEach(it=>{allEntries.unshift(it);});alert('成功导入 '+items.length+' 条生词，请刷新查阅！');window.location.reload();}else{alert('请使用 fast词典 桌面端进行完整 CSV / TXT 智能导入与补全！');}}catch(err){alert('导入解析失败：'+err);}};reader.readAsText(file);}\n")
+	sb.WriteString("function exportAnki(){let tsv='#separator:tab\\n#html:true\\n#tags column:4\\n';const clean=s=>String(s||'').replace(/\\t/g,' ').replace(/\\r?\\n/g,'<br>');const escH=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');allEntries.forEach(e=>{const isWord=(e.source!=='grammar'&&e.source!=='writing'&&String(e.term||'').trim().split(/\\s+/).length<=2);let f='',b='',tags='fastDictionary';if(isWord){f='<div style=\"font-size:22px;font-weight:700;\">'+escH(e.term)+'</div>'+(e.phonetic?'<div style=\"color:#64748b;margin-top:4px;\">'+escH(e.phonetic)+'</div>':'');b='<div style=\"font-size:20px;font-weight:700;\">'+escH(e.term)+'</div>'+(e.definition?'<div style=\"margin:8px 0;\">'+escH(e.definition)+'</div>':'')+(e.context?'<div style=\"background:#f8fafc;padding:8px;border-radius:6px;margin-top:8px;\">'+escH(e.context)+(e.context_translation?'<div style=\"color:#64748b;font-size:12px;\">'+escH(e.context_translation)+'</div>':'')+'</div>':'')+(e.memory_tips?'<div style=\"background:#fefce8;padding:6px;margin-top:8px;font-size:12px;\">💡 '+escH(e.memory_tips)+'</div>':'');tags+=' 生词 '+(e.difficulty?'CEFR-'+e.difficulty.toUpperCase():'');}else if(e.source==='writing'){f='<div>✏️ 写作批改</div><div style=\"font-size:16px;margin-top:8px;\">'+escH(e.term)+'</div>';b='<div style=\"color:#15803d;font-weight:600;\">✓ 改后版本：</div><div>'+escH(e.context)+'</div><div style=\"margin-top:6px;\">'+escH(e.definition)+'</div>';tags+=' 写作批改';}else{f='<div>🔍 长难句拆解</div><div style=\"font-size:16px;margin-top:8px;\">'+escH(e.term)+'</div>';b='<div style=\"font-size:16px;font-weight:600;\">'+escH(e.term)+'</div><div style=\"color:#475569;margin:6px 0;\">'+escH(e.context_translation)+'</div><div>'+escH(e.definition)+'</div>';tags+=' 长难句 '+(e.difficulty?'CEFR-'+e.difficulty.toUpperCase():'');}tsv+=[clean(f),clean(b),clean(e.term),clean(tags.trim())].join('\\t')+'\\n';});const blob=new Blob([tsv],{type:'text/tab-separated-values;charset=utf-8;'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='fast词典_生词库_Anki.txt';a.click();URL.revokeObjectURL(url);}\n")
+	sb.WriteString("function handleImport(evt){const file=evt.target.files[0];if(!file)return;alert('提示：当前导出的网页版为离线静态快照。若需持久化导入生词与长难句，请在 fastDictionary 桌面客户端的生词本页面使用【📥 导入】功能！');}\n")
 	sb.WriteString("</script>\n</body></html>")
 
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {

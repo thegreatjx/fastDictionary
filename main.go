@@ -29,9 +29,9 @@ import (
 // was live. The stamp is logged at startup and shown in 关于.
 var buildStamp = "dev"
 
-// registerHotkeys (re)registers global shortcuts and returns a message
-// describing what happened, empty when everything registered.
-func registerHotkeys(sel, inp, ocr string, a *app) string {
+var registerHotkeysFunc = defaultRegisterHotkeys
+
+func defaultRegisterHotkeys(sel, inp, ocr string, a *app) string {
 	mygo.GlobalShortcut.UnregisterAll()
 
 	// The callbacks below are invoked by mygo on the window message-loop
@@ -66,6 +66,12 @@ func registerHotkeys(sel, inp, ocr string, a *app) string {
 	return msg
 }
 
+// registerHotkeys (re)registers global shortcuts and returns a message
+// describing what happened, empty when everything registered.
+func registerHotkeys(sel, inp, ocr string, a *app) string {
+	return registerHotkeysFunc(sel, inp, ocr, a)
+}
+
 // trayMenu builds the tray's menu from the current config. A radio entry's
 // checked state is fixed when the menu is built, which is why the tray is
 // rebuilt after the mode changes.
@@ -91,9 +97,8 @@ func (a *app) trayMenu() *mygo.Menu {
 }
 
 func (a *app) quitApp() {
-	a.mu.Lock()
-	a.isQuitting = true
-	a.mu.Unlock()
+	// 原子写：OnBeforeQuit 回调与设置窗口 OnClose 也可能并发访问退出标志。
+	a.isQuitting.Store(true)
 
 	// Leave the desktop as we found it: stop any sound mid-playback and
 	// take the low-level hooks down before the process goes away, so there
@@ -278,7 +283,7 @@ func main() {
 
 	mygo.App.WhenReady(func() {
 		mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) {
-			a.isQuitting = true
+			a.isQuitting.Store(true)
 		})
 
 		win := mygo.NewWindow(mygo.WindowOptions{

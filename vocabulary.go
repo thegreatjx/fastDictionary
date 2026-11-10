@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"html"
 	"log"
 	"os"
 	"path/filepath"
@@ -106,6 +107,17 @@ func (s *VocabularyStore) load() {
 	var entries []VocabularyEntry
 	if err := json.Unmarshal(data, &entries); err != nil {
 		log.Printf("fastDictionary: failed to parse vocabulary.json: %v", err)
+		// 词库损坏时仍按空库启动，但先把损坏原文另存一份。save() 的 .bak
+		// 是滚动单副本，第一次加词就会把它覆盖成新内容，损坏原文会永久丢失。
+		// 副本只在首次损坏时写一次，保留最原始的数据供用户找回。
+		recovery := s.path + ".corrupt"
+		if _, statErr := os.Stat(recovery); os.IsNotExist(statErr) {
+			if writeErr := os.WriteFile(recovery, data, 0o644); writeErr != nil {
+				log.Printf("fastDictionary: could not keep a copy of the damaged vocabulary: %v", writeErr)
+			} else {
+				log.Printf("fastDictionary: damaged vocabulary kept at %s; repair or delete the original file to reset", recovery)
+			}
+		}
 		return
 	}
 	s.mu.Lock()
@@ -178,7 +190,7 @@ func dataOfFile(path string) []byte {
 // blocked the tray and the settings list for as long as Youdao took to
 // answer.
 func (s *VocabularyStore) Add(e VocabularyEntry) bool {
-	if e.Phonetic == "" || e.Difficulty == "" {
+	if (e.Phonetic == "" || e.Difficulty == "") && isWord(e.Term) {
 		EnrichVocabularyEntry(&e)
 	}
 
@@ -238,8 +250,14 @@ func (s *VocabularyStore) Add(e VocabularyEntry) bool {
 // waited. AddBatch is the same merge, done once: callers enrich outside the
 // lock, then hand the finished entries over.
 func (s *VocabularyStore) AddBatch(entries []VocabularyEntry) int {
+	n, _ := s.addBatch(entries)
+	return n
+}
+
+// addBatch 与 AddBatch 是同一次合并与写盘，但把持久化错误显式交给导入链路。
+func (s *VocabularyStore) addBatch(entries []VocabularyEntry) (int, error) {
 	if len(entries) == 0 {
-		return 0
+		return 0, nil
 	}
 	s.mu.Lock()
 	added := 0
@@ -288,8 +306,7 @@ func (s *VocabularyStore) AddBatch(entries []VocabularyEntry) int {
 		}
 	}
 	s.mu.Unlock()
-	s.saveOrLog()
-	return added
+	return added, s.saveOrLog()
 }
 
 // List returns a copy of all vocabulary entries
@@ -441,6 +458,280 @@ func (s *VocabularyStore) ExportCSV(filePath string) error {
 	return nil
 }
 
+// ExportAnki exports all entries to an Anki-compatible TSV file with embedded HTML cards and styling
+func (s *VocabularyStore) ExportAnki(filePath string) error {
+	s.mu.RLock()
+	entries := make([]VocabularyEntry, len(s.entries))
+	copy(entries, s.entries)
+	s.mu.RUnlock()
+
+	f, err := os.Create(filePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	var sb strings.Builder
+	sb.WriteString("#separator:tab\n")
+	sb.WriteString("#html:true\n")
+	sb.WriteString("#tags column:4\n")
+
+	cleanField := func(str string) string {
+		str = strings.ReplaceAll(str, "\t", " ")
+		str = strings.ReplaceAll(str, "\r\n", "<br>")
+		str = strings.ReplaceAll(str, "\n", "<br>")
+		str = strings.ReplaceAll(str, "\r", "<br>")
+		return str
+	}
+
+	for _, e := range entries {
+		front, back, term, tags := formatAnkiCard(e)
+		row := fmt.Sprintf("%s\t%s\t%s\t%s\n", cleanField(front), cleanField(back), cleanField(term), cleanField(tags))
+		sb.WriteString(row)
+	}
+
+	_, err = f.WriteString(sb.String())
+	return err
+}
+
+func highlightTermInContext(ctx, term string) string {
+	if term == "" || ctx == "" {
+		return html.EscapeString(ctx)
+	}
+	lowerCtx := strings.ToLower(ctx)
+	lowerTerm := strings.ToLower(term)
+	idx := strings.Index(lowerCtx, lowerTerm)
+	if idx == -1 {
+		return html.EscapeString(ctx)
+	}
+	if len(lowerCtx) == len(ctx) && len(lowerTerm) == len(term) && idx+len(term) <= len(ctx) {
+		part1 := html.EscapeString(ctx[:idx])
+		part2 := html.EscapeString(ctx[idx : idx+len(term)])
+		part3 := html.EscapeString(ctx[idx+len(term):])
+		return part1 + `<b class="fd-hl">` + part2 + `</b>` + part3
+	}
+	rCtx := []rune(ctx)
+	rLowerCtx := []rune(strings.ToLower(ctx))
+	rLowerTerm := []rune(lowerTerm)
+	if len(rLowerTerm) == 0 || len(rLowerCtx) < len(rLowerTerm) {
+		return html.EscapeString(ctx)
+	}
+	matchStart := -1
+	for i := 0; i <= len(rLowerCtx)-len(rLowerTerm); i++ {
+		match := true
+		for j := 0; j < len(rLowerTerm); j++ {
+			if rLowerCtx[i+j] != rLowerTerm[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			matchStart = i
+			break
+		}
+	}
+	if matchStart == -1 || matchStart+len(rLowerTerm) > len(rCtx) {
+		return html.EscapeString(ctx)
+	}
+	matchEnd := matchStart + len(rLowerTerm)
+	part1 := html.EscapeString(string(rCtx[:matchStart]))
+	part2 := html.EscapeString(string(rCtx[matchStart:matchEnd]))
+	part3 := html.EscapeString(string(rCtx[matchEnd:]))
+	return part1 + `<b class="fd-hl">` + part2 + `</b>` + part3
+}
+
+func formatAnkiCard(e VocabularyEntry) (front, back, term, tags string) {
+	esc := html.EscapeString
+	term = e.Term
+	isWord := e.Source != "grammar" && e.Source != "writing" && len(strings.Fields(e.Term)) <= 2
+
+	var fSb, bSb strings.Builder
+
+	ankiStyle := `<style>` +
+		`.fastdict-anki{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:15px;line-height:1.6;color:#0F172A;}` +
+		`.fd-front{padding:18px 20px;text-align:center;}` +
+		`.fd-back{padding:16px 18px;text-align:left;}` +
+		`.fd-term{font-size:22px;font-weight:700;color:#1E293B;}` +
+		`.fd-phonetic{font-size:14px;color:#64748B;margin-top:4px;}` +
+		`.fd-pos{background:#EFF6FF;color:#2563EB;font-size:11px;font-weight:600;padding:2px 7px;border-radius:4px;margin-left:6px;}` +
+		`.fd-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px;margin-left:6px;text-transform:uppercase;}` +
+		`.fd-badge-a1,.fd-badge-a2{background:#ECFDF5;color:#059669;}` +
+		`.fd-badge-b1,.fd-badge-b2{background:#EFF6FF;color:#2563EB;}` +
+		`.fd-badge-c1,.fd-badge-c2{background:#FAF5FF;color:#7E22CE;}` +
+		`.fd-header{display:flex;align-items:center;flex-wrap:wrap;gap:6px;}` +
+		`.fd-divider{border:none;border-top:1px solid #E2E8F0;margin:12px 0;}` +
+		`.fd-def{font-size:15px;font-weight:500;color:#0F172A;margin:8px 0;line-height:1.5;}` +
+		`.fd-example-box{background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:10px 14px;margin-top:10px;}` +
+		`.fd-en{font-size:13.5px;color:#1E293B;line-height:1.55;}` +
+		`.fd-zh{font-size:12.5px;color:#64748B;margin-top:4px;line-height:1.5;}` +
+		`.fd-hl{color:#2563EB;background:#DBEAFE;padding:0 4px;border-radius:3px;font-weight:700;}` +
+		`.fd-tips-box{background:#FEFCE8;border:1px solid #FEF08A;border-radius:8px;padding:8px 12px;margin-top:10px;font-size:12.5px;color:#713F12;display:flex;gap:6px;}` +
+		`.fd-tag{font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;display:inline-block;}` +
+		`.fd-tag-grammar{background:#F0FDF4;color:#16A34A;}` +
+		`.fd-tag-writing{background:#FFF7ED;color:#C2410C;}` +
+		`.fd-sentence{font-size:17px;font-weight:600;line-height:1.5;margin-top:8px;color:#0F172A;}` +
+		`.fd-sentence-hero{font-size:16px;font-weight:600;line-height:1.55;color:#0F172A;}` +
+		`.fd-zh-trans{font-size:13.5px;color:#475569;margin:6px 0 10px 0;}` +
+		`.fd-improved-box{background:#F0FDF4;border:1px solid #DCFCE7;border-radius:8px;padding:10px 14px;margin-top:8px;}` +
+		`.fd-improved-label{font-size:11px;font-weight:700;color:#15803D;margin-bottom:4px;}` +
+		`.fd-improved-text{font-size:14px;font-weight:600;color:#14532D;line-height:1.5;}` +
+		`.fd-fix-note{font-size:13px;color:#334155;margin-top:8px;}` +
+		`.fd-footer{font-size:10px;color:#94A3B8;margin-top:14px;text-align:right;}` +
+		`.nightMode .fastdict-anki{color:#F1F5F9;}` +
+		`.nightMode .fd-term{color:#F1F5F9;}` +
+		`.nightMode .fd-phonetic{color:#94A3B8;}` +
+		`.nightMode .fd-pos{background:rgba(59,130,246,0.2);color:#60A5FA;}` +
+		`.nightMode .fd-divider{border-top-color:#334155;}` +
+		`.nightMode .fd-def{color:#F1F5F9;}` +
+		`.nightMode .fd-example-box{background:#1E293B;border-color:#334155;}` +
+		`.nightMode .fd-en{color:#F1F5F9;}` +
+		`.nightMode .fd-zh{color:#94A3B8;}` +
+		`.nightMode .fd-hl{color:#93C5FD;background:rgba(59,130,246,0.25);}` +
+		`.nightMode .fd-tips-box{background:rgba(234,179,8,0.12);border-color:rgba(234,179,8,0.3);color:#FDE047;}` +
+		`.nightMode .fd-improved-box{background:rgba(22,163,74,0.15);border-color:rgba(22,163,74,0.3);}` +
+		`.nightMode .fd-improved-text{color:#86EFAC;}` +
+		`.nightMode .fd-sentence,.nightMode .fd-sentence-hero{color:#F1F5F9;}` +
+		`.nightMode .fd-zh-trans{color:#CBD5E1;}` +
+		`.nightMode .fd-fix-note{color:#CBD5E1;}` +
+		`</style>`
+
+	diffClass := ""
+	if e.Difficulty != "" {
+		diffClass = "fd-badge-" + strings.ToLower(strings.TrimSpace(e.Difficulty))
+	}
+
+	if isWord {
+		fSb.WriteString(ankiStyle)
+		fSb.WriteString(`<div class="fastdict-anki fd-front">`)
+		fSb.WriteString(fmt.Sprintf(`<div class="fd-term">%s</div>`, esc(e.Term)))
+		if e.Phonetic != "" {
+			fSb.WriteString(fmt.Sprintf(`<div class="fd-phonetic">%s</div>`, esc(e.Phonetic)))
+		}
+		if e.Context != "" {
+			targetTerm := e.ContextTerm
+			if targetTerm == "" {
+				targetTerm = e.Term
+			}
+			cloze := ""
+			lowerCtx := strings.ToLower(e.Context)
+			lowerTerm := strings.ToLower(targetTerm)
+			idx := strings.Index(lowerCtx, lowerTerm)
+			clozeMarker := `<span style="border-bottom:2px dashed #94a3b8;padding:0 12px;color:#64748b;">...</span>`
+			if idx != -1 && len(lowerCtx) == len(e.Context) && len(lowerTerm) == len(targetTerm) && idx+len(targetTerm) <= len(e.Context) {
+				cloze = esc(e.Context[:idx]) + clozeMarker + esc(e.Context[idx+len(targetTerm):])
+			} else {
+				cloze = esc(e.Context)
+			}
+			fSb.WriteString(fmt.Sprintf(`<div style="margin-top:14px;font-size:13px;color:#64748B;font-style:italic;">%s</div>`, cloze))
+		}
+		fSb.WriteString(`</div>`)
+
+		bSb.WriteString(ankiStyle)
+		bSb.WriteString(`<div class="fastdict-anki fd-back">`)
+		bSb.WriteString(`<div class="fd-header">`)
+		bSb.WriteString(fmt.Sprintf(`<span class="fd-term">%s</span>`, esc(e.Term)))
+		if e.Phonetic != "" {
+			bSb.WriteString(fmt.Sprintf(`<span class="fd-phonetic">%s</span>`, esc(e.Phonetic)))
+		}
+		if e.PartOfSpeech != "" {
+			bSb.WriteString(fmt.Sprintf(`<span class="fd-pos">%s</span>`, esc(e.PartOfSpeech)))
+		}
+		if e.Difficulty != "" {
+			bSb.WriteString(fmt.Sprintf(`<span class="fd-badge %s">%s</span>`, diffClass, esc(strings.ToUpper(e.Difficulty))))
+		}
+		bSb.WriteString(`</div><hr class="fd-divider">`)
+		if e.Definition != "" {
+			bSb.WriteString(fmt.Sprintf(`<div class="fd-def">%s</div>`, esc(e.Definition)))
+		}
+		if e.Context != "" {
+			bSb.WriteString(`<div class="fd-example-box">`)
+			targetTerm := e.ContextTerm
+			if targetTerm == "" {
+				targetTerm = e.Term
+			}
+			bSb.WriteString(fmt.Sprintf(`<div class="fd-en">%s</div>`, highlightTermInContext(e.Context, targetTerm)))
+			if e.ContextTranslation != "" {
+				bSb.WriteString(fmt.Sprintf(`<div class="fd-zh">%s</div>`, esc(e.ContextTranslation)))
+			}
+			bSb.WriteString(`</div>`)
+		}
+		if e.MemoryTips != "" {
+			bSb.WriteString(fmt.Sprintf(`<div class="fd-tips-box"><span>💡</span><span>%s</span></div>`, esc(e.MemoryTips)))
+		}
+		bSb.WriteString(`<div class="fd-footer">fast词典 · 生词本</div></div>`)
+
+		tagList := []string{"fastDictionary", "生词"}
+		if e.Difficulty != "" {
+			tagList = append(tagList, "CEFR-"+strings.ToUpper(strings.TrimSpace(e.Difficulty)))
+		}
+		tags = strings.Join(tagList, " ")
+
+	} else if e.Source == "writing" {
+		fSb.WriteString(ankiStyle)
+		fSb.WriteString(`<div class="fastdict-anki fd-front">`)
+		fSb.WriteString(`<div class="fd-tag fd-tag-writing">✏️ 写作批改</div>`)
+		fSb.WriteString(fmt.Sprintf(`<div class="fd-sentence" style="margin-top:12px;">%s</div>`, esc(e.Term)))
+		fSb.WriteString(`</div>`)
+
+		bSb.WriteString(ankiStyle)
+		bSb.WriteString(`<div class="fastdict-anki fd-back">`)
+		bSb.WriteString(`<div class="fd-header"><span class="fd-tag fd-tag-writing">写作润色与修改</span></div>`)
+		bSb.WriteString(`<hr class="fd-divider">`)
+		if e.Context != "" {
+			bSb.WriteString(`<div class="fd-improved-box">`)
+			bSb.WriteString(`<div class="fd-improved-label">✓ 改进版本：</div>`)
+			bSb.WriteString(fmt.Sprintf(`<div class="fd-improved-text">%s</div>`, esc(e.Context)))
+			bSb.WriteString(`</div>`)
+		}
+		if e.Definition != "" {
+			bSb.WriteString(fmt.Sprintf(`<div class="fd-fix-note"><b>批注建议：</b>%s</div>`, esc(e.Definition)))
+		}
+		if e.MemoryTips != "" {
+			bSb.WriteString(fmt.Sprintf(`<div class="fd-tips-box"><span>💡</span><span>%s</span></div>`, esc(e.MemoryTips)))
+		}
+		bSb.WriteString(`<div class="fd-footer">fast词典 · 写作笔记</div></div>`)
+
+		tags = "fastDictionary 写作批改"
+
+	} else {
+		fSb.WriteString(ankiStyle)
+		fSb.WriteString(`<div class="fastdict-anki fd-front">`)
+		fSb.WriteString(`<div class="fd-tag fd-tag-grammar">🔍 长难句拆解</div>`)
+		fSb.WriteString(fmt.Sprintf(`<div class="fd-sentence" style="margin-top:12px;">%s</div>`, esc(e.Term)))
+		fSb.WriteString(`</div>`)
+
+		bSb.WriteString(ankiStyle)
+		bSb.WriteString(`<div class="fastdict-anki fd-back">`)
+		bSb.WriteString(`<div class="fd-header">`)
+		bSb.WriteString(`<span class="fd-tag fd-tag-grammar">长难句拆解</span>`)
+		if e.Difficulty != "" {
+			bSb.WriteString(fmt.Sprintf(`<span class="fd-badge %s">%s</span>`, diffClass, esc(strings.ToUpper(e.Difficulty))))
+		}
+		bSb.WriteString(`</div><hr class="fd-divider">`)
+		bSb.WriteString(fmt.Sprintf(`<div class="fd-sentence-hero">%s</div>`, esc(e.Term)))
+		if e.ContextTranslation != "" {
+			bSb.WriteString(fmt.Sprintf(`<div class="fd-zh-trans">%s</div>`, esc(e.ContextTranslation)))
+		}
+		if e.Definition != "" {
+			bSb.WriteString(fmt.Sprintf(`<div class="fd-def">%s</div>`, esc(e.Definition)))
+		}
+		if e.MemoryTips != "" {
+			bSb.WriteString(fmt.Sprintf(`<div class="fd-tips-box"><span>💡</span><span>%s</span></div>`, esc(e.MemoryTips)))
+		}
+		bSb.WriteString(`<div class="fd-footer">fast词典 · 长难句本</div></div>`)
+
+		tagList := []string{"fastDictionary", "长难句"}
+		if e.Difficulty != "" {
+			tagList = append(tagList, "CEFR-"+strings.ToUpper(strings.TrimSpace(e.Difficulty)))
+		}
+		tags = strings.Join(tagList, " ")
+	}
+
+	front = fSb.String()
+	back = bSb.String()
+	return
+}
+
 // ImportFile imports vocabulary entries from a .json, .csv, or .txt file
 func (s *VocabularyStore) ImportFile(filePath string) (int, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
@@ -464,7 +755,7 @@ func (s *VocabularyStore) ImportJSON(filePath string) (int, error) {
 	// 1. Standard []VocabularyEntry
 	var entries []VocabularyEntry
 	if err := json.Unmarshal(data, &entries); err == nil && len(entries) > 0 && entries[0].Term != "" {
-		return s.ImportEntries(entries), nil
+		return s.importEntries(entries)
 	}
 
 	// 2. Simple word array ["word1", "word2"]
@@ -476,7 +767,7 @@ func (s *VocabularyStore) ImportJSON(filePath string) (int, error) {
 				list = append(list, VocabularyEntry{Term: strings.TrimSpace(w), Source: "import"})
 			}
 		}
-		return s.ImportEntries(list), nil
+		return s.importEntries(list)
 	}
 
 	// 3. Array of key-value maps
@@ -513,7 +804,7 @@ func (s *VocabularyStore) ImportJSON(filePath string) (int, error) {
 				list = append(list, entry)
 			}
 		}
-		return s.ImportEntries(list), nil
+		return s.importEntries(list)
 	}
 
 	return 0, fmt.Errorf("无法识别的 JSON 数据格式")
@@ -604,7 +895,7 @@ func (s *VocabularyStore) ImportCSV(filePath string) (int, error) {
 		list = append(list, entry)
 	}
 
-	return s.ImportEntries(list), nil
+	return s.importEntries(list)
 }
 
 // ImportTXT imports entries from plain text lines (one word per line or "word - meaning")
@@ -637,7 +928,7 @@ func (s *VocabularyStore) ImportTXT(filePath string) (int, error) {
 			})
 		}
 	}
-	return s.ImportEntries(list), nil
+	return s.importEntries(list)
 }
 
 // ImportEntries merges entries and enriches them.
@@ -648,6 +939,12 @@ func (s *VocabularyStore) ImportTXT(filePath string) (int, error) {
 // notebook if it was interrupted. It now enriches first, outside the store,
 // and persists once.
 func (s *VocabularyStore) ImportEntries(entries []VocabularyEntry) int {
+	n, _ := s.importEntries(entries)
+	return n
+}
+
+// importEntries 与 ImportEntries 是同一次导入，但把持久化错误显式交给 ImportFile。
+func (s *VocabularyStore) importEntries(entries []VocabularyEntry) (int, error) {
 	clean := make([]VocabularyEntry, 0, len(entries))
 	for _, e := range entries {
 		if strings.TrimSpace(e.Term) == "" {
@@ -659,12 +956,12 @@ func (s *VocabularyStore) ImportEntries(entries []VocabularyEntry) int {
 		clean = append(clean, e)
 	}
 	if len(clean) == 0 {
-		return 0
+		return 0, nil
 	}
 	// AddBatch reports how many were genuinely new (merges do not count),
 	// which is the honest number for the "成功导入 N 条" toast: it used to
 	// report the attempted count, duplicates included.
-	return s.AddBatch(clean)
+	return s.addBatch(clean)
 }
 
 // EnrichAll scans the entire notebook and enriches missing fields.
@@ -673,7 +970,7 @@ func (s *VocabularyStore) ImportEntries(entries []VocabularyEntry) int {
 // entry, which froze the settings page and the tray count for up to three
 // seconds per word. Now it works on a copy and only takes the lock to write
 // the result back.
-func (s *VocabularyStore) EnrichAll() int {
+func (s *VocabularyStore) EnrichAll() (int, error) {
 	s.mu.RLock()
 	work := make([]VocabularyEntry, len(s.entries))
 	copy(work, s.entries)
@@ -688,7 +985,7 @@ func (s *VocabularyStore) EnrichAll() int {
 		}
 	}
 	if count == 0 {
-		return 0
+		return 0, nil
 	}
 
 	// Merge by id: entries added while the enrichment ran must survive.
@@ -703,17 +1000,19 @@ func (s *VocabularyStore) EnrichAll() int {
 		}
 	}
 	s.mu.Unlock()
-	s.saveOrLog()
-	return count
+	return count, s.saveOrLog()
 }
 
 // saveOrLog persists the notebook and reports a failure instead of dropping
 // it. A silently failed save is how a user loses a notebook that the UI said
 // was stored: read-only disks, a full disk and a locked file all end up here.
-func (s *VocabularyStore) saveOrLog() {
+// 导入链路靠返回的 error 把失败送到设置页；其他调用点沿用旧的「只记日志」行为。
+func (s *VocabularyStore) saveOrLog() error {
 	if err := s.save(); err != nil {
 		log.Printf("fastDictionary: vocabulary save failed: %v", err)
+		return err
 	}
+	return nil
 }
 
 // EnrichVocabularyEntry automatically enriches missing phonetic symbols, CEFR difficulties,
@@ -723,6 +1022,9 @@ func EnrichVocabularyEntry(e *VocabularyEntry) {
 		return
 	}
 	term := strings.TrimSpace(e.Term)
+	if !isWord(term) {
+		return
+	}
 
 	// 1. Youdao dictionary enrichment for phonetic, POS, and definitions
 	if e.Phonetic == "" || e.Definition == "" || e.PartOfSpeech == "" {

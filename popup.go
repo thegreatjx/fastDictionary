@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -75,19 +76,22 @@ type app struct {
 	// aiGen counts AI passes and anything that supersedes them. A cancelled
 	// pass keeps running until its HTTP request returns, so without this its
 	// teardown would write over the newer request's card.
-	aiGen          uint64
-	inputText      string
-	trayInput      string // the tray quick-search box, separate from the popup's input
-	sourceExpanded bool
-	snipExpanded   bool
-	notesExpanded  bool
-	ocrText        string
-	ocrPath        string
-	ocrCrop        winRect
-	ocrBusy        bool
-	ocrError       string
-	ocrGeneration  uint64
-	ocrCancel      context.CancelFunc
+	aiGen           uint64
+	aiRefineGen     uint64 // 精翻专用代次，与卡片流分开
+	aiRefineCancel  context.CancelFunc
+	inputText       string
+	inputTargetMode popupMode
+	trayInput       string // the tray quick-search box, separate from the popup's input
+	sourceExpanded  bool
+	snipExpanded    bool
+	notesExpanded   bool
+	ocrText         string
+	ocrPath         string
+	ocrCrop         winRect
+	ocrBusy         bool
+	ocrError        string
+	ocrGeneration   uint64
+	ocrCancel       context.CancelFunc
 
 	win        *mygo.Window
 	cfgWin     *mygo.Window
@@ -150,7 +154,9 @@ type app struct {
 	// a sentence that was never saved, and the other way round.
 	notesSaved   bool
 	grammarSaved bool
-	isQuitting   bool
+	writingSaved bool
+	// 退出标志由 quitApp、OnBeforeQuit 与设置窗口 OnClose 三处访问，用原子类型统一读写契约。
+	isQuitting atomic.Bool
 	// pausedUntil stops the selection trigger until the moment it holds;
 	// the zero value means "not paused".
 	pausedUntil      time.Time
@@ -226,13 +232,16 @@ type app struct {
 	pendingHotkeySelection  string
 	pendingHotkeyInput      string
 	pendingHotkeyScreenshot string
+	hotkeyDraftsInit        bool
 	magpieModels            []string
 	loadingModels           bool
 	// newBlockedApp is the text being typed into the selection blocklist
 	// editor on the 划词 settings page.
 	newBlockedApp string
 	// confirmClearVocab turns the 清空 button into a confirm/cancel pair.
-	confirmClearVocab bool
+	confirmClearVocab    bool
+	vocabConfirmDeleteID string
+	lastDeletedVocab     *VocabularyEntry
 	// settingsScroll keeps the settings page's offset across re-renders, so
 	// toggling a switch near the bottom does not jump back to the top. It
 	// also carries MaxY, which is how "can this page scroll at all" is
@@ -258,6 +267,7 @@ type snapshot struct {
 	aiText                string
 	aiBusy                bool
 	inputText             string
+	inputTargetMode       popupMode
 	isWord                bool
 	pinned                bool
 	showNotes             bool
@@ -279,6 +289,7 @@ type snapshot struct {
 	grammarHoverKnowledge string
 	notesSaved            bool
 	grammarSaved          bool
+	writingSaved          bool
 	isScreenshotMode      bool
 	snipBitmap            *ui.Bitmap
 	sourceExpanded        bool
@@ -298,8 +309,8 @@ func (a *app) snap() snapshot {
 		mode: a.mode, source: a.source, target: a.target, engine: a.engine,
 		detected: a.detected, errText: a.errText, notice: a.notice, busy: a.busy, elapsed: a.elapsed,
 		dict: a.dict, gdict: a.gdict, aiText: a.aiText, aiBusy: a.aiBusy,
-		inputText: a.inputText, isWord: isWord(a.source), pinned: a.pinned, showNotes: a.showNotes, notes: a.notes, notesBusy: a.notesBusy, onlyTrunk: a.onlyTrunk, grammarResult: a.grammarResult, grammarResultPrefill: a.grammarResultPrefill, aiRefining: a.aiRefining, aiRefineErr: a.aiRefineErr,
-		activeActionID: a.activeActionID, dictResult: a.dictResult, writingResult: a.writingResult, actionSavedMsg: a.actionSavedMsg, savedDictTerm: a.savedDictTerm, copiedMsg: a.copiedMsg, showSlashes: a.showSlashes, filterRole: a.filterRole, grammarHoverKnowledge: a.grammarHoverKnowledge, notesSaved: a.notesSaved, grammarSaved: a.grammarSaved,
+		inputText: a.inputText, inputTargetMode: a.inputTargetMode, isWord: isWord(a.source), pinned: a.pinned, showNotes: a.showNotes, notes: a.notes, notesBusy: a.notesBusy, onlyTrunk: a.onlyTrunk, grammarResult: a.grammarResult, grammarResultPrefill: a.grammarResultPrefill, aiRefining: a.aiRefining, aiRefineErr: a.aiRefineErr,
+		activeActionID: a.activeActionID, dictResult: a.dictResult, writingResult: a.writingResult, actionSavedMsg: a.actionSavedMsg, savedDictTerm: a.savedDictTerm, copiedMsg: a.copiedMsg, showSlashes: a.showSlashes, filterRole: a.filterRole, grammarHoverKnowledge: a.grammarHoverKnowledge, notesSaved: a.notesSaved, grammarSaved: a.grammarSaved, writingSaved: a.writingSaved,
 		isScreenshotMode: a.isScreenshotMode, snipBitmap: a.snipBitmap, sourceExpanded: a.sourceExpanded,
 		snipExpanded: a.snipExpanded, notesExpanded: a.notesExpanded, ocrBusy: a.ocrBusy, ocrError: a.ocrError, ocrText: a.ocrText,
 		ocrCompare: a.ocrCompare, ocrExpanded: a.ocrExpanded,
@@ -419,6 +430,9 @@ func (a *app) switchMode(m popupMode) {
 	text := a.source
 	a.mode = m
 	a.busy = false
+	// 切页签会丢弃当前翻译的展示，但旧 goroutine 仍在飞。不自增代次，
+	// 它回来时 gen == a.translateGen 仍通过，会把旧译文写进新模式视图。
+	a.translateGen++
 	a.notice = notice
 	a.errText = ""
 	if strings.TrimSpace(text) == "" {
@@ -444,6 +458,16 @@ func (a *app) switchMode(m popupMode) {
 	a.clearTabLocked()
 	a.mu.Unlock()
 	a.rerunCurrentMode(text)
+}
+
+// resetScreenshotPinLocked 把「截图翻译临时置顶」的复位规则收在一处：
+// 普通弹窗是新卡片，不能继承上一张截图卡片为自身窗口申请的置顶。
+// 调用方持 a.mu；用户手动置顶（screenshotPinned 为 false）不动。
+func (a *app) resetScreenshotPinLocked() {
+	if a.screenshotPinned {
+		a.pinned = false
+		a.screenshotPinned = false
+	}
 }
 
 func (a *app) openPopupAction(m popupMode, text string) {
@@ -481,6 +505,7 @@ func (a *app) openPopupAction(m popupMode, text string) {
 	// never be restored under the new text.
 	a.tabStates = nil
 	a.mode = m
+	a.inputTargetMode = m
 	a.inputText = ""
 	a.notice = ""
 	a.source = text
@@ -491,6 +516,8 @@ func (a *app) openPopupAction(m popupMode, text string) {
 	a.dict = nil
 	a.gdict = nil
 	a.busy = false
+	// 新卡片同样要让在飞的机器翻译失效，否则旧译文会写进这张新卡片。
+	a.translateGen++
 	a.aiBusy = false
 	a.dictResult = nil
 	a.grammarResult = nil
@@ -500,6 +527,7 @@ func (a *app) openPopupAction(m popupMode, text string) {
 	a.copiedMsg = ""
 	a.notesSaved = false
 	a.grammarSaved = false
+	a.writingSaved = false
 	// The three view switches below are per-look, not preferences. onlyTrunk
 	// used to survive: once "只看主干" was on, every later popup opened folded
 	// to the core, with the clause marks and underlines missing, which reads
@@ -516,6 +544,7 @@ func (a *app) openPopupAction(m popupMode, text string) {
 	a.notesExpanded = false
 	a.ocrText, a.ocrPath, a.ocrError = "", "", ""
 	a.ocrCompare, a.ocrExpanded = false, false
+	a.resetScreenshotPinLocked()
 	a.mu.Unlock()
 
 	win.SetSize(int(w), initH)
@@ -561,11 +590,18 @@ func (a *app) openPopupWithText(m popupMode, text string) {
 	a.stopNotesLocked()
 	a.tabStates = nil
 	a.mode = m
+	if m != modeInput {
+		a.inputTargetMode = m
+	} else if a.inputTargetMode == 0 {
+		a.inputTargetMode = modeTranslate
+	}
 	a.inputText = ""
 	a.notice = ""
 	a.source, a.target, a.errText, a.aiText = "", "", "", ""
 	a.sourceExpanded = false
 	a.dict, a.gdict, a.busy, a.aiBusy = nil, nil, false, false
+	// 新卡片同样要让在飞的机器翻译失效，否则旧译文会写进这张新卡片。
+	a.translateGen++
 	a.activeActionID = ""
 	a.dictResult = nil
 	a.writingResult = nil
@@ -575,17 +611,13 @@ func (a *app) openPopupWithText(m popupMode, text string) {
 	a.copiedMsg = ""
 	a.notes, a.notesBusy, a.notesSaved, a.notesExpanded = nil, false, false, false
 	a.grammarSaved = false
+	a.writingSaved = false
 	a.isScreenshotMode, a.snipExpanded = false, false
 	a.snipBitmap = nil
 	a.ocrText, a.ocrPath, a.ocrError = "", "", ""
 	a.ocrCompare, a.ocrExpanded = false, false
-	// A normal popup starts unpinned, even right after a screenshot
-	// translation (which pins itself on purpose). Without this the pin
-	// survived into every later popup and OnBlur never closed them again.
-	if a.screenshotPinned {
-		a.pinned = false
-		a.screenshotPinned = false
-	}
+	// 普通弹窗不继承截图卡片的置顶；规则见 resetScreenshotPinLocked。
+	a.resetScreenshotPinLocked()
 	a.mu.Unlock()
 
 	win.SetSize(int(w), initH)

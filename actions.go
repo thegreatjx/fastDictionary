@@ -576,7 +576,7 @@ func writingThemeFor(t *ui.Theme) writingTheme {
 }
 
 // renderImproveWritingCard renders the 1:1 Improve Writing layout
-func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *ImproveWritingResult, onSave func()) {
+func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *ImproveWritingResult, saved bool, onCopy func(string), onSave func()) {
 	w := writingThemeFor(t)
 	ui.Box(c).FillWidth().Padding(14, 16).Radius(8).
 		Background(t.Surface).Border(1, t.Border).
@@ -661,7 +661,11 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 								})
 							})
 							if btnCopy.Clicked() {
-								mygo.Clipboard.WriteText(res.Improved)
+								if onCopy != nil {
+									onCopy(res.Improved)
+								} else {
+									mygo.Clipboard.WriteText(res.Improved)
+								}
 							}
 						})
 						ui.Text(c, res.Improved).FontSize(14).FontWeight(600).TextColor(w.improved.text).Wrap()
@@ -687,7 +691,20 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 
 			// 5. Bottom bar: [ 保存到笔记本 ]
 			ui.Row(c).FillWidth().Justify(ui.End).AlignItems(ui.Center).Children(func() {
-				btnSave := ui.Button(c, "").Height(24).Padding(2, 12).Radius(5).
+				if saved {
+					ui.Box(c).Height(26).Padding(2, 12).Radius(5).
+						Background(t.Surface).Border(1, t.Border).Children(func() {
+						ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+							ui.Icon(c, iconCheckSquare).Size(12, 12).TextColor(t.Success)
+							ui.Text(c, "✓ 已存入笔记本").FontSize(11).FontWeight(600).TextColor(t.TextMuted)
+						})
+					})
+					return
+				}
+				if onSave == nil {
+					return
+				}
+				btnSave := ui.Button(c, "").Height(26).Padding(2, 12).Radius(5).
 					Background(w.save.background).Border(1, w.save.border).TextColor(w.save.text).Tooltip("保存改后版本与批注到笔记本")
 				btnSave.Children(func() {
 					ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
@@ -696,9 +713,7 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 					})
 				})
 				if btnSave.Clicked() {
-					if onSave != nil {
-						onSave()
-					}
+					onSave()
 				}
 			})
 		})

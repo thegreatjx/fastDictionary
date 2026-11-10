@@ -3,7 +3,6 @@ package main
 import (
 	"log"
 	"strings"
-	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
@@ -48,6 +47,27 @@ func (a *app) popupView(c *ui.Context) {
 		a.win.Hide()
 	}
 
+	// Mode switching shortcuts: Ctrl+1 / Alt+1 (Translate), Ctrl+2 / Alt+2 (Grammar), Ctrl+3 / Alt+3 (Writing)
+	if c.Shortcut(ui.Ctrl, ui.Key1) || c.Shortcut(ui.Alt, ui.Key1) {
+		a.switchPopupMode(0)
+	} else if c.Shortcut(ui.Ctrl, ui.Key2) || c.Shortcut(ui.Alt, ui.Key2) {
+		a.switchPopupMode(1)
+	} else if c.Shortcut(ui.Ctrl, ui.Key3) || c.Shortcut(ui.Alt, ui.Key3) {
+		a.switchPopupMode(2)
+	}
+
+	// Quick refresh / re-translate: F5 or Ctrl+R
+	if c.Shortcut(0, ui.KeyF5) || c.Shortcut(ui.Ctrl, ui.KeyR) {
+		if s.source != "" {
+			a.rerunCurrentModeFresh(s.source)
+		}
+	}
+
+	// Quick save to notebook: Ctrl+S
+	if c.Shortcut(ui.Ctrl, ui.KeyS) {
+		a.handleQuickSave(s)
+	}
+
 	var contentEl, scrollEl ui.Element
 	rootEl := ui.Column(c).FillWidth().FillHeight().Padding(8, 12, 8, 12).Gap(6)
 	rootEl.Children(func() {
@@ -83,29 +103,25 @@ func (a *app) popupView(c *ui.Context) {
 					})
 				}
 
-				// A quiet confirmation that a copy actually landed. The
-				// clipboard gives no visible feedback on its own, so the
-				// button used to look dead.
+				// A quiet confirmation that a copy actually landed with positive success feedback.
 				if s.copiedMsg != "" {
-					ui.Box(c).FillWidth().Padding(8, 10).Radius(6).
-						Background(noticeBg(t)).Border(1, noticeBorder(t)).Children(func() {
-						ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(6).Children(func() {
-							ui.Icon(c, iconInfo).Size(13, 13).TextColor(noticeText(t))
-							ui.Text(c, s.copiedMsg).FontSize(12).TextColor(noticeText(t)).Wrap().Grow(1)
+					ui.Box(c).FillWidth().Padding(6, 10).Radius(6).
+						Background(ui.RGBA(34, 197, 94, 0.10)).Border(1, ui.RGBA(34, 197, 94, 0.25)).Children(func() {
+						ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
+							ui.Icon(c, iconCheckSquare).Size(13, 13).TextColor(t.Success)
+							ui.Text(c, s.copiedMsg).FontSize(12).TextColor(t.Success).Wrap().Grow(1)
 						})
 					})
 				}
 
-				// A save that landed said nothing in the dictionary, grammar
-				// and writing cards: the confirmation was rendered inside the
-				// translation tab only, so those three looked like the button
-				// had done nothing at all. The translate tab keeps its own
-				// copy, hence the mode guard — rendering here for it too would
-				// print the line twice.
-				if s.actionSavedMsg != "" && s.mode != modeTranslate && s.mode != modeInput && s.mode != modeSelectionPreview {
-					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
-						ui.Icon(c, iconCheckSquare).Size(13, 13).TextColor(t.Accent)
-						ui.Text(c, s.actionSavedMsg).FontSize(12).TextColor(t.Accent).Wrap().Grow(1)
+				// A save that landed shows a gentle success confirmation banner.
+				if s.actionSavedMsg != "" {
+					ui.Box(c).FillWidth().Padding(6, 10).Radius(6).
+						Background(ui.RGBA(34, 197, 94, 0.10)).Border(1, ui.RGBA(34, 197, 94, 0.25)).Children(func() {
+						ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
+							ui.Icon(c, iconCheckSquare).Size(13, 13).TextColor(t.Success)
+							ui.Text(c, s.actionSavedMsg).FontSize(12).TextColor(t.Success).Wrap().Grow(1)
+						})
 					})
 				}
 
@@ -139,25 +155,34 @@ func (a *app) popupView(c *ui.Context) {
 				switch s.mode {
 				case modeGrammar:
 					// Dedicated Sentence Analysis Mode!
-					if s.grammarResult != nil {
-						a.renderGrammarVisualCard(c, t, s.source, s.grammarResult, func() { a.saveGrammarToVocab(s.grammarResult) })
-					} else {
+					switch classifyAIView(s) {
+					case aiPassStructured:
+						a.renderGrammarVisualCard(c, t, s.source, s.grammarResult, s.grammarSaved, func() { a.saveGrammarToVocab(s.grammarResult) })
+					case aiPassIdle:
+						a.renderGrammarEmptyState(c, t, s)
+					default:
 						renderAIResultState(c, t, s)
 					}
 
 				case modeDictionary:
 					// Dedicated Learner's Dictionary Mode!
-					if s.dictResult != nil {
+					switch classifyAIView(s) {
+					case aiPassStructured:
 						renderDictionaryCard(c, t, s.source, s.dictResult, s.savedDictTerm, func() { a.saveDictToVocab(s.dictResult) })
-					} else {
+					case aiPassIdle:
+						a.renderDictionaryEmptyState(c, t, s)
+					default:
 						renderAIResultState(c, t, s)
 					}
 
 				case modeWriting:
 					// Dedicated Improve Writing Mode!
-					if s.writingResult != nil {
-						renderImproveWritingCard(c, t, s.source, s.writingResult, func() { a.saveWritingToVocab(s.writingResult) })
-					} else {
+					switch classifyAIView(s) {
+					case aiPassStructured:
+						renderImproveWritingCard(c, t, s.source, s.writingResult, s.writingSaved, func(txt string) { a.copyToClipboard(txt) }, func() { a.saveWritingToVocab(s.writingResult) })
+					case aiPassIdle:
+						a.renderWritingEmptyState(c, t, s)
+					default:
 						renderAIResultState(c, t, s)
 					}
 
@@ -324,13 +349,15 @@ func renderNotesBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 			if len(s.notes) > 0 {
 				ui.Row(c).FillWidth().Justify(ui.End).Children(func() {
 					if s.notesSaved {
-						ui.Box(c).Height(24).Padding(2, 12).Radius(5).Background(ui.Hex("#10B981")).Children(func() {
+						ui.Box(c).Height(24).Padding(2, 12).Radius(5).
+							Background(t.Surface).Border(1, t.Border).Children(func() {
 							ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-								ui.Text(c, "✓ 已存入生词本").FontSize(11).FontWeight(600).TextColor(ui.Hex("#FFFFFF"))
+								ui.Icon(c, iconCheckSquare).Size(12, 12).TextColor(t.Success)
+								ui.Text(c, "已保存 ✓").FontSize(11).FontWeight(600).TextColor(t.TextMuted)
 							})
 						})
 					} else {
-						btnSave := ui.Button(c, "").Height(24).Padding(2, 14).Radius(5).Background(ui.Hex("#EAB308")).TextColor(ui.Hex("#FFFFFF"))
+						btnSave := ui.Button(c, "").Height(24).Padding(2, 14).Radius(5).Background(saveButtonColor(t)).TextColor(ui.Hex("#FFFFFF")).Tooltip("保存所选生词到笔记本 (Ctrl+S)")
 						btnSave.Children(func() {
 							ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
 								ui.Icon(c, iconBookmark).Size(12, 12).TextColor(ui.Hex("#FFFFFF"))
@@ -338,44 +365,7 @@ func renderNotesBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 							})
 						})
 						if btnSave.Clicked() {
-							// Collect under the lock, do the slow part
-							// outside it. EnrichVocabularyEntry makes a
-							// network call with a 3 s timeout and Add
-							// rewrites the whole notebook file, so the old
-							// code held a.mu - the render lock - for up to
-							// three seconds per word and the window went
-							// "not responding".
-							a.mu.Lock()
-							a.notesSaved = true
-							a.actionSavedMsg = "已将所选生词存入生词库 ✓"
-							pending := make([]VocabularyEntry, 0, len(s.notes))
-							for _, n := range s.notes {
-								if n.Checked {
-									pending = append(pending, VocabularyEntry{
-										Term:               n.Word,
-										Phonetic:           n.Phonetic,
-										PartOfSpeech:       n.Pos,
-										Definition:         n.Meaning,
-										Difficulty:         n.Difficulty,
-										MemoryTips:         n.MemoryTips,
-										Context:            s.source,
-										ContextTerm:        n.Word,
-										ContextTranslation: s.target,
-										Source:             "notes",
-										CreatedAt:          time.Now(),
-									})
-								}
-							}
-							a.mu.Unlock()
-							if a.win != nil {
-								a.win.Update(func() {})
-							}
-							go func() {
-								for i := range pending {
-									EnrichVocabularyEntry(&pending[i])
-								}
-								GetVocabularyStore().AddBatch(pending)
-							}()
+							a.saveNotesToVocab(s)
 						}
 					}
 				})
@@ -386,53 +376,27 @@ func renderNotesBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 
 // renderWordSaveButton keeps enrichment and file I/O off the UI thread.
 func renderWordSaveButton(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
-	label := "保存生词"
-	background := saveButtonColor(t)
-	if a.actionSavedMsg != "" {
-		label = "已保存 ✓"
-		background = t.Success
+	isSaved := s.savedDictTerm != "" && strings.EqualFold(strings.TrimSpace(s.savedDictTerm), strings.TrimSpace(s.source))
+	if isSaved {
+		ui.Box(c).Height(24).Padding(2, 8).Radius(5).
+			Background(t.Surface).Border(1, t.Border).Children(func() {
+			ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+				ui.Icon(c, iconCheckSquare).Size(12, 12).TextColor(t.Success)
+				ui.Text(c, "已保存 ✓").FontSize(11).FontWeight(600).TextColor(t.TextMuted)
+			})
+		})
+		return
 	}
 	save := ui.Button(c, "").Height(24).Padding(2, 8).Radius(5).
-		Background(background).TextColor(ui.Hex("#FFFFFF")).Tooltip("将该单词保存到生词本")
+		Background(saveButtonColor(t)).TextColor(ui.Hex("#FFFFFF")).Tooltip("将该单词保存到生词本 (Ctrl+S)")
 	save.Children(func() {
 		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, iconBookmark).Size(12, 12).TextColor(ui.Hex("#FFFFFF"))
-			ui.Text(c, label).FontSize(11).FontWeight(600)
+			ui.Text(c, "保存生词").FontSize(11).FontWeight(600)
 		})
 	})
 	if save.Clicked() {
-		phone := ""
-		if s.dict != nil {
-			if s.dict.UKPhone != "" {
-				phone = "/" + s.dict.UKPhone + "/"
-			} else if s.dict.USPhone != "" {
-				phone = "/" + s.dict.USPhone + "/"
-			}
-		}
-		explanation, pos := s.target, ""
-		if s.gdict != nil && len(s.gdict.Entries) > 0 {
-			pos = s.gdict.Entries[0].POS
-		} else if s.dict != nil && len(s.dict.Explains) > 0 {
-			explanation = strings.Join(s.dict.Explains, "；")
-			parts := strings.SplitN(s.dict.Explains[0], " ", 2)
-			if len(parts) == 2 && strings.HasSuffix(parts[0], ".") {
-				pos = parts[0]
-			}
-		}
-		a.mu.Lock()
-		a.actionSavedMsg = "已保存「" + s.source + "」到生词本 ✓"
-		a.mu.Unlock()
-		if a.win != nil {
-			a.win.Update(func() {})
-		}
-		entry := VocabularyEntry{
-			Term: s.source, Phonetic: phone, PartOfSpeech: pos,
-			Definition: explanation, Source: "dict", CreatedAt: time.Now(),
-		}
-		go func() {
-			EnrichVocabularyEntry(&entry)
-			GetVocabularyStore().Add(entry)
-		}()
+		a.saveCurrentWordToVocab(s)
 	}
 }
 
@@ -448,9 +412,10 @@ func renderWordSaveButton(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 // block of text.
 func dictBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 	ui.Divider(c).FillWidth()
-	if s.dict != nil && (s.dict.UKPhone != "" || s.dict.USPhone != "") {
+	hasPhones := (s.dict != nil && (s.dict.UKPhone != "" || s.dict.USPhone != "")) || (s.gdict != nil && s.gdict.Pron != "")
+	if hasPhones || s.isWord {
 		ui.Row(c).FillWidth().Gap(14).AlignItems(ui.Center).Children(func() {
-			if s.dict.UKPhone != "" {
+			if s.dict != nil && s.dict.UKPhone != "" {
 				ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
 					btnUK := ui.Button(c, "").Label("英式发音").Tooltip("英式发音").
 						Size(28, 28).Padding(0, 0).Radius(6).Center()
@@ -466,7 +431,7 @@ func dictBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 					ui.Text(c, "/"+s.dict.UKPhone+"/").FontSize(13).TextColor(t.TextMuted).SingleLine()
 				})
 			}
-			if s.dict.USPhone != "" {
+			if s.dict != nil && s.dict.USPhone != "" {
 				ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
 					btnUS := ui.Button(c, "").Label("美式发音").Tooltip("美式发音").
 						Size(28, 28).Padding(0, 0).Radius(6).Center()
@@ -481,6 +446,8 @@ func dictBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 					}
 					ui.Text(c, "/"+s.dict.USPhone+"/").FontSize(13).TextColor(t.TextMuted).SingleLine()
 				})
+			} else if s.gdict != nil && s.gdict.Pron != "" {
+				ui.Text(c, "/"+s.gdict.Pron+"/").FontSize(13).TextColor(t.Accent)
 			}
 
 			ui.Spacer(c).Grow(1)
@@ -489,8 +456,6 @@ func dictBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 				renderWordSaveButton(c, t, s, a)
 			}
 		})
-	} else if s.gdict != nil && s.gdict.Pron != "" {
-		ui.Text(c, "/"+s.gdict.Pron+"/").FontSize(13).TextColor(t.Accent)
 	}
 	if s.gdict != nil {
 		for _, e := range s.gdict.Entries {
@@ -515,7 +480,7 @@ func (a *app) renderEmptyActionStart(c *ui.Context, t *ui.Theme, s snapshot, act
 	ui.Row(c).FillWidth().Padding(6, 4).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, tip).FontSize(12).TextColor(t.TextMuted)
 		ui.Spacer(c).Grow(1)
-		btnStart := ui.Button(c, "").Height(24).Padding(2, 10).Radius(5).Background(ui.Hex("#2563EB")).TextColor(ui.Hex("#FFFFFF"))
+		btnStart := ui.Button(c, "").Height(24).Padding(2, 10).Radius(5).Background(t.Accent).TextColor(t.AccentText)
 		btnStart.Children(func() {
 			ui.Text(c, "立即开始").FontSize(11).FontWeight(600)
 		})
@@ -561,7 +526,12 @@ func langPrefix(tag string) string {
 // keys, which is unreadable; that case gets a sentence saying so and points at
 // the 重新翻译 button the footer already carries.
 func renderAIResultState(c *ui.Context, t *ui.Theme, s snapshot) {
-	if s.aiBusy {
+	switch classifyAIResult(s) {
+	case aiPassIdle, aiPassStructured:
+		// Structured cards are drawn by popupView's mode branches; this
+		// function is only reached when no card is available.
+		return
+	case aiPassStreaming:
 		// One spinner and one line: the task has no measurable progress, so a
 		// progress bar only imitated work it could not report. The message
 		// lives here rather than in a banner above so the wait appears where
@@ -571,22 +541,19 @@ func renderAIResultState(c *ui.Context, t *ui.Theme, s snapshot) {
 			ui.Text(c, aiBusyMessage(s.mode)).FontSize(13).TextColor(t.TextMuted)
 		})
 		return
-	}
-	if s.aiText == "" {
-		return
-	}
-	if !looksLikeStructuredPayload(s.aiText) {
+	case aiPassProse:
 		renderAiMarkdown(c, s.aiText, false)
 		return
-	}
-	ui.Box(c).FillWidth().Padding(14, 16).Radius(8).
-		Background(t.Surface).Border(1, t.Border).Children(func() {
-		ui.Column(c).FillWidth().Gap(6).Children(func() {
-			ui.Text(c, "这次没能解析成结构化卡片").FontSize(13).FontWeight(600).TextColor(t.Text)
-			ui.Text(c, "模型返回的内容不完整或格式不对，原始输出不适合直接阅读。点右下角的「重新翻译」可以再生成一次。").
-				FontSize(12).TextColor(t.TextMuted).Wrap()
+	case aiPassParseFailed:
+		ui.Box(c).FillWidth().Padding(14, 16).Radius(8).
+			Background(t.Surface).Border(1, t.Border).Children(func() {
+			ui.Column(c).FillWidth().Gap(6).Children(func() {
+				ui.Text(c, "这次没能解析成结构化卡片").FontSize(13).FontWeight(600).TextColor(t.Text)
+				ui.Text(c, "模型返回的内容不完整或格式不对，原始输出不适合直接阅读。点右下角的「重新翻译」可以再生成一次。").
+					FontSize(12).TextColor(t.TextMuted).Wrap()
+			})
 		})
-	})
+	}
 }
 
 // aiBusyMessage says what the running AI pass is doing, in the reader's terms.
@@ -629,4 +596,119 @@ func renderAiMarkdown(c *ui.Context, text string, busy bool) {
 	} else {
 		markdown.View(c, text, nil)
 	}
+}
+
+func (a *app) renderGrammarEmptyState(c *ui.Context, t *ui.Theme, s snapshot) {
+	if s.source != "" {
+		ui.Box(c).FillWidth().Padding(14, 16).Radius(8).
+			Background(t.Surface).Border(1, t.Border).Children(func() {
+			ui.Column(c).FillWidth().Gap(8).Children(func() {
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+					ui.Text(c, "🔍 长难句拆解待就绪").FontSize(13).FontWeight(600).TextColor(t.Text)
+					ui.Spacer(c).Grow(1)
+					btnStart := ui.Button(c, "开始拆解长难句").Height(26).Padding(2, 12).Radius(5).
+						Background(t.Accent).TextColor(t.AccentText)
+					if btnStart.Clicked() {
+						a.runAction("default-sentence-analysis", s.source)
+					}
+				})
+				ui.Text(c, "将自动识别句子主干（主谓宾）、从句类型微标与倒装修饰关系。").FontSize(12).TextColor(t.TextMuted)
+			})
+		})
+		return
+	}
+	ui.Box(c).FillWidth().Padding(28, 16).Radius(8).
+		Background(t.Surface).Border(1, t.Border).Children(func() {
+		ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+			ui.Text(c, "🔍").FontSize(24)
+			ui.Text(c, "长难句拆解").FontSize(14).FontWeight(600).TextColor(t.Text)
+			ui.Text(c, "在任意界面选中英文长句后按快捷键，AI 将自动分析句子主干与从属修饰关系。").
+				FontSize(12).TextColor(t.TextMuted).Wrap()
+			btnInput := ui.Button(c, "键盘输入长句").Height(26).Padding(2, 12).Radius(5).Background(t.SurfaceHover)
+			if btnInput.Clicked() {
+				a.mu.Lock()
+				a.inputTargetMode = modeGrammar
+				a.mu.Unlock()
+				a.switchMode(modeInput)
+			}
+		})
+	})
+}
+
+func (a *app) renderWritingEmptyState(c *ui.Context, t *ui.Theme, s snapshot) {
+	if s.source != "" {
+		ui.Box(c).FillWidth().Padding(14, 16).Radius(8).
+			Background(t.Surface).Border(1, t.Border).Children(func() {
+			ui.Column(c).FillWidth().Gap(8).Children(func() {
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+					ui.Text(c, "✏️ 写作批改待就绪").FontSize(13).FontWeight(600).TextColor(t.Text)
+					ui.Spacer(c).Grow(1)
+					btnStart := ui.Button(c, "开始批改润色").Height(26).Padding(2, 12).Radius(5).
+						Background(t.Accent).TextColor(t.AccentText)
+					if btnStart.Clicked() {
+						a.runAction("default-improve-writing", s.source)
+					}
+				})
+				ui.Text(c, "将进行场景得体性润色、标出逐项语法错误并给出修改建议。").FontSize(12).TextColor(t.TextMuted)
+			})
+		})
+		return
+	}
+	ui.Box(c).FillWidth().Padding(28, 16).Radius(8).
+		Background(t.Surface).Border(1, t.Border).Children(func() {
+		ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+			ui.Text(c, "✏️").FontSize(24)
+			ui.Text(c, "AI 写作批改与润色").FontSize(14).FontWeight(600).TextColor(t.Text)
+			ui.Text(c, "选中草拟的英文句子或段落，AI 将进行语法纠错与场景得体性润色。").
+				FontSize(12).TextColor(t.TextMuted).Wrap()
+			btnInput := ui.Button(c, "键盘输入句子").Height(26).Padding(2, 12).Radius(5).Background(t.SurfaceHover)
+			if btnInput.Clicked() {
+				a.mu.Lock()
+				a.inputTargetMode = modeWriting
+				a.mu.Unlock()
+				a.switchMode(modeInput)
+			}
+		})
+	})
+}
+
+func (a *app) renderDictionaryEmptyState(c *ui.Context, t *ui.Theme, s snapshot) {
+	ui.Box(c).FillWidth().Padding(28, 16).Radius(8).
+		Background(t.Surface).Border(1, t.Border).Children(func() {
+		ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+			ui.Text(c, "📘").FontSize(24)
+			ui.Text(c, "词典精读").FontSize(14).FontWeight(600).TextColor(t.Text)
+			ui.Text(c, "选中文中陌生单词，即可查看权威释义、音标发音与生词卡。").
+				FontSize(12).TextColor(t.TextMuted).Wrap()
+			btnInput := ui.Button(c, "键盘输入查词").Height(26).Padding(2, 12).Radius(5).Background(t.SurfaceHover)
+			if btnInput.Clicked() {
+				a.mu.Lock()
+				a.inputTargetMode = modeDictionary
+				a.mu.Unlock()
+				a.switchMode(modeInput)
+			}
+		})
+	})
+}
+
+func (a *app) renderTranslateEmptyState(c *ui.Context, t *ui.Theme) {
+	ui.Box(c).FillWidth().Padding(28, 16).Radius(8).
+		Background(t.Surface).Border(1, t.Border).Children(func() {
+		ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+			ui.Text(c, "📘").FontSize(24)
+			ui.Text(c, "划词翻译就绪").FontSize(14).FontWeight(600).TextColor(t.Text)
+			ui.Text(c, "选中文本后按划词快捷键（默认 Alt+D）即可自动翻译；也可点击下方按钮直接输入。").
+				FontSize(12).TextColor(t.TextMuted).Wrap()
+			btnInput := ui.Button(c, "键盘输入翻译").Height(26).Padding(2, 12).Radius(5).
+				Background(t.Accent).TextColor(t.AccentText)
+			if btnInput.Clicked() {
+				a.mu.Lock()
+				a.inputTargetMode = modeTranslate
+				a.mu.Unlock()
+				a.switchMode(modeInput)
+			}
+			ui.Text(c, "常用快捷键：Ctrl+1 翻译 · Ctrl+2 长难句 · Ctrl+3 写作 · Ctrl+S 保存 · Esc 退出").
+				FontSize(11).TextColor(t.TextMuted)
+		})
+	})
 }

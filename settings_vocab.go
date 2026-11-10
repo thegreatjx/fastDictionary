@@ -38,8 +38,16 @@ func (a *app) pageCustomActions(c *ui.Context, t *ui.Theme, cfg Config) {
 							ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 								ui.Text(c, act.Name).FontSize(15).FontWeight(600).TextColor(t.Text)
 								if act.Model != "" {
-									ui.Box(c).Padding(1, 6).Radius(10).Background(ui.Hex("#EFF6FF")).Border(1, ui.Hex("#BFDBFE")).Children(func() {
-										ui.Text(c, act.Model).FontSize(11).FontWeight(600).TextColor(ui.Hex("#1D4ED8"))
+									mBg := ui.Hex("#EFF6FF")
+									mBorder := ui.Hex("#BFDBFE")
+									mFg := ui.Hex("#1D4ED8")
+									if t.Dark {
+										mBg = withAlpha(t.Accent, 0.16)
+										mBorder = withAlpha(t.Accent, 0.30)
+										mFg = t.Accent
+									}
+									ui.Box(c).Padding(1, 6).Radius(10).Background(mBg).Border(1, mBorder).Children(func() {
+										ui.Text(c, act.Model).FontSize(11).FontWeight(600).TextColor(mFg)
 									})
 								} else {
 									ui.Box(c).Padding(1, 6).Radius(10).Background(t.SurfaceHover).Children(func() {
@@ -126,21 +134,26 @@ func (a *app) pageCustomActions(c *ui.Context, t *ui.Theme, cfg Config) {
 					// 模型选择
 					ui.Column(c).FillWidth().Gap(4).Children(func() {
 						ui.Text(c, "调用模型").FontSize(13).FontWeight(600).TextColor(t.Text)
-						models := []string{
-							"跟随全局 (默认)",
-							"workbuddy-ai/deepseek-v4.1-flash",
-							"group/auto-deepseek-v4-1-flash",
-							"workbuddy/deepseek-v4.1-flash",
-							"antigravity/gemini-3.8-flash",
-							"codex/gpt-5.5",
-							"workbuddy/glm-5.3-flash",
-							"workbuddy/kimi-k3-1",
-							"qoder-plugin/qfmodel",
-							"minimax-code/MiniMax-M2.7-highspeed",
+						models := []string{"跟随全局 (默认)"}
+						for _, m := range a.getAvailableModels() {
+							if m != "" && m != "跟随全局 (默认)" {
+								models = append(models, m)
+							}
 						}
 						curModel := a.customizingAction.Model
 						if curModel == "" {
 							curModel = "跟随全局 (默认)"
+						} else {
+							found := false
+							for _, m := range models {
+								if m == curModel {
+									found = true
+									break
+								}
+							}
+							if !found {
+								models = append(models, curModel)
+							}
 						}
 						ui.Select(c, &curModel, models).FillWidth().OnChange(func() {
 							if curModel == "跟随全局 (默认)" {
@@ -256,15 +269,28 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 				fmt.Sprintf("✏️ 写作 (%d)", cWriting),
 			}
 			ui.Row(c).FillWidth().Children(func() {
-				ui.Segmented(c, &a.vocabCategoryIdx, catNames...).FillWidth().Height(28).FontSize(12)
+				ui.Segmented(c, &a.vocabCategoryIdx, catNames...).FillWidth().Height(28).FontSize(12).
+					OnChange(func() { a.vocabConfirmDeleteID = "" })
 			})
 
 			// Row 2: search on its own line. Sharing the row with six
 			// buttons overflowed the form as soon as the window was narrow.
-			ui.SearchField(c, &a.vocabSearchQuery).FillWidth()
+			ui.SearchField(c, &a.vocabSearchQuery).FillWidth().OnChange(func() { a.vocabConfirmDeleteID = "" })
 
 			// Row 3: the actions, which wrap freely now.
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
+				if a.lastDeletedVocab != nil {
+					btnUndo := ui.Button(c, "↩ 撤销删除「"+truncateFor(a.lastDeletedVocab.Term, 10)+"」").
+						Height(28).Padding(2, 8).Radius(5).Background(t.SurfaceHover).
+						TextColor(t.Accent).Tooltip("恢复刚刚删除的生词条目")
+					if btnUndo.Clicked() {
+						vocabStore.Add(*a.lastDeletedVocab)
+						a.actionSavedMsg = "已恢复「" + a.lastDeletedVocab.Term + "」✓"
+						a.lastDeletedVocab = nil
+						a.settingsRefresh()
+					}
+				}
+
 				// [📥 导入]
 				btnImport := ui.Button(c, "📥 导入").Height(28).Padding(2, 8).Radius(5).
 					Tooltip("从外部 JSON/CSV/TXT 导入生词")
@@ -290,8 +316,8 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 					}()
 				}
 
-				// [📊 导出]
-				btnExpCSV := ui.Button(c, "📊 导出").Height(28).Padding(2, 8).Radius(5).
+				// [📊 导出 CSV]
+				btnExpCSV := ui.Button(c, "📊 导出 CSV").Height(28).Padding(2, 8).Radius(5).
 					Tooltip("导出生词库为 CSV 表格（支持 Excel / Anki 直接打开）")
 				if btnExpCSV.Clicked() {
 					go func() {
@@ -305,9 +331,40 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 								a.mu.Lock()
 								a.actionSavedMsg = "已成功导出 CSV 表格 ✓"
 								a.mu.Unlock()
-								if a.cfgWin != nil {
-									a.cfgWin.Update(func() {})
-								}
+							} else {
+								a.mu.Lock()
+								a.actionSavedMsg = "导出 CSV 失败: " + err.Error()
+								a.mu.Unlock()
+							}
+							if a.cfgWin != nil {
+								a.cfgWin.Update(func() {})
+							}
+						}
+					}()
+				}
+
+				// [📇 导出 Anki]
+				btnExpAnki := ui.Button(c, "📇 导出 Anki").Height(28).Padding(2, 8).Radius(5).
+					Tooltip("导出为 Anki 记忆卡片格式（含完整排版与高亮样式，可直接导入 Anki）")
+				if btnExpAnki.Clicked() {
+					go func() {
+						path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
+							Title:       "导出 Anki 记忆卡片",
+							DefaultPath: "fast词典_生词库_Anki.txt",
+							Filters:     []mygo.FileFilter{{Name: "Anki 卡片 (*.txt)", Extensions: []string{"txt"}}},
+						})
+						if err == nil && path != "" {
+							if err := vocabStore.ExportAnki(path); err == nil {
+								a.mu.Lock()
+								a.actionSavedMsg = fmt.Sprintf("已成功导出 %d 张 Anki 记忆卡片 ✓", vocabStore.Count())
+								a.mu.Unlock()
+							} else {
+								a.mu.Lock()
+								a.actionSavedMsg = "导出 Anki 失败: " + err.Error()
+								a.mu.Unlock()
+							}
+							if a.cfgWin != nil {
+								a.cfgWin.Update(func() {})
 							}
 						}
 					}()
@@ -318,9 +375,13 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 					Tooltip("为生词自动补全音标、CEFR 难度、例句与记忆技巧")
 				if btnEnrich.Clicked() {
 					go func() {
-						n := vocabStore.EnrichAll()
+						n, err := vocabStore.EnrichAll()
 						a.mu.Lock()
-						a.actionSavedMsg = fmt.Sprintf("已智能补全 %d 条生词数据 ✓", n)
+						if err != nil {
+							a.actionSavedMsg = "补全失败: " + err.Error()
+						} else {
+							a.actionSavedMsg = fmt.Sprintf("已智能补全 %d 条生词数据 ✓", n)
+						}
 						a.mu.Unlock()
 						if a.cfgWin != nil {
 							a.cfgWin.Update(func() {})
@@ -385,9 +446,34 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 	if len(entries) == 0 {
 		ui.Box(c).FillWidth().Padding(36, 20).Radius(8).Background(t.Surface).Border(1, t.Border).Children(func() {
 			ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
-				ui.Text(c, "📘").FontSize(24)
-				ui.Text(c, "当前分类暂无内容").FontSize(14).FontWeight(600).TextColor(t.Text)
-				ui.Text(c, "在划词弹窗里点击【保存到笔记本】即可自动收录；存下来的词可以在这里展开完整词卡。").FontSize(12).TextColor(t.TextMuted)
+				if a.vocabSearchQuery != "" {
+					ui.Text(c, "🔍").FontSize(24)
+					ui.Text(c, fmt.Sprintf("未找到与「%s」相关的笔记", a.vocabSearchQuery)).FontSize(14).FontWeight(600).TextColor(t.Text)
+					ui.Text(c, "尝试缩短搜索词，或切换上方分类查看。").FontSize(12).TextColor(t.TextMuted)
+					btnClearSearch := ui.Button(c, "清除搜索关键词").Height(26).Padding(2, 12).Radius(5).Background(t.SurfaceHover)
+					if btnClearSearch.Clicked() {
+						a.vocabSearchQuery = ""
+						a.settingsRefresh()
+					}
+				} else {
+					ui.Text(c, "📘").FontSize(24)
+					title := "笔记本还是空的"
+					desc := "在划词弹窗里点击【保存】即可自动归档；存下来的词可以在这里展开完整词卡与导出 Anki。"
+					switch a.vocabCategoryIdx {
+					case 1:
+						title = "暂无生词收录"
+						desc = "在划词翻译查词时，点击【保存生词】或【猜你想存】，即可将陌生词汇自动收录并补全音标与 CEFR 难度。"
+					case 2:
+						title = "暂无长难句分析"
+						desc = "划词选中长句子后切换到【长难句】Tab，点击【保存到长难句本】即可归档语法树与拆解。"
+					case 3:
+						title = "暂无写作批改笔记"
+						desc = "选中需要润色的句子后切换到【写作】Tab，点击【保存到笔记本】即可归档修改建议。"
+					}
+					ui.Text(c, title).FontSize(14).FontWeight(600).TextColor(t.Text)
+					ui.Text(c, desc).FontSize(12).TextColor(t.TextMuted).Wrap()
+					ui.Text(c, "常用快捷键：Alt+D 极速划词 · Alt+Q 输入翻译 · Alt+C 截图翻译").FontSize(11).TextColor(t.Accent)
+				}
 			})
 		})
 		return
@@ -433,8 +519,10 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 							}
 
 							if entry.Difficulty != "" {
-								ui.Box(c).Padding(1, 6).Radius(10).Background(ui.Hex("#EFF6FF")).Border(1, ui.Hex("#BFDBFE")).Children(func() {
-									ui.Text(c, entry.Difficulty).FontSize(10).FontWeight(700).TextColor(ui.Hex("#1D4ED8"))
+								d := strings.ToUpper(strings.TrimSpace(entry.Difficulty))
+								bg, fg := cefrColors(t, d)
+								ui.Box(c).Padding(1, 6).Radius(10).Background(bg).Children(func() {
+									ui.Text(c, d).FontSize(10).FontWeight(700).TextColor(fg)
 								})
 							}
 						}
@@ -447,42 +535,60 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 						ui.Text(c, entry.CreatedAt.Format("2006-01-02 15:04")).FontSize(11).TextColor(t.TextMuted)
 
-						btnExpand := ui.Button(c, "").Height(22).Padding(1, 8).Radius(4).Tooltip("展开完整词卡")
-						btnExpand.Children(func() {
-							ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-								if expanded {
-									ui.Icon(c, iconChevronUp).Size(11, 11).TextColor(t.TextMuted)
-								} else {
-									ui.Icon(c, iconChevronDown).Size(11, 11).TextColor(t.TextMuted)
-								}
-								label := "词卡"
-								if expanded {
-									label = "收起"
-								}
-								ui.Text(c, label).FontSize(11).TextColor(t.TextMuted)
+						isWordEntry := entry.Source != "grammar" && entry.Source != "writing" && len(strings.Fields(entry.Term)) <= 2
+						if isWordEntry {
+							btnExpand := ui.Button(c, "").Height(22).Padding(1, 8).Radius(4).Tooltip("展开完整词卡")
+							btnExpand.Children(func() {
+								ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+									if expanded {
+										ui.Icon(c, iconChevronUp).Size(11, 11).TextColor(t.TextMuted)
+									} else {
+										ui.Icon(c, iconChevronDown).Size(11, 11).TextColor(t.TextMuted)
+									}
+									label := "词卡"
+									if expanded {
+										label = "收起"
+									}
+									ui.Text(c, label).FontSize(11).TextColor(t.TextMuted)
+								})
 							})
-						})
-						if btnExpand.Clicked() {
-							if expanded {
-								a.vocabExpandedID = ""
-							} else {
-								a.vocabExpandedID = entry.ID
+							if btnExpand.Clicked() {
+								if expanded {
+									a.vocabExpandedID = ""
+								} else {
+									a.vocabExpandedID = entry.ID
+								}
+								a.settingsRefresh()
 							}
-							a.settingsRefresh()
 						}
 
-						btnDel := ui.Button(c, "删除").Height(22).Padding(1, 8).Radius(4).Tooltip("从生词本删除此条目")
-						if btnDel.Clicked() {
-							// Repaint after the removal: the row we are
-							// rendering into no longer exists, and without a
-							// refresh the list kept showing the deleted word.
-							if vocabStore.Delete(entry.ID) {
-								a.actionSavedMsg = "已删除「" + entry.Term + "」"
+						if a.vocabConfirmDeleteID == entry.ID {
+							btnConfirm := ui.Button(c, "确认删除").Height(22).Padding(1, 8).Radius(4).
+								Background(t.Danger).TextColor(ui.Hex("#FFFFFF")).Tooltip("确认从生词本删除此条目")
+							if btnConfirm.Clicked() {
+								entryCopy := entry
+								if vocabStore.Delete(entry.ID) {
+									a.lastDeletedVocab = &entryCopy
+									a.actionSavedMsg = "已删除「" + entry.Term + "」"
+								}
+								if a.vocabExpandedID == entry.ID {
+									a.vocabExpandedID = ""
+								}
+								a.vocabConfirmDeleteID = ""
+								a.settingsRefresh()
 							}
-							if a.vocabExpandedID == entry.ID {
-								a.vocabExpandedID = ""
+							btnCancel := ui.Button(c, "取消").Height(22).Padding(1, 6).Radius(4).Tooltip("取消删除")
+							if btnCancel.Clicked() {
+								a.vocabConfirmDeleteID = ""
+								a.settingsRefresh()
 							}
-							a.settingsRefresh()
+						} else {
+							btnDel := ui.Button(c, "删除").Height(22).Padding(1, 8).Radius(4).
+								TextColor(t.TextMuted).Tooltip("从生词本删除此条目（点击后需二次确认）")
+							if btnDel.Clicked() {
+								a.vocabConfirmDeleteID = entry.ID
+								a.settingsRefresh()
+							}
 						}
 					})
 				})
@@ -491,7 +597,8 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 				// both would print the definition, example and memory tips
 				// twice and push 收起词卡 below the fold. Expanded shows the
 				// card alone; collapsed shows the compact summary.
-				if expanded {
+				isWordEntry := entry.Source != "grammar" && entry.Source != "writing" && len(strings.Fields(entry.Term)) <= 2
+				if expanded && isWordEntry {
 					// The full word card. It used to be the whole point of a
 					// 词典 tab; keeping it here means the notebook is the one
 					// place a saved word can be studied in full, without a

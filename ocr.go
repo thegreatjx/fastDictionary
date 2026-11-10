@@ -138,6 +138,10 @@ func RecognizeImageFile(ctx context.Context, path string) (string, error) {
 // returns "Fridays & Saturdays at 8 pm" where Windows returns "Fridays U
 // Saturdays at 8 pm". Windows OCR stays as the fallback — if the models or the
 // runtime are missing, or Indra finds nothing, the screenshot still translates.
+// recognizeImageFileIn 是识别引擎的调用点，做成变量是为了让取消与代次路径
+// 能在不启动 PowerShell 的前提下被测试验证。
+var recognizeImageFileIn = RecognizeImageFileIn
+
 func RecognizeImageFileIn(ctx context.Context, path, language string) (string, error) {
 	if indraAvailable() {
 		if text, err := indraRecognizeFile(ctx, path); err == nil {
@@ -319,6 +323,9 @@ func (a *app) recognizeScreenshot(imgPath string) {
 	a.ocrCancel = cancel
 	a.ocrBusy, a.ocrError = true, ""
 	a.busy = false
+	// 新截图是一张新卡片，必须让上一轮 OCR 译文的在飞翻译失效，
+	// 否则旧译文、引擎与词典会写回这张刚清空的卡片。
+	a.translateGen++
 	a.source, a.target = "", ""
 	a.ocrText = ""
 	win := a.win
@@ -327,7 +334,7 @@ func (a *app) recognizeScreenshot(imgPath string) {
 		win.Update(func() {})
 	}
 	go func() {
-		text, err := RecognizeImageFileIn(ctx, imgPath, a.store.Get().OCRLang)
+		text, err := recognizeImageFileIn(ctx, imgPath, a.store.Get().OCRLang)
 		a.mu.Lock()
 		if generation != a.ocrGeneration || !a.isScreenshotMode {
 			a.mu.Unlock()
@@ -447,8 +454,16 @@ func (a *app) renderScreenshotSource(c *ui.Context, t *ui.Theme, s snapshot) {
 		})
 	}
 	if s.source != "" || s.ocrText != "" || s.ocrError != "" {
-		ui.Text(c, "识别原文 · 可直接修正").FontSize(11).TextColor(t.TextMuted)
-		ui.TextArea(c, &a.ocrText).Height(72).FillWidth().Placeholder("识别结果会出现在这里，也可直接输入文字")
+		ui.Text(c, "识别原文 · 可直接修正（回车翻译 · Shift+回车换行）").FontSize(11).TextColor(t.TextMuted)
+		ui.TextArea(c, &a.ocrText).Height(72).FillWidth().
+			Placeholder("识别结果会出现在这里，也可直接输入文字 · 回车快速翻译 · Shift+回车换行").
+			OnTextKey(func(k ui.TextKey) bool {
+				if k.Key == ui.KeyEnter && k.Mods&ui.Shift == 0 {
+					a.translateEditedScreenshot()
+					return true
+				}
+				return false
+			})
 		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 			if ui.PrimaryButton(c, "翻译修正后的原文").Height(28).FontSize(12).Clicked() {
 				a.translateEditedScreenshot()

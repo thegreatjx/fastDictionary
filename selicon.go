@@ -807,22 +807,26 @@ func placeChipWithWidth(displays []geomDisplay, primary geomDisplay, px, py int3
 }
 
 // clampChip keeps the chip inside wa, flipping it above the anchor when the
-// space below is too small.
+// space below is too small, and ensuring symmetrical safety margins on all edges.
 func clampChip(x, y int, wa mygo.Rectangle, width int) (int, int) {
 	if x+width+chipGap > wa.X+wa.Width {
 		x = wa.X + wa.Width - width - chipGap
 	}
+	if x < wa.X+chipGap {
+		x = wa.X + chipGap
+	}
+
 	if y+selIconHeight+chipGap > wa.Y+wa.Height {
 		// Below the selection there is no room: sit above it instead.
 		y = y - selIconHeight - chipGap*2
 	} else {
 		y += chipGap
 	}
-	if y < wa.Y {
-		y = wa.Y
+	if y+selIconHeight+chipGap > wa.Y+wa.Height {
+		y = wa.Y + wa.Height - selIconHeight - chipGap
 	}
-	if x < wa.X {
-		x = wa.X
+	if y < wa.Y+chipGap {
+		y = wa.Y + chipGap
 	}
 	return x, y
 }
@@ -1274,7 +1278,7 @@ func (a *app) moreFlyoutView(c *ui.Context) {
 		ui.Divider(c).FillWidth()
 		if a.chipMenuItem(c, t, iconCopy, "复制选中文字", func() {
 			if text := a.selText(); strings.TrimSpace(text) != "" {
-				mygo.Clipboard.WriteText(text)
+				a.copyToClipboard(text)
 			}
 			a.hideSelIcon()
 		}) {

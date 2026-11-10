@@ -204,6 +204,25 @@ var (
 	snipAtom      uintptr
 )
 
+// beginSnipSessionLocked 声明这次框选会话的全局单例。调用方必须持有 snipMu。
+// 已有会话在进行时返回 false，调用方应放弃本次启动，避免两个消息循环共用
+// 一个 currentSnip、各自置 nil 并乱序触发回调。
+func beginSnipSessionLocked(s *snipSession) bool {
+	if currentSnip != nil {
+		return false
+	}
+	currentSnip = s
+	return true
+}
+
+// endSnipSessionLocked 只在全局单例仍属于 s 时才清空。调用方必须持有 snipMu。
+// 身份判断避免一次迟到的清理把后来启动的新会话误清掉。
+func endSnipSessionLocked(s *snipSession) {
+	if currentSnip == s {
+		currentSnip = nil
+	}
+}
+
 func registerSnipClass() {
 	snipClassOnce.Do(func() {
 		className, _ := syscall.UTF16PtrFromString("FastDictSnipOverlay")
@@ -461,8 +480,19 @@ func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError f
 		}
 
 		snipMu.Lock()
-		currentSnip = session
+		if !beginSnipSessionLocked(session) {
+			snipMu.Unlock()
+			log.Println("fastDictionary: a screen snip is already in progress")
+			return
+		}
 		snipMu.Unlock()
+		// 早退（建窗失败、GDI 失败、裁剪写盘失败）也要清掉全局单例；
+		// 正常路径在消息循环结束后已置 nil，这里的 defer 兜底为 no-op。
+		defer func() {
+			snipMu.Lock()
+			endSnipSessionLocked(session)
+			snipMu.Unlock()
+		}()
 
 		// 5. Create full-screen topmost popup overlay window
 		className, _ := syscall.UTF16PtrFromString("FastDictSnipOverlay")

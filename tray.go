@@ -93,7 +93,7 @@ func (a *app) trayFlyoutView(c *ui.Context) {
 		ui.Divider(c).FillWidth()
 
 		// 4. Quick Links row: [🔖 生词本 (X条)] [退出应用]
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
 			vocabCount := GetVocabularyStore().Count()
 			btnVocab := ui.Button(c, "").Height(24).Padding(1, 8).Radius(4)
 			btnVocab.Children(func() {
@@ -126,8 +126,14 @@ func (a *app) trayFlyoutView(c *ui.Context) {
 
 			ui.Spacer(c).Grow(1)
 
+			quitBg := ui.Hex("#FEE2E2")
+			quitFg := ui.Hex("#DC2626")
+			if t.Dark {
+				quitBg = withAlpha(t.Danger, 0.18)
+				quitFg = t.Danger
+			}
 			btnQuit := ui.Button(c, "退出应用").Height(24).Padding(1, 8).Radius(4).
-				Background(ui.Hex("#FEE2E2")).TextColor(ui.Hex("#DC2626"))
+				Background(quitBg).TextColor(quitFg)
 			if btnQuit.Clicked() {
 				a.quitApp()
 			}

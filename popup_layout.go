@@ -85,7 +85,7 @@ func popupContentHeight(s snapshot, w float32) float32 {
 		// memory tips — so the 保存到笔记本 row ended up below the visible
 		// area: the button worked, but it could not be seen or pressed.
 		h = 150 // window chrome, card padding and the gaps between rows
-		if s.dictResult == nil {
+		if !cardReadyForMode(s) {
 			// Loading placeholder or the parse-failure notice.
 			h += 160
 			break
@@ -130,7 +130,7 @@ func popupContentHeight(s snapshot, w float32) float32 {
 		if s.source != "" {
 			h += float32(wrappedLines(s.source, w-48, 14)) * 16
 		}
-		if s.grammarResult != nil && s.grammarResult.Translation != "" {
+		if cardReadyForMode(s) && s.grammarResult.Translation != "" {
 			h += float32(wrappedLines(s.grammarResult.Translation, w-48, 14)) * 16
 		}
 	case modeWriting:
@@ -138,7 +138,7 @@ func popupContentHeight(s snapshot, w float32) float32 {
 		// per annotation was too small for any annotation that wraps, which
 		// left the save button below the visible area.
 		h = 130
-		if s.writingResult != nil {
+		if cardReadyForMode(s) {
 			wr := s.writingResult
 			if wr.Setting != "" {
 				h += 30

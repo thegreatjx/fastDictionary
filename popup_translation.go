@@ -65,7 +65,10 @@ var popupModeLabels = [...]string{"翻译", "长难句", "写作"}
 // full card (phonetic, examples, memory tips) belongs next to the entry that
 // keeps it, so it lives in 生词本, and the popup keeps the three views a reader
 // actually reads in.
-func popupModeIndex(mode popupMode) int {
+func popupModeIndex(mode, target popupMode) int {
+	if mode == modeInput {
+		mode = target
+	}
 	switch mode {
 	case modeGrammar:
 		return 1
@@ -79,21 +82,25 @@ func popupModeIndex(mode popupMode) int {
 func (a *app) switchPopupMode(index int) {
 	modes := [...]popupMode{modeTranslate, modeGrammar, modeWriting}
 	if index >= 0 && index < len(modes) {
+		a.mu.Lock()
+		a.inputTargetMode = modes[index]
+		a.inputText = ""
+		a.mu.Unlock()
 		a.switchMode(modes[index])
 	}
 }
 
 func (a *app) renderPopupModeTabs(c *ui.Context, s snapshot) {
-	modeIdx := popupModeIndex(s.mode)
+	modeIdx := popupModeIndex(s.mode, s.inputTargetMode)
 	ui.Segmented(c, &modeIdx, popupModeLabels[:]...).Height(30).FontSize(12).Shrink(0).
 		Label("阅读工具").OnChange(func() { a.switchPopupMode(modeIdx) })
 }
 
 func (a *app) renderCompactModeMenu(c *ui.Context, s snapshot) {
-	label := popupModeLabels[popupModeIndex(s.mode)]
+	label := popupModeLabels[popupModeIndex(s.mode, s.inputTargetMode)]
 	ui.MenuButton(c, label, func(m *ui.Menu) {
 		for i, name := range popupModeLabels {
-			if m.Item(name).Checked(i == popupModeIndex(s.mode)).Chosen() {
+			if m.Item(name).Checked(i == popupModeIndex(s.mode, s.inputTargetMode)).Chosen() {
 				a.switchPopupMode(i)
 			}
 		}
@@ -105,12 +112,29 @@ func (a *app) renderCompactModeMenu(c *ui.Context, s snapshot) {
 // they act on instead of competing with the engine selector in the footer.
 func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s snapshot) {
 	if s.mode == modeInput {
+		placeholder := "输入要翻译的内容 · 回车翻译 · Shift+回车换行"
+		switch s.inputTargetMode {
+		case modeGrammar:
+			placeholder = "输入要拆解的英文长句 · 回车拆解 · Shift+回车换行"
+		case modeWriting:
+			placeholder = "输入要批改的英文句子或段落 · 回车批改 · Shift+回车换行"
+		case modeDictionary:
+			placeholder = "输入要查询的单词 · 回车查词"
+		}
 		ui.TextArea(c, &a.inputText).Height(64).FillWidth().
-			Placeholder("输入要翻译的内容 · 回车翻译 · Shift+回车换行").
+			Placeholder(placeholder).
 			AutoFocus().OnTextKey(func(k ui.TextKey) bool {
-			if k.Key == ui.KeyEnter {
+			if k.Key == ui.KeyEnter && k.Mods&ui.Shift == 0 {
 				if text := CleanSelectionText(k.Text()); text != "" {
-					a.translate(text)
+					targetMode := a.inputTargetMode
+					if targetMode == 0 {
+						targetMode = modeTranslate
+					}
+					a.mu.Lock()
+					a.source = text
+					a.inputText = ""
+					a.mu.Unlock()
+					a.switchMode(targetMode)
 				}
 				return true
 			}
@@ -131,12 +155,16 @@ func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s
 			ui.Text(c, "正在翻译…").FontSize(13).TextColor(t.TextMuted)
 		})
 	}
+	if s.target == "" && !s.busy && s.mode != modeInput && s.source == "" && s.errText == "" {
+		a.renderTranslateEmptyState(c, t)
+	}
 	if s.target != "" {
-		if s.isScreenshotMode && s.ocrCompare {
+		hasMultiPara := strings.Contains(strings.TrimSpace(s.source), "\n") && strings.Contains(strings.TrimSpace(s.target), "\n")
+		if (s.isScreenshotMode || hasMultiPara) && s.ocrCompare {
 			a.renderOcrParagraphPairs(c, t, s)
 			a.renderScreenshotPairActions(c, t, cfg, s)
 		} else {
-			if s.isScreenshotMode && strings.Contains(s.target, "\n") {
+			if (s.isScreenshotMode || hasMultiPara) && strings.Contains(s.target, "\n") {
 				if ui.Button(c, "段落对照").Height(24).Padding(1, 6).FontSize(10).Clicked() {
 					a.mu.Lock()
 					a.ocrCompare = true
@@ -263,17 +291,11 @@ func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s
 						}
 					})
 				})
-				if s.copiedMsg != "" {
-					ui.Text(c, s.copiedMsg).FontSize(11).TextColor(t.TextMuted).Wrap()
-				}
 				if s.dict != nil || s.gdict != nil {
 					dictBlock(c, t, s, a)
 				}
 			})
 		}
-	}
-	if s.actionSavedMsg != "" {
-		ui.Text(c, s.actionSavedMsg).FontSize(11).TextColor(t.Accent).Wrap()
 	}
 	a.renderNotesSummary(c, t, cfg, s)
 }

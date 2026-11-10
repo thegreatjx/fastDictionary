@@ -7,6 +7,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"log"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -237,25 +238,95 @@ func (a *app) testGateway() {
 	}()
 }
 
-// applyHotkeys re-registers both global shortcuts from the pending fields.
+func canonicalHotkey(s string) string {
+	s = strings.ToUpper(strings.TrimSpace(s))
+	if s == "" {
+		return ""
+	}
+	parts := strings.Split(s, "+")
+	var mods []string
+	var key string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		switch p {
+		case "CTRL", "CONTROL":
+			mods = append(mods, "CTRL")
+		case "ALT", "MENU":
+			mods = append(mods, "ALT")
+		case "SHIFT":
+			mods = append(mods, "SHIFT")
+		case "WIN", "WINDOWS", "SUPER":
+			mods = append(mods, "WIN")
+		default:
+			key = p
+		}
+	}
+	uniqueMods := make(map[string]bool)
+	var orderedMods []string
+	for _, m := range []string{"ALT", "CTRL", "SHIFT", "WIN"} {
+		for _, mod := range mods {
+			if mod == m && !uniqueMods[m] {
+				uniqueMods[m] = true
+				orderedMods = append(orderedMods, m)
+			}
+		}
+	}
+	if key != "" {
+		orderedMods = append(orderedMods, key)
+	}
+	return strings.Join(orderedMods, "+")
+}
+
+func normalizeHotkey(s string) string {
+	return canonicalHotkey(s)
+}
+
+// checkHotkeyConflict reports whether any two non-empty shortcuts are identical.
+func checkHotkeyConflict(sel, inp, ocr string) string {
+	nSel := canonicalHotkey(sel)
+	nInp := canonicalHotkey(inp)
+	nOcr := canonicalHotkey(ocr)
+
+	if nSel != "" && nInp != "" && nSel == nInp {
+		return fmt.Sprintf("快捷键冲突：划词快捷键与输入快捷键相同 (%s)，请分别指定不同按键", strings.TrimSpace(sel))
+	}
+	if nSel != "" && nOcr != "" && nSel == nOcr {
+		return fmt.Sprintf("快捷键冲突：划词快捷键与截图快捷键相同 (%s)，请分别指定不同按键", strings.TrimSpace(sel))
+	}
+	if nInp != "" && nOcr != "" && nInp == nOcr {
+		return fmt.Sprintf("快捷键冲突：输入快捷键与截图快捷键相同 (%s)，请分别指定不同按键", strings.TrimSpace(inp))
+	}
+	return ""
+}
+
+// applyHotkeys re-registers global shortcuts from the pending fields.
 func (a *app) applyHotkeys() {
-	cfg := a.store.Get()
-	sel := a.pendingHotkeySelection
-	inp := a.pendingHotkeyInput
-	ocr := a.pendingHotkeyScreenshot
-	if sel == "" {
-		sel = cfg.HotkeySelection
+	if !a.hotkeyDraftsInit {
+		a.initHotkeyDrafts()
 	}
-	if inp == "" {
-		inp = cfg.HotkeyInput
+	sel := strings.TrimSpace(a.pendingHotkeySelection)
+	inp := strings.TrimSpace(a.pendingHotkeyInput)
+	ocr := strings.TrimSpace(a.pendingHotkeyScreenshot)
+	if conflict := checkHotkeyConflict(sel, inp, ocr); conflict != "" {
+		a.mu.Lock()
+		a.hotkeyMsg = conflict
+		a.mu.Unlock()
+		if a.cfgWin != nil {
+			a.cfgWin.Update(func() {})
+		}
+		return
 	}
-	if ocr == "" {
-		ocr = cfg.HotkeyScreenshot
-	}
-	prev := cfg
+	prev := a.store.Get()
 	msg := registerHotkeys(sel, inp, ocr, a)
 	a.mu.Lock()
-	a.hotkeyMsg = msg
+	if msg == "" {
+		a.hotkeyMsg = "快捷键已成功生效 ✓"
+	} else {
+		a.hotkeyMsg = msg
+	}
 	a.mu.Unlock()
 	if msg == "" {
 		a.store.Update(func(c *Config) {
@@ -263,14 +334,12 @@ func (a *app) applyHotkeys() {
 			c.HotkeyInput = inp
 			c.HotkeyScreenshot = ocr
 		})
-		a.pendingHotkeySelection = ""
-		a.pendingHotkeyInput = ""
-		a.pendingHotkeyScreenshot = ""
+		a.pendingHotkeySelection = sel
+		a.pendingHotkeyInput = inp
+		a.pendingHotkeyScreenshot = ocr
 	} else {
 		// Registration failed for at least one shortcut: put the working
-		// set back and keep the old values on disk. The old condition here
-		// was always true, so a typo in a shortcut field was saved and the
-		// app came back up with no working shortcuts at all.
+		// set back and keep the old values on disk.
 		log.Printf("fastDictionary: shortcut update rejected: %s", msg)
 		registerHotkeys(prev.HotkeySelection, prev.HotkeyInput, prev.HotkeyScreenshot, a)
 	}
@@ -280,16 +349,22 @@ func (a *app) applyHotkeys() {
 }
 
 func (a *app) initHotkeyDrafts() {
+	if a.hotkeyDraftsInit {
+		return
+	}
 	cfg := a.store.Get()
-	if a.pendingHotkeySelection == "" {
-		a.pendingHotkeySelection = cfg.HotkeySelection
-	}
-	if a.pendingHotkeyInput == "" {
-		a.pendingHotkeyInput = cfg.HotkeyInput
-	}
-	if a.pendingHotkeyScreenshot == "" {
-		a.pendingHotkeyScreenshot = cfg.HotkeyScreenshot
-	}
+	a.pendingHotkeySelection = cfg.HotkeySelection
+	a.pendingHotkeyInput = cfg.HotkeyInput
+	a.pendingHotkeyScreenshot = cfg.HotkeyScreenshot
+	a.hotkeyDraftsInit = true
+}
+
+func (a *app) resetHotkeysToDefault() {
+	def := DefaultConfig()
+	a.pendingHotkeySelection = def.HotkeySelection
+	a.pendingHotkeyScreenshot = def.HotkeyScreenshot
+	a.pendingHotkeyInput = def.HotkeyInput
+	a.applyHotkeys()
 }
 
 func (a *app) loadMagpieModels() {
@@ -340,8 +415,10 @@ func (a *app) openAISettings() {
 
 // showSettings opens (or focuses) the settings window.
 func (a *app) showSettings() {
+	a.hotkeyDraftsInit = false
 	a.initHotkeyDrafts()
 	a.loadMagpieModels()
+	a.vocabConfirmDeleteID = ""
 	if a.cfgWin != nil && !a.cfgWin.IsDestroyed() {
 		a.cfgWin.Show()
 		a.cfgWin.Focus()
@@ -356,7 +433,7 @@ func (a *app) showSettings() {
 		Content:   ui.View(safeView("settings", a.settingsView)),
 	})
 	win.OnClose(func(e *mygo.CloseEvent) {
-		if a.isQuitting {
+		if a.isQuitting.Load() {
 			return
 		}
 		e.PreventDefault()
