@@ -277,23 +277,11 @@ func (a *app) applyHotkeys() {
 	inp := strings.TrimSpace(a.pendingHotkeyInput)
 	ocr := strings.TrimSpace(a.pendingHotkeyScreenshot)
 	if conflict := checkHotkeyConflict(sel, inp, ocr); conflict != "" {
-		a.mu.Lock()
-		a.setHotkeyMsgLocked(hotkeyMsgError, conflict)
-		a.mu.Unlock()
-		if a.cfgWin != nil {
-			a.cfgWin.Update(func() {})
-		}
+		a.setHotkeyMsg(hotkeyMsgError, conflict)
 		return
 	}
 	prev := a.store.Get()
 	msg := registerHotkeys(sel, inp, ocr, a)
-	a.mu.Lock()
-	if msg == "" {
-		a.setHotkeyMsgLocked(hotkeyMsgSuccess, "快捷键已成功生效 ✓")
-	} else {
-		a.setHotkeyMsgLocked(hotkeyMsgError, msg)
-	}
-	a.mu.Unlock()
 	if msg == "" {
 		a.store.Update(func(c *Config) {
 			c.HotkeySelection = sel
@@ -303,12 +291,26 @@ func (a *app) applyHotkeys() {
 		a.pendingHotkeySelection = sel
 		a.pendingHotkeyInput = inp
 		a.pendingHotkeyScreenshot = ocr
-	} else {
-		// Registration failed for at least one shortcut: put the working
-		// set back and keep the old values on disk.
-		log.Printf("fastDictionary: shortcut update rejected: %s", msg)
-		registerHotkeys(prev.HotkeySelection, prev.HotkeyInput, prev.HotkeyScreenshot, a)
+		a.setHotkeyMsg(hotkeyMsgSuccess, "快捷键已成功生效 ✓")
+		// 托盘菜单标签里写着快捷键，菜单只在重建时读取配置。
+		go a.rebuildTray()
+		return
 	}
+
+	// 新的一组注册失败：重新注册旧的一组，磁盘上保留旧值。
+	// 旧键可能已被别的程序占走，回滚失败时必须告诉用户快捷键已失效。
+	log.Printf("fastDictionary: shortcut update rejected: %s", msg)
+	if rollback := registerHotkeys(prev.HotkeySelection, prev.HotkeyInput, prev.HotkeyScreenshot, a); rollback != "" {
+		msg += "原快捷键也未能恢复：" + rollback
+	}
+	a.setHotkeyMsg(hotkeyMsgError, msg)
+}
+
+// setHotkeyMsg records the 快捷键 page message and repaints the settings window.
+func (a *app) setHotkeyMsg(kind hotkeyMsgKind, msg string) {
+	a.mu.Lock()
+	a.setHotkeyMsgLocked(kind, msg)
+	a.mu.Unlock()
 	if a.cfgWin != nil {
 		a.cfgWin.Update(func() {})
 	}

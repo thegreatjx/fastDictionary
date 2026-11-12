@@ -1081,3 +1081,27 @@ func TestOcrParagraphCopyAllHeaderButton(t *testing.T) {
 		t.Fatalf("expected '复制全文' button in paragraph compare header: %v", tt.Texts())
 	}
 }
+
+// TestHotkeyRollbackFailureIsReported: when the new set fails and the old
+// set cannot be re-registered either, the user must learn that shortcuts
+// are now dead instead of seeing only the new-key error.
+func TestHotkeyRollbackFailureIsReported(t *testing.T) {
+	orig := registerHotkeysFunc
+	registerHotkeysFunc = func(sel, inp, ocr string, a *app) string {
+		return "划词快捷键 " + sel + " 注册失败：占用；"
+	}
+	defer func() { registerHotkeysFunc = orig }()
+
+	a := newTestApp()
+	prev := a.store.Get()
+	a.initHotkeyDrafts()
+	a.pendingHotkeySelection = "Ctrl+Shift+9"
+	a.applyHotkeys()
+
+	if !strings.Contains(a.hotkeyMsg, "Ctrl+Shift+9") || !strings.Contains(a.hotkeyMsg, "原快捷键也未能恢复") {
+		t.Fatalf("rollback failure not reported: %q", a.hotkeyMsg)
+	}
+	if got := a.store.Get().HotkeySelection; got != prev.HotkeySelection {
+		t.Fatalf("failed shortcut persisted: %q", got)
+	}
+}
