@@ -985,19 +985,51 @@ func (s *VocabularyStore) EnrichAll() (int, error) {
 		return 0, nil
 	}
 
-	// Merge by id: entries added while the enrichment ran must survive.
+	// Merge by id: entries added or edited while the enrichment ran must
+	// survive. Only the fields enrichment owns are copied, so a review grade
+	// (or a manual edit) that happened during the network calls is not
+	// reverted by a stale snapshot.
+	s.mergeEnriched(work)
+	return count, s.saveOrLog()
+}
+
+// mergeEnriched writes the enrichment-owned fields back by ID. It is separate
+// from EnrichAll so the no-clobber rule can be tested without the network.
+func (s *VocabularyStore) mergeEnriched(work []VocabularyEntry) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	byID := make(map[string]VocabularyEntry, len(work))
 	for _, e := range work {
 		byID[e.ID] = e
 	}
 	for i := range s.entries {
-		if e, ok := byID[s.entries[i].ID]; ok {
-			s.entries[i] = e
+		e, ok := byID[s.entries[i].ID]
+		if !ok {
+			continue
+		}
+		cur := &s.entries[i]
+		if e.Phonetic != "" {
+			cur.Phonetic = e.Phonetic
+		}
+		if e.PartOfSpeech != "" {
+			cur.PartOfSpeech = e.PartOfSpeech
+		}
+		if e.Definition != "" {
+			cur.Definition = e.Definition
+		}
+		if e.Difficulty != "" {
+			cur.Difficulty = e.Difficulty
+		}
+		if e.Context != "" {
+			cur.Context = e.Context
+		}
+		if e.ContextTranslation != "" {
+			cur.ContextTranslation = e.ContextTranslation
+		}
+		if e.MemoryTips != "" {
+			cur.MemoryTips = e.MemoryTips
 		}
 	}
-	s.mu.Unlock()
-	return count, s.saveOrLog()
 }
 
 // saveOrLog persists the notebook and reports a failure instead of dropping

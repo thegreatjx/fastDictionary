@@ -292,18 +292,23 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 			// buttons overflowed the form as soon as the window was narrow.
 			ui.SearchField(c, &a.vocabSearchQuery).FillWidth().OnChange(func() { a.resetVocabularyViewState() })
 
-			// Row 3: the actions, which wrap freely now.
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
-				// Review sits first: when words are due it is the action the
-				// notebook page exists for, and the number is the only visible
-				// reminder that the queue is waiting.
-				if due := vocabStore.DueCount(time.Now()); due > 0 {
-					if ui.Button(c, fmt.Sprintf("🎯 复习 %d", due)).Height(28).Padding(2, 10).Radius(5).
+			// Review reminder: the queue is the reason the notebook exists, so
+			// it gets its own row instead of an eighth button squeezed into
+			// the action row, where it would push the clear button off-screen.
+			if due := vocabStore.DueCount(time.Now()); due > 0 {
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+					ui.Icon(c, iconBookmark).Size(13, 13).TextColor(t.Accent)
+					ui.Textf(c, "%d 个生词到期", due).FontSize(12).TextColor(t.Accent)
+					if ui.Button(c, "开始复习").Height(26).Padding(2, 12).Radius(5).
 						Background(t.SurfaceHover).TextColor(t.Accent).
 						Tooltip("按间隔重复复习到期生词").Clicked() {
 						a.startVocabReview()
 					}
-				}
+				})
+			}
+
+			// Row 3: the actions.
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
 				if a.lastDeletedVocab != nil {
 					btnUndo := ui.Button(c, "↩ 撤销删除「"+truncateFor(a.lastDeletedVocab.Term, 10)+"」").
 						Height(28).Padding(2, 8).Radius(5).Background(t.SurfaceHover).

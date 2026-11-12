@@ -393,6 +393,7 @@ func main() {
 		// dragging the frame.
 		shotSizeW, shotSizeH := 0, 0
 		openSettingsFlag := false
+		reviewDemo := false
 		chipDemo := false
 		chipTipDemo := false
 		previewDark := false
@@ -416,6 +417,11 @@ func main() {
 				if i+1 < len(args) {
 					a.page = args[i+1]
 				}
+			case "--review":
+				// Preview the spaced-repetition card without saving words
+				// through the popup first.
+				reviewDemo = true
+				openSettingsFlag = true
 			case "--edit-action":
 				if i+1 < len(args) {
 					a.editingActionID = args[i+1]
@@ -591,6 +597,11 @@ func main() {
 		headless := shotPath != "" || chipDemo || chipTipDemo || demoText != "" || demoSelection != "" || demoAction != "" || demoOCR != ""
 		if openSettingsFlag || (firstRun && !headless) {
 			a.showSettings()
+		}
+		if reviewDemo {
+			a.page = "vocabulary"
+			a.showSettings()
+			a.startVocabReview()
 		}
 
 		if shotPath != "" {

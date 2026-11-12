@@ -18,7 +18,7 @@
 在桌面阅读与学习英语时，许多现代翻译工具要么依赖笨重的 Electron / WebView 框架（内存占用数百兆、唤醒延迟明显），要么充斥着高饱和渐变与卡片堆砌的视觉噪音。
 
 **fast词典 (fastDictionary)** 秉持三项核心原则打造：
-1. **Native Precision（原生精准）**：纯 Go 开发（基于 [mygo](https://github.com/egoist/mygo) 原生渲染），无 cgo、无重量级浏览器内核。二进制体积仅约 20MB，划词唤醒延迟低于 50ms，内存消耗极低。
+1. **Native Precision（原生精准）**：纯 Go 开发（基于 [mygo](https://github.com/egoist/mygo) 原生渲染），无 cgo、无重量级浏览器内核。二进制体积约 22MB，划词唤醒延迟低于 50ms，内存消耗极低。
 2. **Quiet Craft（克制考究）**：拒绝粗劣套壳与视觉噪音。悬浮条采用硬件级区域裁切（`CombineRgn`），0 杂色 0 黑边；冷调低饱和配色系统，悬停即时提示操作释义。
 3. **Learner First（学习者优先）**：不仅仅是查一个中文释义，更提供 CEFR 难度分级、标准 IPA 音标、长难句语法树拆解、AI 写作润色对比与生词本管理。
 

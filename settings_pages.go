@@ -793,7 +793,7 @@ func (a *app) pageAbout(c *ui.Context, t *ui.Theme, cfg Config) {
 		}).Description("默认只记录字符数；开启后会写入选中的原文与 OCR 结果，便于排查取词问题。")
 
 		ui.Field(c, "日志文件", func() {
-			if ui.Button(c, "打开日志目录").Height(26).Padding(2, 10).FontSize(11).Clicked() {
+			if ui.Button(c, "打开日志目录").Height(26).Width(140).Padding(2, 10).FontSize(11).Clicked() {
 				if err := mygo.Shell.OpenExternal(filepath.Dir(settingsLogPath())); err != nil {
 					a.actionSavedMsg = "打开日志目录失败: " + err.Error()
 				}
@@ -810,14 +810,14 @@ func (a *app) pageAbout(c *ui.Context, t *ui.Theme, cfg Config) {
 			if checking {
 				label = "检查中…"
 			}
-			if ui.Button(c, label).Height(26).Padding(2, 10).FontSize(11).Clicked() && !checking {
+			if ui.Button(c, label).Height(26).Width(140).Padding(2, 10).FontSize(11).Clicked() && !checking {
 				a.checkUpdatesAsync()
 			}
 			if msg != "" {
 				ui.Text(c, msg).FontSize(12).TextColor(t.TextMuted).Grow(1).Wrap()
 			}
 			if newer && url != "" {
-				if ui.Button(c, "打开下载页").Height(26).Padding(2, 10).FontSize(11).Clicked() {
+				if ui.Button(c, "打开下载页").Height(26).Width(140).Padding(2, 10).FontSize(11).Clicked() {
 					if err := mygo.Shell.OpenExternal(url); err != nil {
 						a.actionSavedMsg = "打开下载页失败: " + err.Error()
 					}

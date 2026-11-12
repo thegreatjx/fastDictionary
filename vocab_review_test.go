@@ -174,3 +174,29 @@ func TestReviewGradeLabelsStayHuman(t *testing.T) {
 		}
 	}
 }
+
+// EnrichAll works on a snapshot and writes the result back later. Replacing
+// the whole entry reverted anything that happened meanwhile — including a
+// review grade — so only the fields enrichment owns may be copied back.
+func TestEnrichmentMergeKeepsReviewSchedule(t *testing.T) {
+	s := &VocabularyStore{entries: []VocabularyEntry{{
+		ID: "a", Term: "alpha", Definition: "first", Source: "dict",
+		ReviewCount: 4, ReviewIntervalDays: 9, ReviewDueAt: time.Now().Add(9 * 24 * time.Hour),
+	}}}
+	stale := s.List()
+	stale[0].Phonetic = "/ˈælfə/"
+	stale[0].Difficulty = "B1"
+
+	s.mergeEnriched(stale)
+
+	got, ok := s.Get("a")
+	if !ok {
+		t.Fatal("entry vanished")
+	}
+	if got.ReviewCount != 4 || got.ReviewIntervalDays != 9 || got.ReviewDueAt.IsZero() {
+		t.Fatalf("enrichment reverted the review schedule: %+v", got)
+	}
+	if got.Phonetic != "/ˈælfə/" || got.Difficulty != "B1" {
+		t.Fatalf("enrichment fields were not merged: %+v", got)
+	}
+}
