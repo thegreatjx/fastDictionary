@@ -1019,12 +1019,12 @@ func (a *app) onSelectionGesture(g selectionGesture) {
 		// The read itself is reported, not just the refusal: "read one
 		// character" and "read nothing" are different bugs, and telling
 		// them apart from the log used to be impossible.
-		log.Printf("fastDictionary: gesture produced no chip (%s): %q from %q (capture=%s)",
-			why, truncateFor(sel.Text, 30), owner, cfg.SelectionCapture)
+		log.Printf("fastDictionary: gesture produced no chip (%s): %s from %q (capture=%s)",
+			why, a.logText(sel.Text, 30), owner, cfg.SelectionCapture)
 		return
 	}
-	log.Printf("fastDictionary: selection %q (%d chars) bounds=%v",
-		truncateFor(sel.Text, 30), len(sel.Text), sel.Bounds)
+	log.Printf("fastDictionary: selection %s (%d chars) bounds=%v",
+		a.logText(sel.Text, 30), len(sel.Text), sel.Bounds)
 	a.deliverSelection(sel, px, py)
 }
 

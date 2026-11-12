@@ -1,0 +1,57 @@
+name: Release
+
+# 打 tag 即出包：固定版本拉取 OCR 运行时 → 构建绿色包 → 上传 zip 与
+# SHA256 到 GitHub Release。
+#
+# 代码签名是可选的：仓库 secrets 里同时配置 FD_SIGN_CERT_BASE64 与
+# FD_SIGN_PASSWORD 才会签名，否则产出未签名包（用户会看到 SmartScreen 提示）。
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: 拉取并校验 OCR 运行时
+        shell: pwsh
+        run: ./scripts/fetch-ocr-deps.ps1
+
+      - name: 构建分发包
+        shell: pwsh
+        env:
+          SIGN_CERT_B64: ${{ secrets.FD_SIGN_CERT_BASE64 }}
+          FD_SIGN_PASSWORD: ${{ secrets.FD_SIGN_PASSWORD }}
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          if ($env:SIGN_CERT_B64) {
+            $path = Join-Path $env:RUNNER_TEMP 'fastDictionary-signing.pfx'
+            [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:SIGN_CERT_B64))
+            $env:FD_SIGN_CERT = $path
+            ./build.ps1 -Package -Overwrite -Version $version -Sign
+          } else {
+            ./build.ps1 -Package -Overwrite -Version $version
+          }
+
+      - name: 上传 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.zip
+            dist/*.zip.sha256
+          body: |
+            fastDictionary ${{ github.ref_name }}
+
+            校验下载包：`certutil -hashfile <zip> SHA256`，与同名 `.sha256` 文件比对。

@@ -12,6 +12,7 @@
 | [HANDOFF_INDRA.md](HANDOFF_INDRA.md) | Indra OCR 接入全过程：选型依据、实测数据、算法逆向、踩坑记录 | 改 OCR、换模型、排查识别质量前 |
 | [CHANGES_2026-10-18.md](CHANGES_2026-10-18.md) | 那一轮改动的详细清单 | 追溯某次改动的动机时 |
 | [ocr.md](ocr.md) | OCR 引擎选型对比与实测数据 | 换 OCR 方案前 |
+| [../CHANGELOG.md](../CHANGELOG.md) | 版本更新记录（新功能、修复、发布方式） | 回答「这个版本改了什么」时 |
 
 ## 可复现基准
 

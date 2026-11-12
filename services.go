@@ -530,6 +530,7 @@ func TranslateRace(ctx context.Context, text, from, to, mode string) raceResult 
 	for _, c := range cands {
 		c := c
 		go func() {
+			defer recoverLog("services.go:TranslateRace")
 			txt, det, err := c.run()
 			// Record here, not after the race is decided. The winner returns
 			// at once and stops reading the channel, so a loser's failure was

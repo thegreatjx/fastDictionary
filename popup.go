@@ -151,6 +151,19 @@ type app struct {
 	// The card the 词典 tab used to render lives here now, so this decides
 	// which row is showing it; "" means every row is in its summary form.
 	vocabExpandedID string
+	// Spaced-repetition session: a snapshot of due IDs keeps the queue stable
+	// while grading changes due dates mid-session.
+	vocabReviewing      bool
+	vocabReviewIDs      []string
+	vocabReviewIdx      int
+	vocabReviewRevealed bool
+	vocabReviewDone     int
+	// update* holds the result of the user-triggered 检查更新. Guarded by mu:
+	// the fetch runs in a goroutine while the About page paints.
+	updateChecking bool
+	updateMsg      string
+	updateURL      string
+	updateNewer    bool
 	// notesSaved records that the 猜你想存 checklist was saved; grammarSaved
 	// records that the sentence card was. They were one flag, so saving words
 	// from 猜你想存 made the sentence card claim "already in the notebook" for
@@ -405,15 +418,24 @@ func (a *app) openPopup(m popupMode) {
 		if sel.Text == "" {
 			// Nothing was selected, or the application would not give it up.
 			// Say so: an input box with no explanation reads as "the
-			// shortcut opened the wrong thing".
-			log.Printf("fastDictionary: no selection from %q; opening input mode", app)
+			// shortcut opened the wrong thing". An elevated foreground
+			// window is the one case where no setting can help, so it gets
+			// its own explanation instead of the generic one.
+			selfElevated := currentProcessElevated()
+			blocked := !selfElevated && foregroundProcessElevated()
+			log.Printf("fastDictionary: no selection from %q; opening input mode (elevated window=%v, self=%v)",
+				app, blocked, selfElevated)
+			notice := elevationNotice(app, blocked, selfElevated)
+			if notice == "" {
+				notice = "没取到选中的文字（" + app + "）。可以直接在下面输入，或在设置里把「取词方式」改成「模拟复制」。"
+			}
 			a.mu.Lock()
-			a.notice = "没取到选中的文字（" + app + "）。可以直接在下面输入，或在设置里把「取词方式」改成「模拟复制」。"
+			a.notice = notice
 			a.mu.Unlock()
 			a.openPopupWithText(modeInput, "")
 			return
 		}
-		log.Printf("fastDictionary: selection %q from %q", truncateFor(sel.Text, 40), app)
+		log.Printf("fastDictionary: selection %s from %q", a.logText(sel.Text, 40), app)
 		// Honour the "默认模式" preference: with AI 精翻 on, the user picked
 		// which card a fresh selection should land in. Without this the
 		// setting was inert — it rendered, it persisted, and it changed

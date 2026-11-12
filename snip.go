@@ -398,6 +398,7 @@ func snipCacheDir() (string, error) {
 // the user instead of the overlay just vanishing.
 func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError func(err error)) {
 	go func() {
+		defer recoverLog("snip.go:StartNativeSnip")
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 

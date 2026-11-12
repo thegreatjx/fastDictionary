@@ -11,7 +11,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -78,12 +77,20 @@ func registerHotkeys(sel, inp, ocr string, a *app) string {
 // rebuilt after the mode changes.
 func (a *app) trayMenu() *mygo.Menu {
 	cfg := a.store.Get()
-	return mygo.NewMenu([]*mygo.MenuItem{
+	items := []*mygo.MenuItem{
 		{Label: "划词翻译 (" + cfg.HotkeySelection + ")", Click: func(*mygo.MenuItem, *mygo.Window) { a.openPopup(modeSelection) }},
 		{Label: "输入翻译 (" + cfg.HotkeyInput + ")", Click: func(*mygo.MenuItem, *mygo.Window) { a.openPopup(modeInput) }},
 		{Label: "截图翻译 (" + cfg.HotkeyScreenshot + ")", Click: func(*mygo.MenuItem, *mygo.Window) { a.TriggerScreenshotOCR() }},
+	}
+	if due := GetVocabularyStore().DueCount(time.Now()); due > 0 {
+		items = append(items, &mygo.MenuItem{
+			Label: fmt.Sprintf("复习生词 (%d 个到期)", due),
+			Click: func(*mygo.MenuItem, *mygo.Window) { a.openVocabReview() },
+		})
+	}
+	items = append(items,
 		mygo.Separator(),
-		{Label: "划词模式", Submenu: []*mygo.MenuItem{
+		&mygo.MenuItem{Label: "划词模式", Submenu: []*mygo.MenuItem{
 			selectionModeItem(a, "icon", "显示小图标", cfg),
 			selectionModeItem(a, "auto", "直接翻译", cfg),
 			selectionModeItem(a, "hotkey", "仅快捷键", cfg),
@@ -91,10 +98,12 @@ func (a *app) trayMenu() *mygo.Menu {
 		mygo.Separator(),
 		pauseSelectionItem(a),
 		mygo.Separator(),
-		{Label: "设置", Click: func(*mygo.MenuItem, *mygo.Window) { a.showSettings() }},
+		elevationMenuItem(a),
+		&mygo.MenuItem{Label: "设置", Click: func(*mygo.MenuItem, *mygo.Window) { a.showSettings() }},
 		mygo.Separator(),
-		{Label: "退出 " + appTitle, Click: func(*mygo.MenuItem, *mygo.Window) { a.quitApp() }},
-	})
+		&mygo.MenuItem{Label: "退出 " + appTitle, Click: func(*mygo.MenuItem, *mygo.Window) { a.quitApp() }},
+	)
+	return mygo.NewMenu(items)
 }
 
 func (a *app) quitApp() {
@@ -179,6 +188,31 @@ func pauseSelectionItem(a *app) *mygo.MenuItem {
 	}
 }
 
+// elevationMenuItem offers the only remedy for an elevated foreground
+// window: restart this process at the same integrity level. Windows blocks
+// hooks and UI Automation across that boundary, so no setting can fix it.
+func elevationMenuItem(a *app) *mygo.MenuItem {
+	if currentProcessElevated() {
+		return &mygo.MenuItem{Label: "已以管理员身份运行", Disabled: true}
+	}
+	return &mygo.MenuItem{
+		Label: "以管理员身份重启…",
+		Click: func(*mygo.MenuItem, *mygo.Window) {
+			go func() {
+				defer recoverLog("main.go:elevationRestart")
+				if err := relaunchElevated(); err != nil {
+					log.Printf("fastDictionary: %v", err)
+					return
+				}
+				// Give the elevated process time to load the config and
+				// install its own hooks before this one lets go.
+				time.Sleep(800 * time.Millisecond)
+				mygo.RunOnMain(func() { a.quitApp() })
+			}()
+		},
+	}
+}
+
 // selectionModeItem is one radio entry of the tray's 划词模式 submenu.
 func selectionModeItem(a *app, mode, label string, cfg Config) *mygo.MenuItem {
 	return &mygo.MenuItem{
@@ -197,11 +231,10 @@ func selectionModeItem(a *app, mode, label string, cfg Config) *mygo.MenuItem {
 
 // setupLogging tees log output to a file next to the config.
 //
-// The shipped executable is built with -H=windowsgui, so it has no stderr:
-// every diagnostic line the selection path writes (hook installs, gesture
-// rejections, chip placement, AI failures) went nowhere, which is why a
-// user reporting "the chip never appears" could not attach anything. The
-// file is truncated on each start and capped, so it never grows.
+// The file is appended to and rotated at logMaxBytes, so the lines written
+// just before a crash survive the restart that follows it. The runtime's own
+// fatal output (panics that no recover caught) goes to the same file through
+// SetCrashOutput; without it a windowsgui process died without a trace.
 func setupLogging() {
 	dir, err := mygo.App.Path(mygo.PathLogs)
 	if err != nil || dir == "" {
@@ -214,12 +247,16 @@ func setupLogging() {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return
 	}
-	f, err := os.OpenFile(filepath.Join(dir, logFile), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	f, err := openLogFile(filepath.Join(dir, logFile), logMaxBytes)
 	if err != nil {
 		return
 	}
-	log.SetOutput(io.MultiWriter(f))
+	log.SetOutput(f)
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+	log.Printf("fastDictionary: log %s (pid %d, rotates at %d KiB)", filepath.Join(dir, logFile), os.Getpid(), logMaxBytes/1024)
+	if err := debug.SetCrashOutput(f, debug.CrashOptions{}); err != nil {
+		log.Printf("fastDictionary: crash output unavailable: %v", err)
+	}
 }
 
 // safeView wraps a view function so a panic while rendering leaves a
@@ -267,7 +304,12 @@ func main() {
 	// the log, so a second launch would wipe the running instance's log on
 	// its way out, exactly when the user is trying to find out why the
 	// shortcut "did nothing".
-	if !mygo.App.RequestSingleInstanceLock() {
+	// A takeover launch is the elevated restart the tray menu asks for. The
+	// new process cannot take the lock while this one is still shutting
+	// down, and waiting for the old process to exit before UAC would lose
+	// the app when the prompt is cancelled. The new process skips the lock;
+	// the old one quits as soon as the new one started.
+	if !elevatedTakeoverRequested() && !mygo.App.RequestSingleInstanceLock() {
 		return
 	}
 	setupLogging()
@@ -387,6 +429,7 @@ func main() {
 				// rejected by the policy" look identical from the outside;
 				// this counter is the only way to tell them apart.
 				go func() {
+					defer recoverLog("main.go:main")
 					last := uint64(0)
 					for i := 0; i < 120; i++ {
 						sleepMS(1000)
@@ -455,6 +498,7 @@ func main() {
 			a.sel.text = "serendipity"
 			a.mu.Unlock()
 			go func() {
+				defer recoverLog("main.go:main")
 				sleepMS(600)
 				a.showSelIcon(760, 520, "serendipity")
 				sleepMS(700)
@@ -551,6 +595,7 @@ func main() {
 
 		if shotPath != "" {
 			go func() {
+				defer recoverLog("main.go:main")
 				time.Sleep(shotDelay)
 				target := win
 				if shotWindow == "settings" && a.cfgWin != nil {
@@ -579,6 +624,7 @@ func main() {
 					mygo.App.Quit()
 				})
 				go func() {
+					defer recoverLog("main.go:main")
 					time.Sleep(500 * time.Millisecond)
 					os.Exit(0)
 				}()

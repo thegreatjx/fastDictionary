@@ -108,6 +108,7 @@ func (a *app) testAIConnection() {
 	a.settingsRefresh()
 
 	go func() {
+		defer recoverLog("ai_settings.go:testAIConnection")
 		defer cancel()
 		started := time.Now()
 		out, err := aiProbeFunc(ctx, cfg.AIConn(cfg.AIModel),
@@ -186,6 +187,7 @@ func (a *app) fetchAIModels(force bool) {
 	a.settingsRefresh()
 
 	go func() {
+		defer recoverLog("ai_settings.go:fetchAIModels")
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		models, err := fetchAvailableModelsFunc(ctx, cfg.AIConn(cfg.AIModel))

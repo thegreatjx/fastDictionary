@@ -84,11 +84,14 @@ type Config struct {
 	AIEffort string `json:"ai_effort"` // fast | deep
 
 	// window behaviour
-	CloseOnBlur    bool    `json:"close_on_blur"`
-	AlwaysOnTop    bool    `json:"always_on_top"`
-	PopupWidth     float32 `json:"popup_width"`
-	ThemeMode      string  `json:"theme_mode"` // system | light | dark
-	HistoryEnabled bool    `json:"history_enabled"`
+	CloseOnBlur bool    `json:"close_on_blur"`
+	AlwaysOnTop bool    `json:"always_on_top"`
+	PopupWidth  float32 `json:"popup_width"`
+	ThemeMode   string  `json:"theme_mode"` // system | light | dark
+	// LogSelectionText writes the selected text and OCR output into the log.
+	// Off by default: the file is plain text and lives far longer than the
+	// popup it was copied from.
+	LogSelectionText bool `json:"log_selection_text"`
 	// ShowNotes is the "猜你想存" card: whether the popup offers to save the
 	// words an AI found in the selected sentence.
 	ShowNotes bool `json:"show_notes"`
@@ -327,7 +330,6 @@ func DefaultConfig() Config {
 		AlwaysOnTop:        true,
 		PopupWidth:         500,
 		ThemeMode:          "system",
-		HistoryEnabled:     true,
 		ShowNotes:          true,
 		NotesMigrated:      1,
 		WindowOpacity:      0.95,

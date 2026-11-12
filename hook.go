@@ -267,6 +267,7 @@ func lowLevelMouseProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 		g := selectionGesture{X: cx, Y: cy, Kind: kind, LastKey: lastKey, PressedAt: pressedAt}
 		hwnd := target
 		go func() {
+			defer recoverLog("hook.go:lowLevelMouseProc")
 			settleAfterMouseUp()
 			g.Owner = processNameOf(hwnd)
 			OnSelectionGesture(g)
@@ -280,6 +281,7 @@ func lowLevelMouseProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 		g := selectionGesture{X: fx, Y: fy, Kind: kind, LastKey: lastKey, PressedAt: pressedAt}
 		hwnd := target
 		go func() {
+			defer recoverLog("hook.go:lowLevelMouseProc")
 			settleAfterMouseUp()
 			g.Owner = processNameOf(hwnd)
 			OnSelectionGesture(g)
@@ -336,6 +338,7 @@ func lowLevelKeyProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 				g := selectionGesture{Kind: gestureKeyboard, PressedAt: time.Now()}
 				hwnd := target
 				go func() {
+					defer recoverLog("hook.go:lowLevelKeyProc")
 					settleAfterMouseUp()
 					p := cursorPoint()
 					g.X, g.Y = p.X, p.Y

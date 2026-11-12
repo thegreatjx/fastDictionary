@@ -604,6 +604,7 @@ func (a *app) saveTranslationToVocab(source, target string) {
 		return
 	}
 	go func() {
+		defer recoverLog("popup_translation.go:saveTranslationToVocab")
 		GetVocabularyStore().Add(VocabularyEntry{Term: TruncateEllipsis(source, 80), Context: source, ContextTranslation: target, Source: "translate"})
 		a.mu.Lock()
 		a.actionSavedMsg = "原文与译文已保存到本地生词本 ✓"

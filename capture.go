@@ -302,6 +302,7 @@ func captureUIA() selection {
 	// pinned thread, which is cheaper than a frozen app.
 	ch := make(chan selection, 1)
 	go func() {
+		defer recoverLog("capture.go:captureUIA")
 		s, err := SelectionUIA()
 		if err != nil {
 			s = selection{}

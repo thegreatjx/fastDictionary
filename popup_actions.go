@@ -123,6 +123,7 @@ func (a *app) translateTextWithReflow(text string, keepParagraphs bool) {
 	}
 
 	go func() {
+		defer recoverLog("popup_actions.go:translateTextWithReflow")
 		start := time.Now()
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
@@ -141,8 +142,16 @@ func (a *app) translateTextWithReflow(text string, keepParagraphs bool) {
 		if r.Err == nil && word && cfg.DictEnabled {
 			var wg sync.WaitGroup
 			wg.Add(2)
-			go func() { defer wg.Done(); yd, _ = LookupYoudao(ctx, text) }()
-			go func() { defer wg.Done(); gd, _ = GoogleDict(ctx, text, from, to) }()
+			go func() {
+				defer recoverLog("popup_actions.go:dict")
+				defer wg.Done()
+				yd, _ = LookupYoudao(ctx, text)
+			}()
+			go func() {
+				defer recoverLog("popup_actions.go:gdict")
+				defer wg.Done()
+				gd, _ = GoogleDict(ctx, text, from, to)
+			}()
 			wg.Wait()
 		}
 
@@ -153,7 +162,7 @@ func (a *app) translateTextWithReflow(text string, keepParagraphs bool) {
 			// answer is the one the user is waiting for, so drop this one
 			// instead of flashing a stale result.
 			a.mu.Unlock()
-			log.Printf("fastDictionary: dropped stale translation of %q", truncateFor(text, 40))
+			log.Printf("fastDictionary: dropped stale translation of %s", a.logText(text, 40))
 			return
 		}
 		a.busy = false
@@ -170,8 +179,8 @@ func (a *app) translateTextWithReflow(text string, keepParagraphs bool) {
 			a.dict, a.gdict = yd, gd
 		}
 		a.mu.Unlock()
-		log.Printf("fastDictionary: %q -> %q engine=%s dict=%v in %v (err=%v)",
-			truncateFor(text, 40), truncateFor(r.Text, 40), r.Engine, yd != nil, elapsed, r.Err)
+		log.Printf("fastDictionary: %s -> %s engine=%s dict=%v in %v (err=%v)",
+			a.logText(text, 40), a.logText(r.Text, 40), r.Engine, yd != nil, elapsed, r.Err)
 		if win != nil {
 			win.Update(func() {})
 		}
@@ -264,6 +273,7 @@ func (a *app) extractNotesForGen(gen requestToken, text string) {
 	}
 
 	go func() {
+		defer recoverLog("popup_actions.go:extractNotesForGen")
 		defer cancel()
 
 		systemPrompt := "你是一个面向语言学习者的专业词典与背单词助手。\n" +
@@ -471,6 +481,7 @@ func (a *app) prefillActionTranslation(gen requestToken, text, targetLang string
 		to = cfg.SecondLang
 	}
 	go func() {
+		defer recoverLog("popup_actions.go:prefillActionTranslation")
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
 		r := TranslateRace(ctx, text, from, to, cfg.EngineMode)
@@ -782,6 +793,7 @@ func (a *app) runAction(actionID string, text string) {
 	}
 
 	go func() {
+		defer recoverLog("popup_actions.go:runAction")
 		defer cancel()
 		targetLangName := langLabels[cfg.TargetLang]
 		if targetLangName == "" {
@@ -913,6 +925,7 @@ func (a *app) refineWithAI() {
 	}
 
 	go func() {
+		defer recoverLog("popup_actions.go:refineWithAI")
 		defer cancel()
 		sys := "You are a translator. Translate the text into " + langPromptName(targetLang) +
 			". Keep terminology accurate, keep the original's tone and structure, and output only the translation with no explanation."
@@ -1087,6 +1100,7 @@ func (a *app) saveCurrentWordToVocab(s snapshot) {
 		Definition: explanation, Source: "dict", CreatedAt: time.Now(),
 	}
 	go func() {
+		defer recoverLog("popup_actions.go:saveCurrentWordToVocab")
 		EnrichVocabularyEntry(&entry)
 		GetVocabularyStore().Add(entry)
 	}()
@@ -1122,6 +1136,7 @@ func (a *app) saveNotesToVocab(s snapshot) {
 		a.win.Update(func() {})
 	}
 	go func() {
+		defer recoverLog("popup_actions.go:saveNotesToVocab")
 		for i := range pending {
 			EnrichVocabularyEntry(&pending[i])
 		}

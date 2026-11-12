@@ -2,10 +2,12 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -759,7 +761,7 @@ func (a *app) pageHotkey(c *ui.Context, t *ui.Theme, cfg Config) {
 }
 
 func (a *app) pageAbout(c *ui.Context, t *ui.Theme, cfg Config) {
-	heading(c, t, "关于", appTitle+" 1.0.0")
+	heading(c, t, "关于", appTitle+" "+appVersion)
 	ui.Text(c, "轻巧极速的桌面划词翻译与词典工具：原生 UI 渲染、零卡顿、低内存常驻。").FontSize(13).TextColor(t.Text).Wrap()
 	// FillWidth, never Fill: Fill sets both axes to 100%, so in this column the
 	// divider grew to the full height of the scroll viewport and the page
@@ -767,10 +769,10 @@ func (a *app) pageAbout(c *ui.Context, t *ui.Theme, cfg Config) {
 	ui.Divider(c).FillWidth()
 	rows := [][2]string{
 		{"构建", buildStamp},
-		{"翻译引擎", "微软 translatetext（免鉴权）⇄ 谷歌 gtx，竞速取先到"},
+		{"翻译引擎", "微软 translatetext、谷歌 gtx、腾讯翻译君，免鉴权竞速"},
 		{"词典与音标", "有道 jsonapi（英/美 IPA）"},
-		{"发音", "有道 dictvoice，mp3 缓存 + 系统 MCI 播放"},
-		{"OCR 引擎", "Windows.Media.Ocr 原生离线神经文字识别"},
+		{"发音", "Edge TTS 流式语音，失败时回落系统 SAPI"},
+		{"OCR 引擎", "Indra OCR 本地推理，缺模型时回落 Windows.Media.Ocr"},
 		{"AI 精翻", "Magpie 或任意 OpenAI 兼容服务"},
 		{"外壳", "mygo v0.8.3 原生 UI（Go，无 cgo）"},
 	}
@@ -781,5 +783,49 @@ func (a *app) pageAbout(c *ui.Context, t *ui.Theme, cfg Config) {
 		})
 	}
 	ui.Divider(c).FillWidth()
-	ui.Text(c, "配置文件：用户数据目录下的 config.json").FontSize(12).TextColor(t.TextMuted)
+
+	ui.Form(c, func() {
+		ui.Field(c, "诊断日志", func() {
+			v := cfg.LogSelectionText
+			ui.Switch(c, &v).OnChange(func() {
+				a.store.Update(func(c *Config) { c.LogSelectionText = v })
+			})
+		}).Description("默认只记录字符数；开启后会写入选中的原文与 OCR 结果，便于排查取词问题。")
+
+		ui.Field(c, "日志文件", func() {
+			if ui.Button(c, "打开日志目录").Height(26).Padding(2, 10).FontSize(11).Clicked() {
+				if err := mygo.Shell.OpenExternal(filepath.Dir(settingsLogPath())); err != nil {
+					a.actionSavedMsg = "打开日志目录失败: " + err.Error()
+				}
+			}
+			ui.Text(c, settingsLogPath()).FontSize(11).TextColor(t.TextMuted).Grow(1).Wrap()
+		}).Description("启动时若日志超过 2 MB，会轮转为 .1 并保留一份；崩溃时的运行时输出也写在这里。")
+
+		// The update check only reads a public release feed. Installing a new
+		// build stays a manual download, so the app never replaces its own exe
+		// behind the user's back.
+		checking, msg, url, newer := a.updateSnapshot()
+		ui.Field(c, "版本更新", func() {
+			label := "检查更新"
+			if checking {
+				label = "检查中…"
+			}
+			if ui.Button(c, label).Height(26).Padding(2, 10).FontSize(11).Clicked() && !checking {
+				a.checkUpdatesAsync()
+			}
+			if msg != "" {
+				ui.Text(c, msg).FontSize(12).TextColor(t.TextMuted).Grow(1).Wrap()
+			}
+			if newer && url != "" {
+				if ui.Button(c, "打开下载页").Height(26).Padding(2, 10).FontSize(11).Clicked() {
+					if err := mygo.Shell.OpenExternal(url); err != nil {
+						a.actionSavedMsg = "打开下载页失败: " + err.Error()
+					}
+				}
+			}
+		}).Description("读取 GitHub 上的最新发布版本，只提示，不自动下载或安装。")
+	})
+
+	ui.Divider(c).FillWidth()
+	ui.Text(c, "配置文件：用户数据目录下的 config.json；生词本与设置互不影响，可单独备份。").FontSize(12).TextColor(t.TextMuted).Wrap()
 }

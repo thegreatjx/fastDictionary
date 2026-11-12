@@ -1,0 +1,36 @@
+{
+  "onnxruntime": {
+    "version": "1.25.1",
+    "url": "https://github.com/microsoft/onnxruntime/releases/download/v1.25.1/onnxruntime-win-x64-1.25.1.zip",
+    "zipSha256": "33F2E8A63774811F99A5FC224CAC32F4EED8C27643D46C6CC685319FA8F18019",
+    "dllInZip": "onnxruntime-win-x64-1.25.1/lib/onnxruntime.dll",
+    "dllSha256": "373D4CB6FE92966125C4AC0D07B190CE4863E45251438F0EC087D4576B862918"
+  },
+  "models": {
+    "source": "https://huggingface.co/datalab-to/indra-ocr",
+    "revision": "bd02167fdf2005a19962cc15188f8496a2c87d3b",
+    "license": "openrail",
+    "files": [
+      {
+        "name": "det.onnx",
+        "sha256": "F2BD4CBA23E9C328CF7EC824634E423E191A2C6AACBBF35C62BD79DD70F62F59"
+      },
+      {
+        "name": "meta.json",
+        "sha256": "4CE4C94B46F5D644033C02E718322014FF4081270F385038C571912B56696339"
+      },
+      {
+        "name": "rec.onnx",
+        "sha256": "475972A2710BE4A3CBFEB2BC7F3624FFD563DE07DE42476FC7A290D4E1ECE484"
+      },
+      {
+        "name": "rec_cjk.onnx",
+        "sha256": "4A035516A17E62CDF33A4FE2D88077654CB8841CFF024685CDEF4E351694EF50"
+      },
+      {
+        "name": "script.onnx",
+        "sha256": "B6CE4E926E19C243FAAF37BD46880398BF2CB4AE56A29E1177A3B017C1280E36"
+      }
+    ]
+  }
+}

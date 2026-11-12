@@ -15,13 +15,21 @@
 #   .\build.ps1 -Run       构建后启动程序
 #   .\build.ps1 -NoStop    不停掉正在运行的实例（调试用；此时 exe 可能被占用）
 #   .\build.ps1 -Overwrite 出包时若今日版本目录已存在，强制覆盖刷新而不生成 -r2
+#   .\build.ps1 -Startup   同时创建/校正开机启动快捷方式（默认不创建）
+#   .\build.ps1 -Version 1.2.0  写入「关于」与更新检查使用的版本号（发布流水线用 tag）
+#   .\build.ps1 -Sign      用代码签名证书签 exe；证书路径与密码读环境变量
+#                          FD_SIGN_CERT / FD_SIGN_PASSWORD，时间戳服务可用
+#                          FD_SIGN_TIMESTAMP 覆盖
 
 param(
     [switch]$Dev,
     [switch]$Run,
     [switch]$NoStop,
     [switch]$Package,
-    [switch]$Overwrite
+    [switch]$Overwrite,
+    [switch]$Startup,
+    [string]$Version = "1.1.0",
+    [switch]$Sign
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,8 +48,9 @@ if ($Dev) {
 # 没有这个戳，「快捷方式打开的是不是新版本」只能靠猜。
 # 时间戳不能带空格：go 按空格切分 -ldflags，带空格会被切成两段，链接器报错。
 $stamp = Get-Date -Format 'yyyy-MM-ddTHH:mm'
+$releaseVersion = $Version.TrimStart('v')
 if ($ldflags) {
-    $ldflags = "$ldflags -X main.buildStamp=$stamp"
+    $ldflags = "$ldflags -X main.buildStamp=$stamp -X main.appVersion=$releaseVersion"
 }
 
 # 先停掉正在运行的实例。Windows 不允许覆盖被映射为映像的 exe —— Go 的链接器
@@ -137,6 +146,38 @@ if (-not (Test-Path $ortDst)) {
 if (-not (Test-Path $ortDst)) {
     Write-Host "没有 onnxruntime.dll，截图识别会回落到 Windows OCR" -ForegroundColor Yellow
 }
+
+# OCR 依赖版本与校验。模型和 DLL 不进仓库，但发布包必须带，而且必须是我们
+# 验证过的固定版本 —— 以前 DLL 是从构建机的 Python 安装目录直接拷的，换台
+# 机器编译出的包可能跑不同的运行时。发布构建校验失败就停，避免带缺陷出包。
+$deps = $null
+$ocrDepsOK = $false
+$depsManifestPath = Join-Path $PSScriptRoot 'scripts\ocr-deps.json'
+if (Test-Path $depsManifestPath) {
+    $deps = Get-Content $depsManifestPath -Raw | ConvertFrom-Json
+    $bad = @()
+    if (Test-Path $ortDst) {
+        $h = (Get-FileHash $ortDst -Algorithm SHA256).Hash
+        if ($h -ne $deps.onnxruntime.dllSha256) {
+            $bad += "onnxruntime.dll（期望 v$($deps.onnxruntime.version)）"
+        }
+    } else {
+        $bad += 'onnxruntime.dll'
+    }
+    foreach ($f in $deps.models.files) {
+        $p = Join-Path $PSScriptRoot (Join-Path 'indra-models' $f.name)
+        if (-not (Test-Path $p)) { $bad += $f.name; continue }
+        if ((Get-FileHash $p -Algorithm SHA256).Hash -ne $f.sha256) { $bad += "$($f.name)（SHA256 不符）" }
+    }
+    $ocrDepsOK = $bad.Count -eq 0
+    if (-not $ocrDepsOK) {
+        Write-Host ("OCR 运行时依赖缺失或版本不符: " + ($bad -join ', ')) -ForegroundColor Yellow
+        Write-Host "  运行 scripts\fetch-ocr-deps.ps1 获取固定版本（onnxruntime v$($deps.onnxruntime.version)）" -ForegroundColor Yellow
+        if ($Package) { exit 1 }
+    }
+} else {
+    Write-Host "没有 scripts\ocr-deps.json，跳过 OCR 依赖校验" -ForegroundColor Yellow
+}
 # 子系统校验：GUI 构建的子系统号必须是 2，否则就是又生成黑窗口版本。
 # 直接读 PE 头，不依赖 objdump（mingw 的 objdump 在某些 PATH 下无法从
 # PowerShell 管道调用）。
@@ -163,12 +204,39 @@ if ($ldflags -and $subsystem -ne 2) {
 }
 Write-Host "ok: $out ($((Get-Item $out).Length) bytes)  Subsystem=$subsystemName  $stamp" -ForegroundColor Green
 
+# 可选签名。证书不进仓库；没有证书时不上车，构建仍然可用（只是 SmartScreen
+# 会警告未知发布者）。签名放在子系统校验之后，签的必须是已经合格的产物。
+if ($Sign) {
+    $certPath = $env:FD_SIGN_CERT
+    if (-not $certPath -or -not (Test-Path $certPath)) {
+        Write-Host "-Sign 需要环境变量 FD_SIGN_CERT 指向 .pfx 证书" -ForegroundColor Red
+        exit 1
+    }
+    $signtool = Get-Command signtool.exe -ErrorAction SilentlyContinue
+    if (-not $signtool) {
+        Write-Host "找不到 signtool.exe（安装 Windows SDK 后重试）" -ForegroundColor Red
+        exit 1
+    }
+    $timestamp = $env:FD_SIGN_TIMESTAMP
+    if (-not $timestamp) { $timestamp = 'http://timestamp.digicert.com' }
+    $signArgs = @('sign', '/fd', 'SHA256', '/f', $certPath, '/tr', $timestamp, '/td', 'SHA256')
+    if ($env:FD_SIGN_PASSWORD) { $signArgs += @('/p', $env:FD_SIGN_PASSWORD) }
+    $signArgs += (Join-Path $PSScriptRoot $out)
+    & $signtool.Source @signArgs
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "代码签名失败" -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
+    Write-Host "已签名: $out" -ForegroundColor Green
+}
+
 # 对账并纠正：快捷方式指向的必须就是刚构建的文件。
 #
 # 以前这里只报警，于是「构建成功、快捷方式打开旧客户端」照样发生 —— 报警
 # 没人看，用户看到的就是旧界面。现在直接写回正确目标：快捷方式是这个项目
 # 唯一的启动入口，让它指向刚构建的 exe 属于构建的一部分，而不是用户的活。
-# 同时对账桌面、开始菜单、启动项，确保用户在任何位置打开的都是最新构建的 exe。
+# 同时对账桌面和开始菜单快捷方式，确保用户从常用入口打开的是最新构建的 exe。
+# 开机启动项只在显式传 -Startup 时创建/校正，避免用户没要求就被设为开机自启。
 if (-not $Dev) {
     $expected = Join-Path $PSScriptRoot $out
     $shell = New-Object -ComObject WScript.Shell
@@ -176,9 +244,11 @@ if (-not $Dev) {
 
     $shortcutLocations = @(
         @{ Name = "桌面"; Dir = [Environment]::GetFolderPath('Desktop') },
-        @{ Name = "开始菜单"; Dir = [Environment]::GetFolderPath('Programs') },
-        @{ Name = "启动项"; Dir = [Environment]::GetFolderPath('Startup') }
+        @{ Name = "开始菜单"; Dir = [Environment]::GetFolderPath('Programs') }
     )
+    if ($Startup) {
+        $shortcutLocations += @{ Name = "启动项"; Dir = [Environment]::GetFolderPath('Startup') }
+    }
 
     foreach ($loc in $shortcutLocations) {
         if (-not (Test-Path $loc.Dir)) {
@@ -277,15 +347,27 @@ if ($Package) {
     }
     
     if (Test-Path (Join-Path $PSScriptRoot 'docs')) {
-        Copy-Item (Join-Path $PSScriptRoot 'docs') (Join-Path $targetPkgDir 'docs') -Recurse -Force
+        $docsDst = Join-Path $targetPkgDir 'docs'
+        New-Item -ItemType Directory -Path $docsDst -Force | Out-Null
+        # 只带文本文档：截图、基准数据与归档占了 docs 的绝大部分体积，
+        # 对拿到 zip 的使用者没有用。
+        Get-ChildItem (Join-Path $PSScriptRoot 'docs') -File | Copy-Item -Destination $docsDst -Force
     }
     
     if (Test-Path (Join-Path $PSScriptRoot 'README.md')) {
         Copy-Item (Join-Path $PSScriptRoot 'README.md') (Join-Path $targetPkgDir 'README.md') -Force
     }
+
+    if (Test-Path (Join-Path $PSScriptRoot 'CHANGELOG.md')) {
+        Copy-Item (Join-Path $PSScriptRoot 'CHANGELOG.md') (Join-Path $targetPkgDir 'CHANGELOG.md') -Force
+    }
     
     if (Test-Path (Join-Path $PSScriptRoot 'LICENSE')) {
         Copy-Item (Join-Path $PSScriptRoot 'LICENSE') (Join-Path $targetPkgDir 'LICENSE') -Force
+    }
+
+    if (Test-Path (Join-Path $PSScriptRoot 'NOTICE')) {
+        Copy-Item (Join-Path $PSScriptRoot 'NOTICE') (Join-Path $targetPkgDir 'NOTICE') -Force
     }
     
     # 写入 BUILD_INFO.txt
@@ -302,10 +384,21 @@ if ($Package) {
 fastDictionary portable build
 =============================
 Build:     $stamp
+Version:   $releaseVersion
 Mygo:      $mygoVer
 Go:        $goVer
 Platform:  Windows x64
 Package:   $pkgName
+"@
+    if ($deps) {
+        $buildInfo += @"
+
+OCR runtime:
+  onnxruntime v$($deps.onnxruntime.version)  sha256 $($deps.onnxruntime.dllSha256.Substring(0, 12))…
+  Indra models revision $($deps.models.revision.Substring(0, 12))…  ($($deps.models.license))
+"@
+    }
+    $buildInfo += @"
 
 Contents:
   fastDictionary.exe  main application (Windows GUI subsystem)
@@ -314,6 +407,8 @@ Contents:
   resources\          icons, spell dictionary and OCR helper scripts
   docs\               documentation
   README.md           usage and build notes
+  CHANGELOG.md        version history
+  NOTICE              third-party licenses
   LICENSE             license
 
 User data: %APPDATA%\fastDictionary\

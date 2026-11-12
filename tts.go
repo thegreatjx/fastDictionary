@@ -477,6 +477,7 @@ func randomHexID(n int) string {
 // waiting for sound. Warming it at launch moves that cost off the hot path.
 func warmEdgeTTSAuth() {
 	go func() {
+		defer recoverLog("tts.go:warmEdgeTTSAuth")
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		if _, _, err := edgeTTSGetAuth(ctx); err != nil {

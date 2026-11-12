@@ -82,6 +82,8 @@
 
 ### 7. 📚 生词本与复习管理 (Vocabulary Store)
 - 生词分类整理：生词、长难句、写作改进条目分别归档。
+- **间隔重复复习**：每个词记录到期时间与当前间隔。新保存的词立即进入队列，复习卡片先显示单词，再翻开释义、例句与记忆技巧。
+- 三档反馈：忘记（10 分钟后回来）、模糊（间隔小幅延长）、记得（间隔翻倍，上限 180 天）。生词本页与托盘菜单都会显示到期数量。
 - 支持富文本卡片查看与原声发音朗读。
 - 支持全量 **JSON** 与 **Excel CSV** 格式双向导入导出，方便与 Anki、欧陆词典等工具联动背词。
 
@@ -113,15 +115,25 @@
 git clone https://github.com/thegreatjx/fastDictionary.git
 cd fastDictionary
 
+# 拉取并校验 OCR 运行时（onnxruntime.dll + indra-models，固定版本 + SHA256）
+# 不跑这一步也能编译，但截图识别会回落到 Windows OCR
+.\scripts\fetch-ocr-deps.ps1
+
 # 编译正式版（无控制台黑窗口，生成 fastDictionary.exe）
 .\build.ps1
 
 # 编译开发调试版（保留控制台日志输出，生成 fastDictionary-dev.exe）
 .\build.ps1 -Dev
 
+# 出包：dist 下的绿色目录、zip 与 SHA256
+# 加 -Sign 并用 FD_SIGN_CERT / FD_SIGN_PASSWORD 指定证书时自动签名
+.\build.ps1 -Package
+
 # 启动界面场景预览（供微调排版与动效）
 .\dev.ps1 -Scene grammar
 ```
+
+> **依赖校验**：`build.ps1 -Package` 会按 `scripts/ocr-deps.json` 校验模型和 DLL；缺失或哈希不符时直接失败，避免发出没有本地 OCR 的包。
 
 > **命名约定说明**：正式产物名称必须固定为 `fastDictionary.exe`。底层引擎根据可执行文件名称自动推导用户配置与词库目录（`%APPDATA%\fastDictionary\`），并维护单实例互斥锁。
 
@@ -133,10 +145,14 @@ cd fastDictionary
 
 ```text
 %APPDATA%\fastDictionary\
-├── config.json          # 用户全局偏好设置、API Key 与引擎配置
-├── logs\                # 运行日志（fastDictionary.log）
-└── Dictionary\          # 本地生词本与复习库存储
+├── config.json          # 用户全局偏好设置与加密后的 API Key
+├── vocabulary.json      # 生词本、长难句与写作条目（含复习计划）
+├── logs\                # 运行日志（fastDictionary.log；启动时超过 2 MB 轮转为 .1）
+└── notebook.html        # 「网页版」生词本导出
 ```
+
+日志默认只记录字符数，不记录选中的原文与 OCR 结果；排查取词问题可在
+「设置 → 关于 → 诊断日志」临时打开，也可以在那里打开日志目录。
 
 ---
 
@@ -145,6 +161,8 @@ cd fastDictionary
 项目内部设计与测试基准细节请参阅 `docs/` 目录：
 
 - [docs/README.md](docs/README.md) — 完整文档索引
+- [CHANGELOG.md](CHANGELOG.md) — 版本更新记录
+- [NOTICE](NOTICE) — 第三方组件与模型许可证
 - [docs/DESIGN.md](docs/DESIGN.md) — 视觉系统与微交互设计原则
 - [docs/HANDOFF_INDRA.md](docs/HANDOFF_INDRA.md) — Indra OCR 算法适配与本地推理落地方案
 - [docs/ocr.md](docs/ocr.md) — 各大 OCR 方案性能与识别率实测数据对比
@@ -153,4 +171,5 @@ cd fastDictionary
 
 ## 📄 开源许可证
 
-本项目基于 [MIT License](LICENSE) 开源。
+本项目基于 [MIT License](LICENSE) 开源。随包分发的 ONNX Runtime 与 Indra OCR
+模型另有许可证（模型为 OpenRAIL），详见 [NOTICE](NOTICE)。

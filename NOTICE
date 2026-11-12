@@ -1,0 +1,44 @@
+# NOTICE
+
+fastDictionary 的源代码以 MIT License 发布，见 `LICENSE`。发布包还包含以下
+第三方组件，它们各自保留原有许可证。分发时请连同本文件一起提供。
+
+## Go 依赖
+
+| 组件 | 许可证 | 说明 |
+| --- | --- | --- |
+| [github.com/egoist/mygo](https://github.com/egoist/mygo) | MIT | 原生 UI 外壳 |
+| [github.com/ebitengine/purego](https://github.com/ebitengine/purego) | Apache-2.0 | DLL 调用（间接依赖） |
+| [github.com/getcharzp/onnxruntime_purego](https://github.com/getcharzp/onnxruntime_purego) | MIT | ONNX Runtime 纯 Go 绑定 |
+| [golang.org/x/image](https://golang.org/x/image) | BSD-3-Clause | 图像缩放 |
+| [golang.org/x/text](https://golang.org/x/text) | BSD-3-Clause | 文本处理（间接依赖） |
+| [github.com/go-text/typesetting](https://github.com/go-text/typesetting) | BSD-3-Clause | 字体排版（间接依赖） |
+| [github.com/up-zero/gotool](https://github.com/up-zero/gotool) | MIT | 通用工具（间接依赖） |
+
+## ONNX Runtime
+
+- 文件：`onnxruntime.dll`
+- 版本：1.25.1（Windows x64，来自 Microsoft 官方 release）
+- 许可证：MIT
+- 项目主页：https://github.com/microsoft/onnxruntime
+
+## Indra OCR 模型
+
+- 文件：`indra-models/det.onnx`、`rec.onnx`、`rec_cjk.onnx`、`script.onnx`、`meta.json`
+- 来源：https://huggingface.co/datalab-to/indra-ocr
+- 修订：`bd02167fdf2005a19962cc15188f8496a2c87d3b`
+- 许可证：**OpenRAIL**（Open RAIL-M 系列）。模型权重不是 MIT；使用与再分发
+  受 OpenRAIL 的使用限制约束，完整条款见模型仓库中的 `LICENSE`。
+- 用途：本地截图文字识别，推理在本机完成，不上传图片。
+
+## 英文拼写表
+
+- 文件：`resources/spell_en.txt`
+- 用途：OCR 结果中重复字母的本地校正（例如 `Sttocks` → `Stocks`）。
+- 来源：项目早期内置的英文常用词表，仓库中未记录上游出处；仅用于本地成员
+  判断，不对外提供词义。再分发前应先核实该词表的原始许可证。
+
+## 图标与截图
+
+界面截图和图标由本项目制作，随项目以 MIT License 发布。字体使用 Windows
+系统字体，不随包分发。

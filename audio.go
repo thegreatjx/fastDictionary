@@ -164,6 +164,7 @@ func PlaySpeechLang(text, lang string, us bool) {
 	}
 
 	go func() {
+		defer recoverLog("audio.go:PlaySpeechLang")
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
@@ -265,6 +266,7 @@ $s.Speak('%s')`, escapePowerShell(langPrefix(lang)), escaped)
 	speakCmd = c
 	speakMu.Unlock()
 	go func() { _ = c.Wait() }()
+	defer recoverLog("audio.go:speakWithSAPI")
 }
 
 // escapePowerShell escapes a value for the single-quoted string above.

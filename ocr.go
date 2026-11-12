@@ -363,6 +363,7 @@ func (a *app) recognizeScreenshot(imgPath string) {
 		win.Update(func() {})
 	}
 	go func() {
+		defer recoverLog("ocr.go:recognizeScreenshot")
 		text, err := recognizeImageFileIn(ctx, imgPath, a.store.Get().OCRLang)
 		a.mu.Lock()
 		if generation != a.ocrGeneration || !a.isScreenshotMode {
@@ -381,7 +382,7 @@ func (a *app) recognizeScreenshot(imgPath string) {
 			a.source = text
 			a.ocrError = ""
 			a.mu.Unlock()
-			log.Printf("fastDictionary: screenshot OCR: %q", truncateFor(text, 80))
+			log.Printf("fastDictionary: screenshot OCR: %s", a.logText(text, 80))
 			a.translateKeepingLines(text)
 		}
 		if win != nil {

@@ -181,6 +181,7 @@ func (a *app) retryConfigSave() {
 	a.mu.Unlock()
 	a.settingsRefresh()
 	go func() {
+		defer recoverLog("settings.go:retryConfigSave")
 		err := a.store.RetrySave()
 		a.mu.Lock()
 		if err != nil {

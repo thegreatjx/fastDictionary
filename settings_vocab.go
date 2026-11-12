@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"strings"
 )
 
 func (a *app) pageCustomActions(c *ui.Context, t *ui.Theme, cfg Config) {
@@ -254,6 +256,10 @@ func (a *app) resetVocabularyViewState() {
 }
 
 func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
+	if a.vocabReviewing {
+		a.pageVocabReview(c, t)
+		return
+	}
 	vocabStore := GetVocabularyStore()
 	// Show the path the store actually uses rather than a hardcoded guess:
 	// defaultVocabPath answers from mygo's user data directory, which is
@@ -288,6 +294,16 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 
 			// Row 3: the actions, which wrap freely now.
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
+				// Review sits first: when words are due it is the action the
+				// notebook page exists for, and the number is the only visible
+				// reminder that the queue is waiting.
+				if due := vocabStore.DueCount(time.Now()); due > 0 {
+					if ui.Button(c, fmt.Sprintf("🎯 复习 %d", due)).Height(28).Padding(2, 10).Radius(5).
+						Background(t.SurfaceHover).TextColor(t.Accent).
+						Tooltip("按间隔重复复习到期生词").Clicked() {
+						a.startVocabReview()
+					}
+				}
 				if a.lastDeletedVocab != nil {
 					btnUndo := ui.Button(c, "↩ 撤销删除「"+truncateFor(a.lastDeletedVocab.Term, 10)+"」").
 						Height(28).Padding(2, 8).Radius(5).Background(t.SurfaceHover).
@@ -309,6 +325,7 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 					Tooltip("从外部 JSON/CSV/TXT 导入生词")
 				if btnImport.Clicked() {
 					go func() {
+						defer recoverLog("settings_vocab.go:pageVocabulary")
 						if !a.tryBeginVocabJob() {
 							return
 						}
@@ -338,6 +355,7 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 					Tooltip("导出生词库为 CSV 表格（支持 Excel / Anki 直接打开）")
 				if btnExpCSV.Clicked() {
 					go func() {
+						defer recoverLog("settings_vocab.go:pageVocabulary")
 						if !a.tryBeginVocabJob() {
 							return
 						}
@@ -369,6 +387,7 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 					Tooltip("导出为 Anki 记忆卡片格式（含完整排版与高亮样式，可直接导入 Anki）")
 				if btnExpAnki.Clicked() {
 					go func() {
+						defer recoverLog("settings_vocab.go:pageVocabulary")
 						if !a.tryBeginVocabJob() {
 							return
 						}
@@ -400,6 +419,7 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 					Tooltip("为生词自动补全音标、CEFR 难度、例句与记忆技巧")
 				if btnEnrich.Clicked() {
 					go func() {
+						defer recoverLog("settings_vocab.go:pageVocabulary")
 						if !a.tryBeginVocabJob() {
 							return
 						}

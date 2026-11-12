@@ -31,6 +31,11 @@ type VocabularyEntry struct {
 	Difficulty         string    `json:"difficulty"`
 	Source             string    `json:"source"` // "dict" | "grammar" | "writing" | "notes" | "import"
 	CreatedAt          time.Time `json:"created_at"`
+	// ReviewDueAt is when the word returns to the 复习 queue. Zero means
+	// "never scheduled" (older files and imports) and is treated as due.
+	ReviewDueAt        time.Time `json:"review_due_at"`
+	ReviewIntervalDays int       `json:"review_interval_days"`
+	ReviewCount        int       `json:"review_count"`
 }
 
 // VocabularyStore manages persistence of vocabulary.json
@@ -176,6 +181,11 @@ func (s *VocabularyStore) Add(e VocabularyEntry) bool {
 	if e.CreatedAt.IsZero() {
 		e.CreatedAt = time.Now()
 	}
+	if e.ReviewDueAt.IsZero() {
+		// A newly saved word is due immediately: that is what makes the
+		// notebook pay off the same day instead of after an arbitrary wait.
+		e.ReviewDueAt = e.CreatedAt
+	}
 
 	// If entry with identical term exists, update with new values while preserving existing rich fields
 	for i, existing := range s.entries {
@@ -242,6 +252,9 @@ func (s *VocabularyStore) addBatch(entries []VocabularyEntry) (int, error) {
 		}
 		if e.CreatedAt.IsZero() {
 			e.CreatedAt = time.Now()
+		}
+		if e.ReviewDueAt.IsZero() {
+			e.ReviewDueAt = e.CreatedAt
 		}
 		merged := false
 		for i, existing := range s.entries {
