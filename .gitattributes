@@ -1,0 +1,16 @@
+# Keep Go sources LF on every checkout. The Windows runner checks out with
+# core.autocrlf=true by default, which turns every .go file into CRLF and
+# makes `gofmt -l` report the whole repository as unformatted.
+*.go text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.txt text eol=lf
+*.ps1 text eol=crlf
+
+*.png binary
+*.ico binary
+*.exe binary
+*.dll binary
+*.onnx binary
