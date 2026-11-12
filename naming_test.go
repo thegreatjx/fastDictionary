@@ -38,9 +38,8 @@ func TestOneNameEverywhere(t *testing.T) {
 		t.Fatalf("go.mod does not declare `module %s`", appName)
 	}
 
-	// No source file may still carry the old name, except the one line of
-	// naming.go that lists it as a directory to migrate from: deleting that
-	// entry would orphan the settings written before the rename.
+	// No source file may still carry the old name. The migration list no
+	// longer includes it: there is no old data to rescue.
 	oldName := "fast" + "pot"
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -59,9 +58,6 @@ func TestOneNameEverywhere(t *testing.T) {
 			if !strings.Contains(strings.ToLower(line), oldName) {
 				continue
 			}
-			if name == "naming.go" && strings.Contains(line, "legacyDataDirs = ") {
-				continue
-			}
 			t.Errorf("%s:%d still mentions %s; the old name has to go", name, i+1, oldName)
 		}
 	}
@@ -70,7 +66,7 @@ func TestOneNameEverywhere(t *testing.T) {
 // TestLegacyDataDirsCoverEveryOldName pins the migration list against the
 // names this app actually used on disk.
 func TestLegacyDataDirsCoverEveryOldName(t *testing.T) {
-	for _, want := range []string{"Dictionary", "fastpot", "fast词典"} {
+	for _, want := range []string{"Dictionary", "fast词典"} {
 		found := false
 		for _, got := range legacyDataDirs {
 			if got == want {
@@ -153,8 +149,5 @@ func TestVocabPathFollowsTheAppName(t *testing.T) {
 	p := defaultVocabPath()
 	if !strings.HasSuffix(p, "vocabulary.json") {
 		t.Fatalf("defaultVocabPath() = %q, not a vocabulary.json file", p)
-	}
-	if strings.Contains(p, "fastpot") {
-		t.Fatalf("defaultVocabPath() = %q, still pointing at the old name", p)
 	}
 }

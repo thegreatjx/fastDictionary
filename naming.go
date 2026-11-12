@@ -26,10 +26,9 @@ const (
 // current name, so a rename does not look like data loss.
 //
 // "Dictionary" comes first because that is where the shortcut-launched build
-// kept the user's settings and notebook until the rename; the third entry is
-// the directory named after this module's old name, which is what a plain
-// `go build .` produced before the rename.
-var legacyDataDirs = []string{"Dictionary", "fast词典", "fastpot"}
+// kept the user's settings and notebook until the rename; "fast词典" is the
+// directory the UI-named build used.
+var legacyDataDirs = []string{"Dictionary", "fast词典"}
 
 // migrateUserData copies the settings and the notebook of an earlier name
 // into the directory this build uses.
