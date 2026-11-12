@@ -32,6 +32,12 @@ func TestAISetupProblem(t *testing.T) {
 		{"deepseek no key", deepseek(func(c *Config) { c.AIKey = "" }), "API Key"},
 		{"no model", deepseek(func(c *Config) { c.AIModel = " " }), "模型"},
 		{"custom empty", func() Config { c := DefaultConfig(); c.AIProvider = "custom"; c.AIURL = ""; return c }(), "模型服务"},
+		// 自定义常用来接 LM Studio 等本机无认证服务，设置页也写着 Key「可留空」。
+		{"custom keyless local", func() Config {
+			c := DefaultConfig()
+			c.AIProvider, c.AIURL, c.AIModel, c.AIKey = "custom", "http://127.0.0.1:1234/v1", "local-model", ""
+			return c
+		}(), ""},
 		{"ollama no key needed", func() Config {
 			c := DefaultConfig()
 			p, _ := aiPresetByID("ollama")

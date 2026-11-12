@@ -70,7 +70,7 @@
 | Magpie | 就绪（是否在运行只能靠请求来发现，失败另有提示） |
 | 自定义且地址为空 | `还没设置模型服务` |
 | 其他直连服务地址为空 | `还没填 API 地址` |
-| 需要 Key 而 Key 为空 | `还没填 API Key` |
+| 预设标记需要 Key 而 Key 为空（「自定义」除外） | `还没填 API Key` |
 | 模型为空 | `还没选模型` |
 
 没就绪时各入口的表现：
@@ -154,7 +154,8 @@
 404 / 405 返回哨兵错误 `errAIModelsUnsupported`，设置页显示「不支持」，模型仍可手填。
 
 **错误分类**：所有失败都在知道状态码或传输错误的地方变成 `*aiFailure{kind, msg}`。
-上层只看 `kind`，不在字符串里找 `"429"`。
+上层只看 `kind`，不在字符串里找 `"429"`。没分类的错误（编码失败、地址解析）原样显示，
+不猜原因——按字符串猜曾把「503 service available」说成「Key 无效」。
 
 | kind | 来源 | 自动重试一次 |
 | --- | --- | --- |
@@ -166,6 +167,7 @@
 | `Server` | 5xx | 是 |
 | `Timeout` | 超时 | 是 |
 | `Network` | DNS、拒绝连接、TLS | 是 |
+| `MagpieDown` | 本机网关拒绝连接（errno，不匹配文字） | 否 |
 | `Protocol` / `Unknown` | 其他 | 否 |
 
 重试只在 AI 精翻（`refineWithAI`）里做一次，间隔 350 ms。用户取消的请求
@@ -237,8 +239,16 @@ FASTDICT_LIVE_AI_PROVIDER=custom FASTDICT_LIVE_AI_URL=http://127.0.0.1:3425/v1 F
 FASTDICT_LIVE_AI_PROVIDER=deepseek FASTDICT_LIVE_AI_KEY_FILE=/path/to/key go test -count=1 -run TestLiveDirectProvider -v .
 ```
 
+```bash
+# 六家 Keyed 预设都用假 Key 打一次真实接口，确认 401/403 被识别成鉴权失败（不需要真 Key）
+FASTDICT_LIVE_AI_BADKEY=1 go test -count=1 -run TestLiveProvidersRejectBadKey -v .
+```
+
 2026-11-12 实测：Magpie 路径 1.6 s；直连路径经 Magpie 网关，根地址、`/v1`、完整端点三种写法都通，
 `/models` 返回 28 个模型，`auto/deepseek-v4.1-flash` 精翻约 1.8–2.4 s。
+假 Key 探测：DeepSeek、通义、智谱、硅基流动、OpenAI 的对话与模型列表都正确识别为鉴权失败；
+OpenRouter 的 `/models` 是公开接口，不校验 Key（已知差异，不影响精翻）。
+Ollama 走本机 `/models` 同样不需要 Key。
 
 ---
 
@@ -247,11 +257,13 @@ FASTDICT_LIVE_AI_PROVIDER=deepseek FASTDICT_LIVE_AI_KEY_FILE=/path/to/key go tes
 按建议顺序排列。
 
 1. ~~新装默认值~~：已改成「未配置」，见 §2。
-2. **真实服务商冒烟**：直连代码路径已经借 Magpie 网关实测通过；各家服务商自己的鉴权、
-   错误格式和 `/models` 差异还没在真实环境验证。发布前用 DeepSeek 或一家国内服务商的 Key
-   跑一次 `TestLiveDirectProvider`。
-3. **`friendlyAIError` 仍在 `msg` 里找 "Magpie"**：区分「Magpie 没启动」和一般网络错误，
-   应改成独立的 kind 或在 `aiFailure` 上带服务标识。
-4. **`isTransientAIError` 保留了字符串兜底**：只为没经过 `aiFailure` 的旧路径；
-   旧路径全部收口后删除。
+2. **真实服务商冒烟**：直连代码路径已借 Magpie 网关实测通过；各家的错误 Key 拒绝、
+   `/models` 行为已用 `TestLiveProvidersRejectBadKey` 实测。还差的是一项：用**有效** Key
+   跑一次完整精翻（`TestLiveDirectProvider` + `FASTDICT_LIVE_AI_KEY_FILE`），
+   确认成功路径的响应格式（流式分块、用量字段）与模拟服务器一致。
+3. ~~`friendlyAIError` 在 `msg` 里找 "Magpie"~~：已改为 `aiFailureMagpieDown` 独立 kind。
+   顺带修了一个真 bug：Windows 的拒绝连接文字是「actively refused it」，
+   原来匹配 `"connection refused"` 在 Windows 上从不命中，这个分支在真实环境里没生效过；
+   现在改为匹配 `ECONNREFUSED` / `WSAECONNREFUSED(10061)`。
+4. ~~`isTransientAIError` 的字符串兜底~~：已删除，只认 `aiFailure.kind`。
 5. 代理设置、Azure、原生协议、多服务商实例：见 §1 非目标。

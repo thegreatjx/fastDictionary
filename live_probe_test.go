@@ -140,3 +140,48 @@ func TestLiveDirectProvider(t *testing.T) {
 		t.Errorf("bad key should map to auth failure, got %v", err)
 	}
 }
+
+// TestLiveProvidersRejectBadKey sends a made-up key to every keyed preset and
+// checks the real answer is classified as an auth failure with a usable
+// message. No real key needed. Skipped unless FASTDICT_LIVE_AI_BADKEY=1.
+func TestLiveProvidersRejectBadKey(t *testing.T) {
+	if os.Getenv("FASTDICT_LIVE_AI_BADKEY") != "1" {
+		t.Skip("set FASTDICT_LIVE_AI_BADKEY=1 to run")
+	}
+	for _, p := range aiPresets {
+		if !p.NeedsKey || p.BaseURL == "" {
+			continue
+		}
+		t.Run(p.ID, func(t *testing.T) {
+			cfg := DefaultConfig()
+			applyAIPreset(&cfg, p)
+			cfg.AIKey = "sk-fastdict-invalid-probe-0000000000"
+			model := cfg.AIModel
+			if model == "" {
+				model = "probe-model"
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			_, chatErr := StreamAI(ctx, cfg.AIConn(model), "s", "hi", "", nil)
+			_, listErr := FetchAvailableModels(ctx, cfg.AIConn(""))
+			for name, err := range map[string]error{"chat": chatErr, "models": listErr} {
+				var failure *aiFailure
+				switch {
+				case err == nil && name == "models":
+					// OpenRouter 的 /models 公开，不校验 Key：列表拉得到不代表 Key 对。
+					t.Logf("models: public list, key not checked")
+				case errors.Is(err, errAIModelsUnsupported):
+					t.Logf("%s: /models unsupported", name)
+				case !errors.As(err, &failure):
+					t.Errorf("%s: untyped error %v", name, err)
+				case failure.kind == aiFailureNetwork || failure.kind == aiFailureTimeout:
+					t.Logf("%s: unreachable from here (%s)", name, failure.msg)
+				case failure.kind == aiFailureAuth || failure.kind == aiFailurePermission:
+					t.Logf("%s: ok %s", name, failure.msg)
+				default:
+					t.Errorf("%s: bad key classified as kind %d: %s", name, failure.kind, failure.msg)
+				}
+			}
+		})
+	}
+}

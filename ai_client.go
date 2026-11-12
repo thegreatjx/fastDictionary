@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -68,6 +69,9 @@ const (
 	aiFailureBadRequest
 	aiFailureServer
 	aiFailureNetwork
+	// aiFailureMagpieDown: the local gateway refused the connection, which
+	// means it is not running. Its fix differs from a network problem.
+	aiFailureMagpieDown
 	aiFailureTimeout
 	aiFailureProtocol
 )
@@ -450,16 +454,25 @@ func aiTransportFailure(err error, conn aiConn) error {
 		return &aiFailure{kind: aiFailureNetwork, msg: "找不到服务地址，请检查 API 地址拼写。"}
 	}
 	text := strings.ToLower(err.Error())
-	if strings.Contains(text, "connection refused") && conn.IsMagpie() {
-		return &aiFailure{kind: aiFailureNetwork, msg: "连不上本机 Magpie（127.0.0.1:3425）。没装 Magpie 的话，把「模型服务」换成 DeepSeek 等服务商，填上 API Key。"}
+	refused := isConnRefused(err)
+	if refused && conn.IsMagpie() {
+		return &aiFailure{kind: aiFailureMagpieDown, msg: "连不上本机 Magpie（127.0.0.1:3425）。没装 Magpie 的话，把「模型服务」换成 DeepSeek 等服务商，填上 API Key。"}
 	}
-	if strings.Contains(text, "connection refused") {
+	if refused {
 		return &aiFailure{kind: aiFailureNetwork, msg: "服务拒绝连接。检查地址和端口，确认服务已经启动。"}
 	}
 	if strings.Contains(text, "certificate") || strings.Contains(text, "x509") {
 		return &aiFailure{kind: aiFailureNetwork, msg: "TLS 证书校验失败。检查系统时间、代理或公司网络的证书设置。"}
 	}
 	return &aiFailure{kind: aiFailureNetwork, msg: "无法连接 AI 服务。检查地址、网络或代理设置。"}
+}
+
+// isConnRefused matches the errno, not the text. Windows words a refused
+// connection as "actively refused it", so matching "connection refused" never
+// fired there and the Magpie hint was never shown.
+func isConnRefused(err error) bool {
+	const wsaeconnrefused = syscall.Errno(10061)
+	return errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, wsaeconnrefused)
 }
 
 func aiErrorMessage(body []byte) string {

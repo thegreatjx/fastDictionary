@@ -169,7 +169,8 @@ func (c Config) AISetupProblem() string {
 		}
 		return "还没填 API 地址"
 	}
-	if preset.NeedsKey && normalizeAPIKey(c.AIKey) == "" {
+	// 自定义服务常常是本机的 LM Studio / vLLM，没有 Key，设置页也写着可留空。
+	if preset.NeedsKey && preset.ID != "custom" && normalizeAPIKey(c.AIKey) == "" {
 		return "还没填 API Key"
 	}
 	if strings.TrimSpace(c.AIModel) == "" {

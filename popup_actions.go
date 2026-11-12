@@ -986,20 +986,14 @@ func isTransientAIError(err error) bool {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return true
 	}
+	// 客户端的失败都已分类成 aiFailure；没分类的错误（编码、地址）重试也没用。
 	var failure *aiFailure
-	if errors.As(err, &failure) {
-		switch failure.kind {
-		case aiFailureRateLimit, aiFailureServer, aiFailureNetwork, aiFailureTimeout:
-			return true
-		default:
-			return false
-		}
+	if !errors.As(err, &failure) {
+		return false
 	}
-	text := strings.ToLower(err.Error())
-	for _, needle := range []string{"timeout", "timed out", "temporary", "connection reset", "connection refused", "eof", "429", "too many requests", "502", "503", "504", "bad gateway", "service unavailable"} {
-		if strings.Contains(text, needle) {
-			return true
-		}
+	switch failure.kind {
+	case aiFailureRateLimit, aiFailureServer, aiFailureNetwork, aiFailureTimeout:
+		return true
 	}
 	return false
 }
@@ -1027,31 +1021,21 @@ func friendlyAIError(err error) string {
 		case aiFailureTimeout:
 			return "网络超时，请检查网络或代理。"
 		case aiFailureNetwork:
-			if strings.Contains(failure.msg, "Magpie") {
-				return "连不上本机 Magpie，请在设置里换一个服务商，或先启动 Magpie。"
-			}
 			return "无法连接 AI 服务，请检查地址、网络或代理。"
+		case aiFailureMagpieDown:
+			return "连不上本机 Magpie，请在设置里换一个服务商，或先启动 Magpie。"
 		default:
 			return failure.msg
 		}
 	}
-	text := strings.ToLower(err.Error())
 	switch {
 	case errors.Is(err, context.Canceled):
 		return "请求已取消。"
-	case errors.Is(err, context.DeadlineExceeded) || strings.Contains(text, "timeout") || strings.Contains(text, "timed out"):
+	case errors.Is(err, context.DeadlineExceeded):
 		return "网络超时，请稍后重试。"
-	case strings.Contains(text, "401") || strings.Contains(text, "403") || strings.Contains(text, "api key") || strings.Contains(text, "unauthorized"):
-		return "API Key 无效或未配置，请检查 AI 设置。"
-	case strings.Contains(text, "429") || strings.Contains(text, "too many requests") || strings.Contains(text, "rate limit"):
-		return "请求过于频繁，请稍后再试。"
-	case strings.Contains(text, "404") || strings.Contains(text, "model") && strings.Contains(text, "not found"):
-		return "模型不存在或不可用，请检查模型设置。"
-	case strings.Contains(text, "connection refused") || strings.Contains(text, "no such host") || strings.Contains(text, "dial tcp"):
-		return "无法连接 AI 服务，请检查地址和网络。"
-	default:
-		return err.Error()
 	}
+	// 没分类的错误原样显示：按字符串猜原因曾把无关错误说成「Key 无效」。
+	return err.Error()
 }
 
 // langPromptName gives the model a language name it will recognise, rather

@@ -45,9 +45,12 @@ func TestFriendlyAIError(t *testing.T) {
 		want string
 	}{
 		{context.DeadlineExceeded, "网络超时，请稍后重试。"},
-		{errors.New("HTTP 429: too many requests"), "请求过于频繁，请稍后再试。"},
-		{errors.New("401 unauthorized: api key missing"), "API Key 无效或未配置，请检查 AI 设置。"},
-		{errors.New("dial tcp 127.0.0.1:1: connection refused"), "无法连接 AI 服务，请检查地址和网络。"},
+		{&aiFailure{kind: aiFailureRateLimit}, "请求过于频繁或额度用完，请稍后再试。"},
+		{&aiFailure{kind: aiFailureAuth}, "API Key 无效或已过期，请在 设置 → AI 精翻 里重新填写。"},
+		{&aiFailure{kind: aiFailureNetwork, msg: "x"}, "无法连接 AI 服务，请检查地址、网络或代理。"},
+		{&aiFailure{kind: aiFailureMagpieDown}, "连不上本机 Magpie，请在设置里换一个服务商，或先启动 Magpie。"},
+		// 不再按字符串猜：没分类的错误原样显示，不冒充成别的原因。
+		{errors.New("HTTP 429: too many requests"), "HTTP 429: too many requests"},
 	}
 	for _, tc := range cases {
 		if got := friendlyAIError(tc.err); got != tc.want {

@@ -45,6 +45,7 @@ $scenes = @{
     "chip"     = @("--chip", "--shot-window", "chip")
     "chip-tip" = @("--chip-tip", "--shot-window", "chip-tip")
     "settings" = @("--settings", "--page", "translate", "--shot-window", "settings")
+    "ai"       = @("--settings", "--page", "ai", "--shot-window", "settings")
     "ocr"      = @("--demo-action", "grammar", "--shot-window", "popup")
 }
 
