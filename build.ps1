@@ -28,6 +28,7 @@ param(
     [switch]$Package,
     [switch]$Overwrite,
     [switch]$Startup,
+    [switch]$NoShortcuts,
     [string]$Version = "1.1.0",
     [switch]$Sign
 )
@@ -237,7 +238,7 @@ if ($Sign) {
 # 唯一的启动入口，让它指向刚构建的 exe 属于构建的一部分，而不是用户的活。
 # 同时对账桌面和开始菜单快捷方式，确保用户从常用入口打开的是最新构建的 exe。
 # 开机启动项只在显式传 -Startup 时创建/校正，避免用户没要求就被设为开机自启。
-if (-not $Dev) {
+if (-not $Dev -and -not $NoShortcuts) {
     $expected = Join-Path $PSScriptRoot $out
     $shell = New-Object -ComObject WScript.Shell
     $lnkName = 'fast词典.lnk'

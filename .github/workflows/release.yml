@@ -40,9 +40,9 @@ jobs:
             $path = Join-Path $env:RUNNER_TEMP 'fastDictionary-signing.pfx'
             [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:SIGN_CERT_B64))
             $env:FD_SIGN_CERT = $path
-            ./build.ps1 -Package -Overwrite -Version $version -Sign
+            ./build.ps1 -Package -Overwrite -NoShortcuts -Version $version -Sign
           } else {
-            ./build.ps1 -Package -Overwrite -Version $version
+            ./build.ps1 -Package -Overwrite -NoShortcuts -Version $version
           }
 
       - name: 上传 Release
