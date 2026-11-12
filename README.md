@@ -13,6 +13,18 @@
 
 ---
 
+## 📥 下载
+
+[前往 Releases 下载最新版](https://github.com/thegreatjx/fastDictionary/releases/latest)
+
+- **绿色版**：`fastDictionary-vYYYY.MM.DD-win64.zip`，解压后双击 `fastDictionary.exe`，无需安装
+- **校验文件**：同名 `.sha256`，可选，用来确认下载完整
+- 本项目不提供 `setup.exe` 安装程序，也不写注册表；删除解压目录即可卸载
+
+> GitHub Release 页面底部的 **Assets** 区域才是下载入口；那里如果只看到 `Source code (zip/tar.gz)`，那是源码，不是可执行程序。
+
+---
+
 ## 🌟 为什么选择 fast词典？
 
 在桌面阅读与学习英语时，许多现代翻译工具要么依赖笨重的 Electron / WebView 框架（内存占用数百兆、唤醒延迟明显），要么充斥着高饱和渐变与卡片堆砌的视觉噪音。
