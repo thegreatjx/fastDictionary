@@ -229,11 +229,10 @@ type app struct {
 	showPopup func(m popupMode, text string)
 
 	// settings window scratch state
-	aiTest string
-	// aiTestGen counts gateway probes so a slow answer that has been
-	// superseded by a newer click cannot overwrite the newer result.
-	aiTestGen               uint64
-	aiTestCancel            context.CancelFunc
+	aiProbe                 aiProbeState
+	aiModels                aiModelsState
+	aiShowKey               bool
+	aiHelpOpen              bool
 	aiRefining              bool
 	aiRefineErr             string
 	hotkeyMsg               string
@@ -242,11 +241,6 @@ type app struct {
 	pendingHotkeyInput      string
 	pendingHotkeyScreenshot string
 	hotkeyDraftsInit        bool
-	magpieModels            []string
-	magpieModelsURL         string
-	magpieModelsLoadedAt    time.Time
-	magpieModelsGen         uint64
-	loadingModels           bool
 	// newBlockedApp is the text being typed into the selection blocklist
 	// editor on the 划词 settings page.
 	newBlockedApp string
@@ -470,7 +464,7 @@ func (a *app) switchMode(m popupMode) {
 		// machine translation is better than opening a blank card whose only
 		// explanation is an error.
 		m = modeTranslate
-		notice = "AI 精翻未启用，已使用机器翻译。可在 设置 → AI 网关 中启用。"
+		notice = "AI 精翻未启用，已使用机器翻译。可在 设置 → AI 精翻 中启用。"
 	}
 	a.stopScreenshotOCR()
 	a.mu.Lock()

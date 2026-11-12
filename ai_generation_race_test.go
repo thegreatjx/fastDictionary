@@ -84,7 +84,7 @@ func TestRunActionDropsStalePass(t *testing.T) {
 		switch n {
 		case 1:
 			// Stream a partial answer, then hang without [DONE]. Cancelling
-			// this pass makes StreamMagpie return both text and an error —
+			// this pass makes StreamAI return both text and an error —
 			// exactly the teardown that used to overwrite the new card.
 			write(sseDelta(oldCard))
 			select {

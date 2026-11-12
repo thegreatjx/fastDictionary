@@ -487,6 +487,7 @@
 - **显式化**：`GatewayProbeState`（`Idle/Running/OK/Failed`）+ `type GatewayProbe struct{ State; Generation uint64; Text string; Latency time.Duration; Err error }`；`type ModelCatalog struct{ Models []string; Source ModelSource; ProbedAt time.Time }` 区分「探测结果/回退列表」；点测试递增 Generation 并 cancel 旧 ctx
 - **测试**：`live_probe_test.go:34`、`effort_test.go:64`、`effort_startup_test.go:15`。缺口：连点竞态、探测失败标注、aiTest 三态
 - **复核备注（批次 9i）**：`testGateway` 的连点竞态已修 —— `aiTestGen` 代次 + `aiTestCancel` 取消上一次探测，写回前比对代次，`streamMagpieProbe` 作为测试接缝。`GatewayProbeState` 完整枚举化与模型目录来源标注仍未做。
+- **复核备注（批次 10a，多服务商接入）**：本条已整体显式化，随「AI 精翻接入多家模型服务」一起落地。`aiTest`/`aiTestGen` 换成 `aiProbeState{phase: Idle/Running/Succeeded/Failed, source, gen, cancel}`；`magpieModels` 换成 `aiModelsState{phase: Idle/Loading/Ready/Unsupported/Failed, source, models, at, gen}`。来源 = 服务 + 地址 + Key 指纹，写回前比对代次与来源，配置一变旧结果按 Idle 显示；Magpie 回退模型与真实探测结果分开，且不泄漏给直连服务。规格与守护测试见 [AI_SERVICES.md](AI_SERVICES.md) §6–§7。
 
 #### A15 AI 指令定制编辑视图 · 中
 - **位置**：`fastpot/settings_vocab.go:10-245`；声明 `fastpot/popup.go:132-135`

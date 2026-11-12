@@ -271,7 +271,7 @@ func (a *app) extractNotesForGen(gen requestToken, text string) {
 			"严格以紧凑的 JSON 数组格式输出，不要有任何 Markdown 标记或多余文字。\n" +
 			"示例格式：[{\"word\":\"ambitious\",\"phonetic\":\"/æmˈbɪʃ.əs/\",\"pos\":\"adj.\",\"meaning\":\"有雄心的，抱负不凡的；宏大的\",\"difficulty\":\"B2\",\"memory_tips\":\"词源：ambi-（周围、环顾）+ -it-（走）+ -ious（形容词）→ 四处奔走谋求发展 → 雄心勃勃的\"}]"
 
-		raw, err := StreamMagpie(ctx, cfg.AIURL, cfg.AIModel, systemPrompt, text, ResolveEffort(cfg.AIEffort, cfg.AIModel), nil)
+		raw, err := StreamAI(ctx, cfg.AIConn(cfg.AIModel), systemPrompt, text, cfg.AIReasoningEffortFor(cfg.AIModel), nil)
 		var items []NoteItem
 		if err == nil && raw != "" {
 			cleaned := strings.TrimSpace(raw)
@@ -560,15 +560,16 @@ func sameActionContent(act, def CustomActionConfig) bool {
 
 // actionFingerprint identifies every setting that can change an AI answer but
 // is not already part of the cache key: the action's prompt and model, plus the
-// gateway URL and reasoning effort. Without it, editing a prompt or switching
+// service, URL and reasoning effort. Without it, editing a prompt or switching
 // AIURL still served the old cached card.
 func actionFingerprint(act *CustomActionConfig, cfg Config) string {
 	if act == nil {
 		return ""
 	}
 	h := fnv.New64a()
-	fmt.Fprintf(h, "%q\x00%q\x00%q\x00%q\x00%q\x00%q\x00%q",
-		act.ID, act.ProviderID, act.Model, act.SystemPrompt, act.Prompt, cfg.AIURL, cfg.AIEffort)
+	fmt.Fprintf(h, "%q\x00%q\x00%q\x00%q\x00%q\x00%q\x00%q\x00%q",
+		act.ID, act.ProviderID, act.Model, act.SystemPrompt, act.Prompt,
+		normalizeAIProvider(cfg.AIProvider), cfg.AIURL, cfg.AIEffort)
 	for _, field := range act.OutputSchema {
 		fmt.Fprintf(h, "\x00%q", field)
 	}
@@ -585,6 +586,7 @@ func actionCacheVariant(act *CustomActionConfig, cfg Config) string {
 	}
 	if def := defaultActionByID(act.ID); def != nil &&
 		sameActionContent(*act, *def) &&
+		cfg.IsMagpie() &&
 		cfg.AIURL == DefaultConfig().AIURL &&
 		cfg.AIEffort == DefaultConfig().AIEffort {
 		return ""
@@ -810,7 +812,7 @@ func (a *app) runAction(actionID string, text string) {
 		// generating. Repaint at most every 40 ms; the final Update below
 		// still shows the last of the text.
 		var lastPaint time.Time
-		_, err := StreamMagpie(ctx, cfg.AIURL, model, systemPrompt, userPrompt, ResolveEffort(cfg.AIEffort, model), func(chunk string) {
+		_, err := StreamAI(ctx, cfg.AIConn(model), systemPrompt, userPrompt, cfg.AIReasoningEffortFor(model), func(chunk string) {
 			a.mu.Lock()
 			if gen != a.aiGen {
 				// A newer pass reset a.aiText; appending here would splice two
@@ -913,23 +915,24 @@ func (a *app) refineWithAI() {
 		sys := "You are a translator. Translate the text into " + langPromptName(targetLang) +
 			". Keep terminology accurate, keep the original's tone and structure, and output only the translation with no explanation."
 		started := time.Now()
-		effort := ResolveEffort(cfg.AIEffort, cfg.AIModel)
-		out, err := StreamMagpie(ctx, cfg.AIURL, cfg.AIModel, sys, source, effort, nil)
-		if err != nil && isTransientAIError(err) {
+		effort := cfg.AIReasoningEffortFor(cfg.AIModel)
+		out, err := StreamAI(ctx, cfg.AIConn(cfg.AIModel), sys, source, effort, nil)
+		// 外层 ctx 已取消或到期时重发必然立刻失败，只白等 350 ms。
+		if err != nil && ctx.Err() == nil && isTransientAIError(err) {
 			// A short network hiccup or a 429 should not cost the user the
 			// machine translation they already have. One short retry is enough;
 			// repeating it would make a genuinely broken gateway feel frozen.
 			time.Sleep(350 * time.Millisecond)
-			out, err = StreamMagpie(ctx, cfg.AIURL, cfg.AIModel, sys, source, effort, nil)
+			out, err = StreamAI(ctx, cfg.AIConn(cfg.AIModel), sys, source, effort, nil)
 		}
-		if err != nil && isScreenshotMode && ocrPath != "" && ctx.Err() == nil {
+		if err != nil && cfg.AIVisionAllowed() && isScreenshotMode && ocrPath != "" && ctx.Err() == nil {
 			// OCR text is the cheap first attempt. If the model cannot answer
 			// from it, give it the original pixels as well: the model can read
 			// the screenshot and correct the OCR mistakes that caused the
 			// failure. This costs more tokens, so it is deliberately last.
 			if dataURL, imageErr := imageFileDataURL(ocrPath); imageErr == nil {
 				log.Printf("fastDictionary: text AI refine failed, retrying with screenshot: %v", err)
-				out, err = StreamMagpieWithImage(ctx, cfg.AIURL, cfg.AIModel,
+				out, err = StreamAIWithImage(ctx, cfg.AIConn(cfg.AIModel),
 					screenshotRefineSystemPrompt(targetLang), screenshotRefineUserPrompt(source),
 					dataURL, effort, nil)
 			} else {
@@ -975,8 +978,20 @@ func isTransientAIError(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
 		return true
+	}
+	var failure *aiFailure
+	if errors.As(err, &failure) {
+		switch failure.kind {
+		case aiFailureRateLimit, aiFailureServer, aiFailureNetwork, aiFailureTimeout:
+			return true
+		default:
+			return false
+		}
 	}
 	text := strings.ToLower(err.Error())
 	for _, needle := range []string{"timeout", "timed out", "temporary", "connection reset", "connection refused", "eof", "429", "too many requests", "502", "503", "504", "bad gateway", "service unavailable"} {
@@ -994,18 +1009,44 @@ func friendlyAIError(err error) string {
 	if err == nil {
 		return ""
 	}
+	var failure *aiFailure
+	if errors.As(err, &failure) {
+		switch failure.kind {
+		case aiFailureAuth:
+			return "API Key 无效或已过期，请在 设置 → AI 精翻 里重新填写。"
+		case aiFailurePermission:
+			return "服务拒绝访问：检查模型是否开通、余额是否充足、地区是否支持。"
+		case aiFailureNotFound:
+			return "地址或模型不存在，请检查 API 地址和模型 ID。"
+		case aiFailureRateLimit:
+			return "请求过于频繁或额度用完，请稍后再试。"
+		case aiFailureServer:
+			return "服务商暂时故障，请稍后重试。"
+		case aiFailureTimeout:
+			return "网络超时，请检查网络或代理。"
+		case aiFailureNetwork:
+			if strings.Contains(failure.msg, "Magpie") {
+				return "连不上本机 Magpie，请在设置里换一个服务商，或先启动 Magpie。"
+			}
+			return "无法连接 AI 服务，请检查地址、网络或代理。"
+		default:
+			return failure.msg
+		}
+	}
 	text := strings.ToLower(err.Error())
 	switch {
+	case errors.Is(err, context.Canceled):
+		return "请求已取消。"
 	case errors.Is(err, context.DeadlineExceeded) || strings.Contains(text, "timeout") || strings.Contains(text, "timed out"):
 		return "网络超时，请稍后重试。"
 	case strings.Contains(text, "401") || strings.Contains(text, "403") || strings.Contains(text, "api key") || strings.Contains(text, "unauthorized"):
-		return "API Key 无效或未配置，请检查 AI 网关设置。"
+		return "API Key 无效或未配置，请检查 AI 设置。"
 	case strings.Contains(text, "429") || strings.Contains(text, "too many requests") || strings.Contains(text, "rate limit"):
-		return "请求过于频繁（429），请稍后再试。"
+		return "请求过于频繁，请稍后再试。"
 	case strings.Contains(text, "404") || strings.Contains(text, "model") && strings.Contains(text, "not found"):
 		return "模型不存在或不可用，请检查模型设置。"
 	case strings.Contains(text, "connection refused") || strings.Contains(text, "no such host") || strings.Contains(text, "dial tcp"):
-		return "无法连接 AI 网关，请检查网关地址是否已启动。"
+		return "无法连接 AI 服务，请检查地址和网络。"
 	default:
 		return err.Error()
 	}

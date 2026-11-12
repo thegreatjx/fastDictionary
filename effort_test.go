@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -72,7 +73,11 @@ func TestFetchAvailableModelsRecordsReasoningLevels(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ids, err := FetchAvailableModels(srv.URL)
+	ids, err := FetchAvailableModels(context.Background(), aiConn{
+		Provider: "magpie",
+		Endpoint: srv.URL,
+		Model:    "test",
+	})
 	if err != nil {
 		t.Fatalf("FetchAvailableModels: %v", err)
 	}

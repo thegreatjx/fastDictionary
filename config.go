@@ -69,11 +69,19 @@ type Config struct {
 	AutoPronounce string `json:"auto_pronounce"` // off | uk | us
 	AudioVolume   int    `json:"audio_volume"`
 
-	// AI refinement via the local magpie gateway
-	AIEnabled bool   `json:"ai_enabled"`
-	AIURL     string `json:"ai_url"`
-	AIModel   string `json:"ai_model"`
-	AIEffort  string `json:"ai_effort"` // fast | deep
+	// AI refinement via Magpie or a direct OpenAI-compatible service.
+	AIEnabled  bool   `json:"ai_enabled"`
+	AIProvider string `json:"ai_provider"` // magpie | deepseek | qwen | ... | custom
+	AIURL      string `json:"ai_url"`
+	AIModel    string `json:"ai_model"`
+	// AIKey is the decrypted secret and never reaches the config file. The
+	// encrypted form is AIKeyEnc; store.Update seals it on every save.
+	AIKey    string `json:"-"`
+	AIKeyEnc string `json:"ai_key_enc,omitempty"`
+	// AIVision applies to direct providers only. Magpie keeps its existing
+	// image fallback behaviour; AIVisionAllowed encodes that difference.
+	AIVision bool   `json:"ai_vision"`
+	AIEffort string `json:"ai_effort"` // fast | deep
 
 	// window behaviour
 	CloseOnBlur    bool    `json:"close_on_blur"`
@@ -124,6 +132,90 @@ func (c Config) NoteWordDismissed(word string) bool {
 		}
 	}
 	return false
+}
+
+// IsMagpie reports whether the active service is the local Magpie gateway.
+// An empty provider is the pre-AIProvider config, which was always Magpie.
+func (c Config) IsMagpie() bool {
+	return normalizeAIProvider(c.AIProvider) == "magpie"
+}
+
+// AIVisionAllowed is true for Magpie, whose image fallback predates the
+// per-service switch, and for a direct service the user explicitly marked as
+// able to read images. It is false for a new direct service: sending an image
+// to a text-only model is a request that can only fail.
+func (c Config) AIVisionAllowed() bool {
+	return c.IsMagpie() || c.AIVision
+}
+
+// AIReasoningEffortFor returns the wire value for this model, or "" when the
+// service should receive no reasoning field at all. Direct providers get "":
+// they disagree on whether reasoning_effort exists, and a strict one answers
+// 400 to a field it does not know.
+func (c Config) AIReasoningEffortFor(model string) string {
+	if !c.IsMagpie() {
+		return ""
+	}
+	return ResolveEffort(c.AIEffort, model)
+}
+
+// AIConn snapshots everything one request needs. Passing a model explicitly
+// keeps per-action models from falling back to the global one by accident.
+func (c Config) AIConn(model string) aiConn {
+	provider := normalizeAIProvider(c.AIProvider)
+	key := normalizeAPIKey(c.AIKey)
+	if preset, ok := aiPresetByID(provider); ok && !preset.NeedsKey {
+		// Magpie and Ollama never take a key. A stale key from an earlier
+		// service must not be sent just because it is still in the config.
+		key = ""
+	}
+	return aiConn{
+		Provider: provider,
+		Endpoint: c.AIURL,
+		Model:    model,
+		Key:      key,
+		Vision:   c.AIVisionAllowed(),
+	}
+}
+
+// sealAIKey turns the in-memory key into the persisted blob. An empty key
+// clears the blob, so clearing the field in settings really forgets it.
+func (c *Config) sealAIKey() error {
+	if c.AIKey == "" {
+		c.AIKeyEnc = ""
+		return nil
+	}
+	enc, err := protectSecret(c.AIKey)
+	if err != nil {
+		c.AIKeyEnc = ""
+		return err
+	}
+	c.AIKeyEnc = enc
+	return nil
+}
+
+// normalizeAIProviderConfig infers the service for a config written before
+// AIProvider existed. The presence of ai_provider is what decides, not the
+// decoded default: unmarshalling into DefaultConfig would otherwise label any
+// old custom address as Magpie.
+func normalizeAIProviderConfig(cfg *Config, raw []byte) {
+	var stored struct {
+		Provider *string `json:"ai_provider"`
+		URL      string  `json:"ai_url"`
+	}
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		cfg.AIProvider = "magpie"
+		return
+	}
+	if stored.Provider == nil || strings.TrimSpace(*stored.Provider) == "" {
+		if stored.URL == "" || isMagpieEndpoint(stored.URL) {
+			cfg.AIProvider = "magpie"
+		} else {
+			cfg.AIProvider = "custom"
+		}
+		return
+	}
+	cfg.AIProvider = normalizeAIProvider(*stored.Provider)
 }
 
 // InitialAIMode reports which mode a selection popup should open in, given the
@@ -186,8 +278,9 @@ func DefaultConfig() Config {
 		AutoPronounce:      "off",
 		AudioVolume:        80,
 		AIEnabled:          true,
-		AIURL:              "http://127.0.0.1:3425/v1/chat/completions",
-		AIModel:            "workbuddy-ai/deepseek-v4.1-flash",
+		AIProvider:         "magpie",
+		AIURL:              magpieDefaultEndpoint,
+		AIModel:            magpieDefaultModel,
 		AIEffort:           EffortFast,
 		CloseOnBlur:        true,
 		AlwaysOnTop:        true,
@@ -331,12 +424,18 @@ func (s *store) RetrySave() error {
 	s.saveMu.Lock()
 	defer s.saveMu.Unlock()
 
-	s.mu.RLock()
+	s.mu.Lock()
+	var sealErr error
+	if s.path != "" {
+		sealErr = s.cfg.sealAIKey()
+	}
 	cfg := cloneConfig(s.cfg)
 	path := s.path
-	s.mu.RUnlock()
+	s.mu.Unlock()
 	var err error
-	if path != "" {
+	if sealErr != nil {
+		err = sealErr
+	} else if path != "" {
 		err = saveConfig(path, cfg)
 	}
 	s.mu.Lock()
@@ -362,9 +461,14 @@ func (s *store) Update(fn func(*Config)) Config {
 
 	s.mu.Lock()
 	fn(&s.cfg)
+	var sealErr error
+	if s.path != "" {
+		// Only a persisted key needs the encrypted blob. A memory store in a
+		// test keeps the plaintext in memory and never writes it anywhere.
+		sealErr = s.cfg.sealAIKey()
+	}
 	cfg := cloneConfig(s.cfg)
 	path := s.path
-	s.lastSaveErr = nil
 	s.mu.Unlock()
 
 	var saveErr error
@@ -373,6 +477,10 @@ func (s *store) Update(fn func(*Config)) Config {
 		if saveErr != nil {
 			log.Printf("fastDictionary: config save failed: %v", saveErr)
 		}
+	}
+	if sealErr != nil {
+		saveErr = sealErr
+		log.Printf("fastDictionary: AI key could not be encrypted: %v", sealErr)
 	}
 
 	s.mu.Lock()
@@ -420,6 +528,18 @@ func (s *store) load() bool {
 		s.mu.Lock()
 		s.retiredViewMigrated = true
 		s.mu.Unlock()
+	}
+	normalizeAIProviderConfig(&cfg, data)
+	if cfg.AIKeyEnc != "" {
+		if key, err := unprotectSecret(cfg.AIKeyEnc); err != nil {
+			// Never log the blob: it is still a secret, just one this account
+			// cannot open. Clearing it stops a blob that can never be used
+			// from being written back on every save.
+			log.Printf("fastDictionary: AI key could not be decrypted: %v", err)
+			cfg.AIKeyEnc = ""
+		} else {
+			cfg.AIKey = key
+		}
 	}
 	normalizeInitialAIMode(&cfg)
 	// A file written while 词典精读 still existed is rewritten once, so it

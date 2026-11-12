@@ -138,7 +138,7 @@ func TestCleanOcrTextKeepsLineStructure(t *testing.T) {
 	}
 }
 
-// TestStreamMagpieOmitsReasoningWhenEffortNone is the regression test for the
+// TestStreamAIOmitsReasoningWhenEffortNone is the regression test for the
 // 2.3x slowdown.
 //
 // The gateway validates reasoning_effort against each model's own
@@ -147,7 +147,7 @@ func TestCleanOcrTextKeepsLineStructure(t *testing.T) {
 // is therefore worse than sending nothing: on gemini-3.8-flash, omitting the
 // field costs 8.93s and 743 reasoning tokens, while asking for its real "low"
 // level costs 2.58s and none. An empty effort must carry no reasoning key.
-func TestStreamMagpieOmitsReasoningWhenEffortNone(t *testing.T) {
+func TestStreamAIOmitsReasoningWhenEffortNone(t *testing.T) {
 	var bodies []map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
@@ -163,11 +163,13 @@ func TestStreamMagpieOmitsReasoningWhenEffortNone(t *testing.T) {
 
 	run := func(effort string) map[string]any {
 		bodies = nil
-		if _, err := StreamMagpie(context.Background(), srv.URL, "m", "s", "u", effort, nil); err != nil {
-			t.Fatalf("StreamMagpie(%q): %v", effort, err)
+		if _, err := StreamAI(context.Background(), aiConn{
+			Provider: "magpie", Endpoint: srv.URL, Model: "m",
+		}, "s", "u", effort, nil); err != nil {
+			t.Fatalf("StreamAI(%q): %v", effort, err)
 		}
 		if len(bodies) != 1 {
-			t.Fatalf("StreamMagpie(%q) sent %d requests, want 1", effort, len(bodies))
+			t.Fatalf("StreamAI(%q) sent %d requests, want 1", effort, len(bodies))
 		}
 		return bodies[0]
 	}

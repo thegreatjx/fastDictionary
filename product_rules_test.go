@@ -45,9 +45,9 @@ func TestFriendlyAIError(t *testing.T) {
 		want string
 	}{
 		{context.DeadlineExceeded, "网络超时，请稍后重试。"},
-		{errors.New("HTTP 429: too many requests"), "请求过于频繁（429），请稍后再试。"},
-		{errors.New("401 unauthorized: api key missing"), "API Key 无效或未配置，请检查 AI 网关设置。"},
-		{errors.New("dial tcp 127.0.0.1:1: connection refused"), "无法连接 AI 网关，请检查网关地址是否已启动。"},
+		{errors.New("HTTP 429: too many requests"), "请求过于频繁，请稍后再试。"},
+		{errors.New("401 unauthorized: api key missing"), "API Key 无效或未配置，请检查 AI 设置。"},
+		{errors.New("dial tcp 127.0.0.1:1: connection refused"), "无法连接 AI 服务，请检查地址和网络。"},
 	}
 	for _, tc := range cases {
 		if got := friendlyAIError(tc.err); got != tc.want {

@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-func TestStreamMagpieWithImageSendsMultimodalPayload(t *testing.T) {
+func TestStreamAIWithImageSendsMultimodalPayload(t *testing.T) {
 	var captured map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
@@ -24,10 +24,12 @@ func TestStreamMagpieWithImageSendsMultimodalPayload(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	got, err := StreamMagpieWithImage(context.Background(), srv.URL, "m", "system", "OCR 原文",
+	got, err := StreamAIWithImage(context.Background(), aiConn{
+		Provider: "magpie", Endpoint: srv.URL, Model: "m", Vision: true,
+	}, "system", "OCR 原文",
 		"data:image/png;base64,AAAA", "", nil)
 	if err != nil {
-		t.Fatalf("StreamMagpieWithImage: %v", err)
+		t.Fatalf("StreamAIWithImage: %v", err)
 	}
 	if got != "译文" {
 		t.Fatalf("output = %q, want 译文", got)

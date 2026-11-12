@@ -38,8 +38,8 @@ func TestLiveMagpieStream(t *testing.T) {
 	start := time.Now()
 	deltas := 0
 	firstAt := 0
-	out, err := StreamMagpie(ctx, cfg.AIURL, cfg.AIModel, refineSystemPrompt,
-		"The quick brown fox jumps over the lazy dog", ResolveEffort(cfg.AIEffort, cfg.AIModel), func(chunk string) {
+	out, err := StreamAI(ctx, cfg.AIConn(cfg.AIModel), refineSystemPrompt,
+		"The quick brown fox jumps over the lazy dog", cfg.AIReasoningEffortFor(cfg.AIModel), func(chunk string) {
 			deltas++
 			if deltas == 1 {
 				firstAt = int(time.Since(start).Milliseconds())

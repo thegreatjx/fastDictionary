@@ -18,14 +18,14 @@ func TestModelLevelsAreLearnedAtStartup(t *testing.T) {
 		t.Fatalf("read main.go: %v", err)
 	}
 	body := string(src)
-	if !strings.Contains(body, "a.loadMagpieModels()") {
+	if !strings.Contains(body, "a.loadAIModels()") {
 		t.Fatal("main.go never loads the model list, so 快速 cannot resolve a level before the settings page opens")
 	}
 	// The startup call must sit in the startup path, before the app reports
 	// itself ready, not inside a settings-only branch.
 	ready := strings.Index(body, "fastDictionary: ready")
-	call := strings.Index(body, "a.loadMagpieModels()")
+	call := strings.Index(body, "a.loadAIModels()")
 	if ready < 0 || call < 0 || call > ready {
-		t.Errorf("loadMagpieModels() is not called before the app reports ready (call at %d, ready at %d)", call, ready)
+		t.Errorf("loadAIModels() is not called before the app reports ready (call at %d, ready at %d)", call, ready)
 	}
 }

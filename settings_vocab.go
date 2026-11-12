@@ -135,7 +135,7 @@ func (a *app) pageCustomActions(c *ui.Context, t *ui.Theme, cfg Config) {
 					ui.Column(c).FillWidth().Gap(4).Children(func() {
 						ui.Text(c, "调用模型").FontSize(13).FontWeight(600).TextColor(t.Text)
 						models := []string{"跟随全局 (默认)"}
-						for _, m := range a.getAvailableModels() {
+						for _, m := range a.getAIModels(a.store.Get()) {
 							if m != "" && m != "跟随全局 (默认)" {
 								models = append(models, m)
 							}
@@ -162,7 +162,7 @@ func (a *app) pageCustomActions(c *ui.Context, t *ui.Theme, cfg Config) {
 								a.customizingAction.Model = curModel
 							}
 						})
-						ui.Text(c, "从本地 magpie 网关支持的模型列表中选择；也可在下方手动输入任意自定义模型 ID。").FontSize(11).TextColor(t.TextMuted)
+						ui.Text(c, "从当前模型服务的可用列表中选择；也可在下方手动输入任意模型 ID。").FontSize(11).TextColor(t.TextMuted)
 					})
 
 					// 自定义模型 ID

@@ -1,28 +1,12 @@
-// AI refinement via the local magpie gateway (http://127.0.0.1:3425).
-// Verified 2026-10-10: group/auto-deepseek-v4-1-flash + reasoning.effort=low
-// answers a translation with reasoning_tokens=0 — fast and cheap.
+// Magpie-specific reasoning. The HTTP client lives in ai_client.go; this
+// file keeps the effort table and the prompts, which are the parts that are
+// actually about a particular gateway.
 package main
 
 import (
-	"bufio"
-	"bytes"
-	"context"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"sort"
 	"strings"
 	"sync"
-	"time"
 )
-
-const magpieBaseURL = "http://127.0.0.1:3425/v1/chat/completions"
-
-// magpieClient carries a long timeout for streaming responses: the
-// caller's context governs cancellation, and a model thinking for two
-// minutes about a hard sentence is still streaming within it.
-var magpieClient = &http.Client{Timeout: 120 * time.Second}
 
 // Effort is a preference, not a wire value: the wire value depends on the
 // model. There is no "no reasoning" level to ask for — the gateway validates
@@ -130,154 +114,6 @@ func ResolveEffort(pref, model string) string {
 		return level
 	}
 	return ""
-}
-
-type magpieMessage struct {
-	Role    string `json:"role"`
-	Content any    `json:"content"`
-}
-
-type magpieRequest struct {
-	Model           string          `json:"model"`
-	Messages        []magpieMessage `json:"messages"`
-	Stream          bool            `json:"stream"`
-	MaxTokens       int             `json:"max_tokens,omitempty"`
-	ReasoningEffort string          `json:"reasoning_effort,omitempty"`
-	Reasoning       *struct {
-		Effort string `json:"effort"`
-	} `json:"reasoning,omitempty"`
-}
-
-// StreamMagpie sends a chat request and calls onDelta for each streamed
-// content chunk. It returns the full accumulated text or an error.
-//
-// effort is a wire value, not a preference: callers turn Config.AIEffort into
-// one with ResolveEffort, which knows what this model actually accepts. An
-// empty effort sends no reasoning field at all.
-func StreamMagpie(ctx context.Context, endpoint, model, system, user, effort string, onDelta func(chunk string)) (string, error) {
-	return streamMagpie(ctx, endpoint, model, []magpieMessage{
-		{Role: "system", Content: system},
-		{Role: "user", Content: user},
-	}, effort, onDelta)
-}
-
-// StreamMagpieWithImage sends an OpenAI-style multimodal user message: the
-// OCR text is the normal text part and the screenshot is the image part. The
-// gateway's configured model must advertise image input; the fallback path
-// only runs after text-only refinement fails, so a text-only model is never
-// sent an image unless the user's screenshot translation actually needs it.
-func StreamMagpieWithImage(ctx context.Context, endpoint, model, system, user, imageDataURL, effort string, onDelta func(chunk string)) (string, error) {
-	if imageDataURL == "" {
-		return "", fmt.Errorf("magpie: empty image")
-	}
-	content := []map[string]any{
-		{"type": "text", "text": user},
-		{"type": "image_url", "image_url": map[string]string{"url": imageDataURL}},
-	}
-	return streamMagpie(ctx, endpoint, model, []magpieMessage{
-		{Role: "system", Content: system},
-		{Role: "user", Content: content},
-	}, effort, onDelta)
-}
-
-func streamMagpie(ctx context.Context, endpoint, model string, messages []magpieMessage, effort string, onDelta func(chunk string)) (string, error) {
-	if endpoint == "" {
-		endpoint = magpieBaseURL
-	}
-	if model == "" {
-		model = "group/auto-deepseek-v4-1-flash"
-	}
-
-	reqBody := magpieRequest{
-		Model:    model,
-		Stream:   true,
-		Messages: messages,
-	}
-
-	// Sending a level the model does not list is worse than sending nothing:
-	// the gateway drops it and the model applies its own default, which may be
-	// far more expensive than the level that was asked for.
-	if effort != "" && effort != "off" && effort != "none" {
-		reqBody.ReasoningEffort = effort
-		reqBody.Reasoning = &struct {
-			Effort string `json:"effort"`
-		}{Effort: effort}
-	}
-	body, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", err
-	}
-	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "text/event-stream")
-
-	resp, err := magpieClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("magpie: %w (网关没开？需要 magpie 在 127.0.0.1:3425)", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return "", fmt.Errorf("magpie: http %d: %s", resp.StatusCode, truncateFor(string(b), 120))
-	}
-
-	var sb strings.Builder
-	sawDone := false
-	sc := bufio.NewScanner(resp.Body)
-	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for sc.Scan() {
-		line := sc.Text()
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		payload := strings.TrimPrefix(line, "data: ")
-		if payload == "[DONE]" {
-			sawDone = true
-			break
-		}
-		var chunk struct {
-			Choices []struct {
-				Delta struct {
-					Content string `json:"content"`
-				} `json:"delta"`
-			} `json:"choices"`
-		}
-		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
-			continue
-		}
-		if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
-			c := chunk.Choices[0].Delta.Content
-			sb.WriteString(c)
-			if onDelta != nil {
-				onDelta(c)
-			}
-		}
-	}
-	if err := sc.Err(); err != nil {
-		if ctx.Err() != nil {
-			return sb.String(), ctx.Err()
-		}
-		return sb.String(), err
-	}
-	// The stream is only complete when the gateway sent the terminator. A
-	// connection that drops half way leaves a truncated JSON object that
-	// parses into an empty card, which the UI then showed as "done"; say so
-	// instead, and keep the partial text so the caller can still show it.
-	if !sawDone && ctx.Err() == nil {
-		partial := strings.TrimSpace(sb.String())
-		if partial == "" {
-			return "", fmt.Errorf("magpie: stream ended before any content")
-		}
-		return partial, fmt.Errorf("magpie: stream ended early (incomplete answer)")
-	}
-	out := strings.TrimSpace(sb.String())
-	if out == "" {
-		return "", fmt.Errorf("magpie: empty stream")
-	}
-	return out, nil
 }
 
 // refineSystemPrompt is the translation-refinement persona (mirrors pot's
@@ -429,51 +265,4 @@ const learnerDictSystemPrompt = "你是一个面向语言学习者的词典助�
 	"严格以紧凑的 JSON 对象格式输出，包含以下字段：\n" +
 	"{\"term\": \"...\", \"phonetic\": \"...\", \"partOfSpeech\": \"...\", \"definition\": \"...\", \"context\": \"...\", \"contextTerm\": [{\"text\": \"...\"}], \"contextTranslation\": \"...\", \"memoryTips\": \"...\", \"difficulty\": \"...\"}\n"
 
-// FetchAvailableModels queries the local magpie gateway for the list of available model IDs.
-func FetchAvailableModels(endpoint string) ([]string, error) {
-	if endpoint == "" {
-		endpoint = "http://127.0.0.1:3425/v1/models"
-	} else if strings.Contains(endpoint, "/chat/completions") {
-		endpoint = strings.Replace(endpoint, "/chat/completions", "/models", 1)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := magpieClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var data struct {
-		Data []struct {
-			ID             string   `json:"id"`
-			ReasoningLevel []string `json:"reasoning_levels"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, err
-	}
-	var out []string
-	levels := make(map[string][]string, len(data.Data))
-	for _, m := range data.Data {
-		if m.ID == "" {
-			continue
-		}
-		out = append(out, m.ID)
-		if len(m.ReasoningLevel) > 0 {
-			levels[m.ID] = m.ReasoningLevel
-		}
-	}
-	// Remember what each model accepts: ResolveEffort turns 快速 into the
-	// model's own cheapest level, and that list only exists here.
-	modelEfforts.Lock()
-	modelEfforts.m = levels
-	modelEfforts.Unlock()
-	sort.Strings(out)
-	return out, nil
-}
+	// FetchAvailableModels queries the local magpie gateway for the list of available model IDs.

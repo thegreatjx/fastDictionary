@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
-	"github.com/egoist/mygo/ui"
+	"slices"
 	"strings"
 	"time"
+
+	"github.com/egoist/mygo/ui"
 )
 
 func heading(c *ui.Context, t *ui.Theme, title, sub string) {
@@ -289,113 +291,359 @@ func (a *app) pageDict(c *ui.Context, t *ui.Theme, cfg Config) {
 }
 
 func (a *app) pageAI(c *ui.Context, t *ui.Theme, cfg Config) {
-	heading(c, t, "AI 精翻", "长文与需要斟酌的句子交给本地网关，流式返回。")
+	heading(c, t, "AI 精翻", "可选。用你自己的大模型 API，或本机 Magpie；不配置也能正常查词和机翻。")
 	ui.Form(c, func() {
-		ui.Field(c, "启用", func() {
-			v := cfg.AIEnabled
-			ui.Switch(c, &v).OnChange(func() {
-				a.store.Update(func(c *Config) { c.AIEnabled = v })
-			})
+		a.aiEnabledField(c, cfg)
+		a.aiServiceField(c, cfg)
+		if cfg.IsMagpie() {
+			a.aiMagpieFields(c, t, cfg)
+		} else {
+			a.aiDirectFields(c, t, cfg)
+		}
+		a.aiDefaultModeField(c, cfg)
+		a.aiHelpField(c, t, cfg)
+		a.aiCacheField(c, t)
+	})
+}
+
+func (a *app) aiEnabledField(c *ui.Context, cfg Config) {
+	idx := 0
+	if cfg.AIEnabled {
+		idx = 1
+	}
+	ui.Field(c, "状态", func() {
+		ui.Segmented(c, &idx, "关闭", "启用").MaxWidth(200).OnChange(func() {
+			a.store.Update(func(c *Config) { c.AIEnabled = idx == 1 })
 		})
-		ui.Field(c, "网关地址", func() {
-			v := cfg.AIURL
-			ui.TextInput(c, &v).OnChange(func() {
-				a.store.Update(func(c *Config) { c.AIURL = v })
+	}).Description("关闭后不显示 AI 卡片，也不会发起大模型请求。")
+}
+
+func (a *app) aiServiceField(c *ui.Context, cfg Config) {
+	preset := aiPresetForConfig(cfg)
+	current := preset.Name
+	ui.Field(c, "模型服务", func() {
+		ui.Select(c, &current, aiPresetNames()).Grow(1).OnChange(func() {
+			next, ok := aiPresetByName(current)
+			if !ok || next.ID == preset.ID {
+				return
+			}
+			cleared := false
+			a.store.Update(func(c *Config) {
+				cleared = applyAIPreset(c, next)
 			})
-		}).Description("留空使用 magpie 默认地址")
-		ui.Field(c, "默认模式", func() {
-			// 跟随翻译 is the "no preference" slot: it keeps the popup on the
-			// translate engine, which is what every existing install does.
-			// Without it, the setting has no way back to the old behaviour
-			// once a mode has been picked.
-			idx := 0
-			if cfg.AIModeIsChoice {
-				switch cfg.AIMode {
-				case "grammar":
-					idx = 1
-				case "translate", "polish":
-					idx = 2
+			a.resetAIStatus()
+			a.aiShowKey = false
+			a.aiHelpOpen = false
+			if cleared && next.NeedsKey {
+				a.mu.Lock()
+				a.actionSaveFeedback = "已切换服务，请重新填写 API Key"
+				a.mu.Unlock()
+			}
+			a.settingsRefresh()
+		})
+	}).Description("Magpie 是本机网关；没有装就选一个服务商，或选「自定义」填任意 OpenAI 兼容地址。")
+}
+
+func (a *app) aiMagpieFields(c *ui.Context, t *ui.Theme, cfg Config) {
+	ui.Field(c, "网关地址", func() {
+		v := cfg.AIURL
+		ui.TextInput(c, &v).FillWidth().Placeholder(magpieDefaultEndpoint).OnChange(func() {
+			a.store.Update(func(c *Config) { c.AIURL = v })
+		})
+	}).Description("只在本机使用，不需要 API Key。")
+	a.aiModelField(c, t, cfg)
+	a.aiEffortField(c, cfg)
+	a.aiTestField(c, t, cfg)
+}
+
+func (a *app) aiDirectFields(c *ui.Context, t *ui.Theme, cfg Config) {
+	preset := aiPresetForConfig(cfg)
+	ui.Field(c, "API 地址", func() {
+		v := cfg.AIURL
+		ui.TextInput(c, &v).FillWidth().Placeholder("https://api.deepseek.com/v1").OnChange(func() {
+			cleared := false
+			a.store.Update(func(c *Config) {
+				oldHost := endpointHost(c.AIURL)
+				c.AIURL = v
+				if endpointHost(v) != oldHost && c.AIKey != "" {
+					c.AIKey = ""
+					c.AIKeyEnc = ""
+					cleared = true
+				}
+			})
+			if cleared {
+				a.mu.Lock()
+				a.actionSaveFeedback = "地址已更换，请重新填写 API Key"
+				a.mu.Unlock()
+				a.settingsRefresh()
+			}
+		})
+	}).Description("填服务商文档里的地址，通常以 /v1 结尾；程序会自动补 /chat/completions。也可以粘贴完整接口地址。远程地址请用 https://，http:// 只适合本机服务。")
+
+	if preset.NeedsKey {
+		a.aiKeyField(c, cfg, preset)
+	}
+	a.aiModelField(c, t, cfg)
+	ui.Field(c, "图片输入", func() {
+		v := cfg.AIVision
+		ui.Switch(c, &v).OnChange(func() {
+			a.store.Update(func(c *Config) { c.AIVision = v })
+		})
+	}).Description("截图翻译时把图片一起发给模型；只有支持看图的模型才需要打开。")
+	a.aiTestField(c, t, cfg)
+	ui.Text(c, "划词内容会发送到你选择的服务商；本机 Ollama 或本机网关不会出本机。").
+		FontSize(12).TextColor(t.TextMuted).Wrap()
+}
+
+func (a *app) aiKeyField(c *ui.Context, cfg Config, preset aiPreset) {
+	desc := "只保存在本机，用当前 Windows 账户加密；不要带 Bearer 前缀。"
+	if preset.ID == "custom" {
+		desc += "本机无认证服务可留空。"
+	}
+	ui.Field(c, "API Key", func() {
+		ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
+			v := cfg.AIKey
+			input := ui.TextInput(c, &v).Grow(1).Placeholder("sk-...")
+			if !a.aiShowKey {
+				input.Password()
+			}
+			input.OnChange(func() {
+				a.store.Update(func(c *Config) { c.AIKey = normalizeAPIKey(v) })
+			})
+			label := "显示"
+			if a.aiShowKey {
+				label = "隐藏"
+			}
+			if ui.Button(c, label).Height(26).Padding(2, 8).Clicked() {
+				a.aiShowKey = !a.aiShowKey
+				a.settingsRefresh()
+			}
+			if preset.KeyURL != "" {
+				if ui.Button(c, "去获取 Key").Height(26).Padding(2, 8).Clicked() {
+					c.OpenURL(preset.KeyURL)
 				}
 			}
-			ui.Segmented(c, &idx, "跟随翻译", "长难句分析", "润色翻译").MaxWidth(400).OnChange(func() {
-				if idx > 0 && !a.store.Get().AIEnabled {
-					// The preference would be ignored at popup time anyway;
-					// keeping it selected would claim a mode the app cannot run.
-					a.mu.Lock()
-					a.actionSaveFeedback = "AI 精翻未启用，默认模式保持「跟随翻译」。请先启用 AI 网关"
-					a.mu.Unlock()
-					a.settingsRefresh()
-					return
+		})
+	}).Description(desc)
+}
+
+func (a *app) aiModelField(c *ui.Context, t *ui.Theme, cfg Config) {
+	state := a.aiModelsStatus(cfg)
+	models := aiModelsForState(cfg, state)
+	showSelect := state.phase == aiModelsReady || cfg.IsMagpie()
+	current := strings.TrimSpace(cfg.AIModel)
+	notInFetched := state.phase == aiModelsReady && current != "" && !slices.Contains(state.models, current)
+	if current != "" && !slices.Contains(models, current) {
+		// Keep the active model visible even when the service did not list it.
+		// Hiding it behind "自定义模型…" made the page look like it had no
+		// model while a valid one was still configured.
+		models = append([]string{current}, models...)
+	}
+
+	ui.Field(c, "模型", func() {
+		ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
+			if showSelect {
+				options := append(append([]string(nil), models...), "自定义模型…")
+				chosen := cfg.AIModel
+				if !slices.Contains(models, chosen) {
+					chosen = "自定义模型…"
 				}
-				modes := []string{"", "grammar", "translate"}
-				a.store.Update(func(c *Config) {
-					if idx <= 0 {
-						c.AIModeIsChoice = false
+				ui.Select(c, &chosen, options).Grow(1).OnChange(func() {
+					if chosen == "自定义模型…" {
+						// Clearing the stored model is what makes the next frame
+						// show the text input. A local "custom" flag would be a
+						// second source of truth for the same fact.
+						a.store.Update(func(c *Config) { c.AIModel = "" })
+						a.settingsRefresh()
 						return
 					}
-					c.AIModeIsChoice = true
-					c.AIMode = modes[idx]
+					a.store.Update(func(c *Config) { c.AIModel = chosen })
+					a.settingsRefresh()
 				})
-			})
-		}).Description("划词后直接打开哪张 AI 卡片；选「跟随翻译」则只做机翻，需要时再点标签页。词条卡片在生词本里查看")
-		ui.Field(c, "模型", func() {
-			currentModel := cfg.AIModel
-			models := a.getAvailableModels()
-			// FillWidth instead of a fixed 320: with the label column, a fixed
-			// width pushed the refresh button past the right edge of a
-			// narrow window.
-			ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Select(c, &currentModel, models).Grow(1).OnChange(func() {
-					a.store.Update(func(c *Config) { c.AIModel = currentModel })
+			} else {
+				v := cfg.AIModel
+				ui.TextInput(c, &v).Grow(1).Placeholder("输入模型 ID").OnChange(func() {
+					a.store.Update(func(c *Config) { c.AIModel = v })
 				})
-				if ui.Button(c, "🔄 刷新").Height(26).Padding(2, 8).Radius(4).Tooltip("从 Magpie 网关实时刷新完整模型列表").Clicked() {
-					a.refreshMagpieModels()
-				}
-			})
-		}).Description(fmt.Sprintf("从本地 magpie 网关动态拉取（当前已加载 %d 个模型）", len(a.getAvailableModels())))
-		ui.Field(c, "自定义模型ID", func() {
+			}
+			label := "获取模型"
+			if state.phase == aiModelsLoading {
+				label = "获取中…"
+			}
+			if ui.Button(c, label).Height(26).Padding(2, 8).
+				Disabled(state.phase == aiModelsLoading).Clicked() {
+				a.refreshAIModels()
+			}
+		})
+		if showSelect && !slices.Contains(models, cfg.AIModel) {
 			v := cfg.AIModel
-			ui.TextInput(c, &v).FillWidth().OnChange(func() {
+			ui.TextInput(c, &v).FillWidth().Placeholder("输入模型 ID").OnChange(func() {
 				a.store.Update(func(c *Config) { c.AIModel = v })
 			})
-		}).Description("也可以直接手动粘贴 magpie 内任意自定义模型 ID")
-		ui.Field(c, "推理强度", func() {
-			idx := 0
-			efforts := []string{EffortFast, EffortDeep}
-			for i, e := range efforts {
-				if e == cfg.AIEffort {
-					idx = i
+		}
+		switch state.phase {
+		case aiModelsUnsupported:
+			ui.Text(c, "该服务不提供模型列表，请直接手动填写模型 ID。").
+				FontSize(12).TextColor(t.TextMuted).Wrap()
+		case aiModelsFailed:
+			ui.Text(c, "获取失败："+state.err).FontSize(12).TextColor(t.Danger).Wrap()
+		}
+		if notInFetched {
+			ui.Text(c, "当前模型不在服务返回的列表里，可以保留，也可以重新选择。").
+				FontSize(12).TextColor(t.TextMuted).Wrap()
+		}
+	}).Description("填模型 ID，不是显示名称。点「获取模型」从服务读取；有些服务不提供列表，直接手填即可。")
+}
+
+func (a *app) aiEffortField(c *ui.Context, cfg Config) {
+	ui.Field(c, "推理强度", func() {
+		idx := 0
+		efforts := []string{EffortFast, EffortDeep}
+		for i, e := range efforts {
+			if e == cfg.AIEffort {
+				idx = i
+			}
+		}
+		ui.Segmented(c, &idx, "快速 (默认 · 推荐)", "深度思考").MaxWidth(340).OnChange(func() {
+			v := efforts[idx]
+			a.store.Update(func(c *Config) { c.AIEffort = v })
+		})
+	}).Description("快速：按模型实测的档位发请求，1-3 秒出结果；深度思考：强制开启思维链，慢 2-10 倍但更适合难句。")
+}
+
+func (a *app) aiTestField(c *ui.Context, t *ui.Theme, cfg Config) {
+	state := a.aiProbeStatus(cfg)
+	ui.Field(c, "连通性", func() {
+		ui.Column(c).Gap(6).Children(func() {
+			label := "测试连接"
+			if state.phase == aiProbeRunning {
+				label = "测试中…"
+			}
+			if ui.Button(c, label).Width(140).
+				Disabled(state.phase == aiProbeRunning).
+				Clicked() {
+				a.testAIConnection()
+			}
+			switch state.phase {
+			case aiProbeSucceeded:
+				ui.Text(c, "✓ "+state.msg).FontSize(12).TextColor(t.Success).Wrap()
+			case aiProbeFailed:
+				ui.Text(c, "✗ "+state.msg).FontSize(12).TextColor(t.Danger).Wrap()
+			}
+		})
+	}).Description("用当前地址、Key 和模型发一条最小请求；会消耗少量额度。")
+}
+
+func (a *app) aiDefaultModeField(c *ui.Context, cfg Config) {
+	ui.Field(c, "默认模式", func() {
+		// 跟随翻译 is the "no preference" slot: it keeps the popup on the
+		// translate engine, which is what every existing install does.
+		idx := 0
+		if cfg.AIModeIsChoice {
+			switch cfg.AIMode {
+			case "grammar":
+				idx = 1
+			case "translate", "polish":
+				idx = 2
+			}
+		}
+		ui.Segmented(c, &idx, "跟随翻译", "长难句分析", "润色翻译").MaxWidth(400).OnChange(func() {
+			if idx > 0 && !a.store.Get().AIEnabled {
+				// The preference would be ignored at popup time anyway;
+				// keeping it selected would claim a mode the app cannot run.
+				a.mu.Lock()
+				a.actionSaveFeedback = "AI 精翻未启用，默认模式保持「跟随翻译」。请先启用 AI 精翻"
+				a.mu.Unlock()
+				a.settingsRefresh()
+				return
+			}
+			modes := []string{"", "grammar", "translate"}
+			a.store.Update(func(c *Config) {
+				if idx <= 0 {
+					c.AIModeIsChoice = false
+					return
+				}
+				c.AIModeIsChoice = true
+				c.AIMode = modes[idx]
+			})
+		})
+	}).Description("划词后直接打开哪张 AI 卡片；选「跟随翻译」则只做机翻，需要时再点标签页。词条卡片在生词本里查看")
+}
+
+func (a *app) aiHelpField(c *ui.Context, t *ui.Theme, cfg Config) {
+	preset := aiPresetForConfig(cfg)
+	label := "不会填？看填写说明"
+	if a.aiHelpOpen {
+		label = "收起填写说明"
+	}
+	if ui.Button(c, label).Height(26).Padding(2, 10).FontSize(12).Clicked() {
+		a.aiHelpOpen = !a.aiHelpOpen
+		a.settingsRefresh()
+	}
+	if !a.aiHelpOpen {
+		return
+	}
+	ui.Box(c).FillWidth().Padding(12, 14).Radius(8).
+		Background(t.Surface).Border(1, t.Border).Children(func() {
+		ui.Column(c).FillWidth().Gap(8).Children(func() {
+			if preset.Magpie {
+				ui.Text(c, "本机 Magpie 需要先启动 magpie 网关（默认 127.0.0.1:3425）。没装的话，把「模型服务」换成 DeepSeek 等服务商，填上 API Key 即可。").
+					FontSize(12).TextColor(t.Text).Wrap()
+			} else {
+				var steps []string
+				switch preset.ID {
+				case "ollama":
+					ui.Text(c, "以本机 Ollama 为例：").FontSize(12).FontWeight(600).TextColor(t.Text)
+					steps = []string{
+						"1. 先启动 Ollama，默认地址是 127.0.0.1:11434。",
+						"2. 用 ollama list 确认模型已经下载。",
+						"3. 把模型名填到「模型」，点「测试连接」。",
+						"Ollama 不需要 API Key。",
+					}
+				case "custom":
+					ui.Text(c, "以任意 OpenAI 兼容服务为例：").FontSize(12).FontWeight(600).TextColor(t.Text)
+					steps = []string{
+						"1. 在服务商文档里找到 API 地址，通常以 /v1 结尾。",
+						"2. 把地址填到「API 地址」，把 Key 粘到「API Key」；本机无认证服务可留空。",
+						"3. 填服务商给的模型 ID，点「测试连接」。",
+						"看到「正常」就能用了。每次精翻会消耗账号额度。",
+					}
+				default:
+					ui.Text(c, "以 "+preset.Name+" 为例：").FontSize(12).FontWeight(600).TextColor(t.Text)
+					steps = []string{
+						"1. 打开服务商控制台，创建 API Key 并复制。Key 通常只显示一次。",
+						"2. 回到这里，模型服务选 " + preset.Name + "，地址已经填好；把 Key 粘进「API Key」。",
+						"3. 点「获取模型」选一个模型，再点「测试连接」。",
+						"看到「正常」就能用了。每次精翻会消耗账号额度。",
+					}
+				}
+				for _, line := range steps {
+					ui.Text(c, line).FontSize(12).TextColor(t.TextMuted).Wrap()
 				}
 			}
-			ui.Segmented(c, &idx, "快速 (默认 · 推荐)", "深度思考").MaxWidth(340).OnChange(func() {
-				v := efforts[idx]
-				a.store.Update(func(c *Config) { c.AIEffort = v })
-			})
-		}).Description("快速：按模型实测的快捷键档位发请求，1-3 秒出结果；深度思考：强制开启思维链，慢 2-10 倍但更适合难句")
-		ui.Field(c, "连通性", func() {
-			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-				if ui.Button(c, "测试网关").Width(140).Clicked() {
-					a.testGateway()
+			if preset.KeyURL != "" {
+				if ui.Button(c, "打开 "+preset.Name+" 控制台").Height(26).Padding(2, 10).FontSize(11).Clicked() {
+					c.OpenURL(preset.KeyURL)
 				}
-				if a.aiTest != "" {
-					ui.Text(c, a.aiTest).FontSize(12).TextColor(t.TextMuted)
-				}
-			})
-		}).Description("测试本地 magpie 大模型网关连通性；日常划词查词走微软/谷歌双路直连通道（~200ms）")
-		ui.Field(c, "临时缓存", func() {
-			ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, fmt.Sprintf("当前 %d 条 · 仅在内存中，重启后清空", a.aiCacheCount())).
-					FontSize(12).TextColor(t.TextMuted)
-				if ui.Button(c, "清空临时缓存").Height(26).Padding(2, 10).FontSize(11).Clicked() {
-					a.clearAICache()
-					a.mu.Lock()
-					a.actionSaveFeedback = "临时 AI 缓存已清空"
-					a.mu.Unlock()
-					a.settingsRefresh()
-				}
-			})
-		}).Description("AI 结果会按提示词、模型、网关地址和推理强度自动失效；这里可手动清空")
+			}
+		})
 	})
+}
+
+func (a *app) aiCacheField(c *ui.Context, t *ui.Theme) {
+	ui.Field(c, "临时缓存", func() {
+		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, fmt.Sprintf("当前 %d 条 · 仅在内存中，重启后清空", a.aiCacheCount())).
+				FontSize(12).TextColor(t.TextMuted)
+			if ui.Button(c, "清空临时缓存").Height(26).Padding(2, 10).FontSize(11).Clicked() {
+				a.clearAICache()
+				a.mu.Lock()
+				a.actionSaveFeedback = "临时 AI 缓存已清空"
+				a.mu.Unlock()
+				a.settingsRefresh()
+			}
+		})
+	}).Description("AI 结果会按提示词、模型、服务地址和推理强度自动失效；这里可手动清空")
 }
 
 func (a *app) pageHotkey(c *ui.Context, t *ui.Theme, cfg Config) {
@@ -516,7 +764,7 @@ func (a *app) pageAbout(c *ui.Context, t *ui.Theme, cfg Config) {
 		{"词典与音标", "有道 jsonapi（英/美 IPA）"},
 		{"发音", "有道 dictvoice，mp3 缓存 + 系统 MCI 播放"},
 		{"OCR 引擎", "Windows.Media.Ocr 原生离线神经文字识别"},
-		{"AI 精翻", "magpie 网关，闪速模型 + 低推理档"},
+		{"AI 精翻", "Magpie 或任意 OpenAI 兼容服务"},
 		{"外壳", "mygo v0.8.3 原生 UI（Go，无 cgo）"},
 	}
 	for _, r := range rows {

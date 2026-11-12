@@ -5,7 +5,8 @@
 // input mode. The popup is mygo native UI — no webview, so it appears at
 // once. Engines: unauthenticated Microsoft translatetext racing Google
 // gtx; a dictionary card with UK/US IPA and audio for single words; and
-// an optional AI refinement streamed from the local magpie gateway.
+// an optional AI refinement streamed from Magpie or a direct
+// OpenAI-compatible service.
 package main
 
 import (
@@ -338,7 +339,7 @@ func main() {
 		// ask for and falls back to sending no field at all — which is exactly
 		// the slow path the option exists to avoid on models that reason by
 		// default (measured: gemini 8.93s with no field against 2.58s on low).
-		a.loadMagpieModels()
+		a.loadAIModels()
 
 		log.Printf("fastDictionary: ready (selection=%s input=%s)", cfg.HotkeySelection, cfg.HotkeyInput)
 

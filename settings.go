@@ -1,14 +1,13 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
 	"log"
 	"os"
 	"strings"
-	"time"
+
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 )
 
 // langOptions is the languages the translator offers, in the order the picker
@@ -100,7 +99,7 @@ func (a *app) settingsView(c *ui.Context) {
 				ui.SidebarItem(c, "vocabulary", nil, "生词本")
 				ui.SidebarItem(c, "translate", nil, "翻译")
 				ui.SidebarItem(c, "dict", nil, "词典与发音")
-				ui.SidebarItem(c, "ai", nil, "AI 网关")
+				ui.SidebarItem(c, "ai", nil, "AI 精翻")
 				ui.SidebarItem(c, "hotkey", nil, "快捷键")
 				ui.SidebarItem(c, "about", nil, "关于")
 			})
@@ -203,54 +202,6 @@ func settingsLogPath() string {
 		}
 	}
 	return dir + string(os.PathSeparator) + logFile
-}
-
-// streamMagpieProbe is the gateway probe call, kept as a variable so the
-// stale-result rules can be tested without a live gateway.
-var streamMagpieProbe = StreamMagpie
-
-// testGateway pings the magpie gateway and reports the result.
-func (a *app) testGateway() {
-	cfg := a.store.Get()
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	a.mu.Lock()
-	if a.aiTestCancel != nil {
-		a.aiTestCancel()
-	}
-	a.aiTestGen++
-	gen := a.aiTestGen
-	a.aiTestCancel = cancel
-	a.aiTest = "测试中…"
-	a.mu.Unlock()
-	if a.cfgWin != nil {
-		a.cfgWin.Update(func() {})
-	}
-	go func() {
-		defer cancel()
-		start := time.Now()
-		out, err := streamMagpieProbe(ctx, cfg.AIURL, cfg.AIModel, "You are a test probe. Reply with 'pong' only.", "ping", ResolveEffort(cfg.AIEffort, cfg.AIModel), nil)
-		msg := ""
-		if err != nil {
-			msg = "失败：" + err.Error()
-		} else {
-			msg = fmt.Sprintf("正常（耗时: %v，模型: %s，返回: %s）",
-				time.Since(start).Round(time.Millisecond),
-				cfg.AIModel,
-				truncateFor(out, 20))
-		}
-		a.mu.Lock()
-		if gen != a.aiTestGen {
-			a.mu.Unlock()
-			return
-		}
-		a.aiTestCancel = nil
-		a.aiTest = msg
-		a.mu.Unlock()
-		if a.cfgWin != nil {
-			a.cfgWin.Update(func() {})
-		}
-		log.Printf("fastDictionary: gateway test: %s", msg)
-	}()
 }
 
 func canonicalHotkey(s string) string {
@@ -382,75 +333,9 @@ func (a *app) resetHotkeysToDefault() {
 	a.applyHotkeys()
 }
 
-// fetchAvailableModelsFunc is the gateway model probe, kept as a variable so
-// the cache's refresh policy can be tested without a gateway.
-var fetchAvailableModelsFunc = FetchAvailableModels
-
-// loadMagpieModels refreshes the model list when the cached one is missing,
-// belongs to another gateway, or is old enough to be worth refreshing again.
-func (a *app) loadMagpieModels() {
-	a.loadMagpieModelsWithPolicy(false)
-}
-
-// refreshMagpieModels forces a fetch, for the explicit refresh button.
-func (a *app) refreshMagpieModels() {
-	a.loadMagpieModelsWithPolicy(true)
-}
-
-func (a *app) loadMagpieModelsWithPolicy(force bool) {
-	cfg := a.store.Get()
-	a.mu.Lock()
-	if a.loadingModels {
-		a.mu.Unlock()
-		return
-	}
-	if !force && len(a.magpieModels) > 0 && a.magpieModelsURL == cfg.AIURL && time.Since(a.magpieModelsLoadedAt) < 5*time.Minute {
-		a.mu.Unlock()
-		return
-	}
-	a.loadingModels = true
-	a.magpieModelsGen++
-	gen := a.magpieModelsGen
-	a.mu.Unlock()
-	go func() {
-		models, err := fetchAvailableModelsFunc(cfg.AIURL)
-		a.mu.Lock()
-		if gen == a.magpieModelsGen {
-			a.loadingModels = false
-			if err == nil && len(models) > 0 {
-				a.magpieModels = models
-				a.magpieModelsURL = cfg.AIURL
-				a.magpieModelsLoadedAt = time.Now()
-			}
-		}
-		a.mu.Unlock()
-		if a.cfgWin != nil {
-			a.cfgWin.Update(func() {})
-		}
-	}()
-}
-
-func (a *app) getAvailableModels() []string {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if len(a.magpieModels) > 0 {
-		return a.magpieModels
-	}
-	return []string{
-		"workbuddy-ai/deepseek-v4.1-flash",
-		"group/auto-deepseek-v4-1-flash",
-		"workbuddy/deepseek-v4.1-flash",
-		"antigravity/gemini-3.8-flash",
-		"workbuddy/glm-5.3-flash",
-		"workbuddy/kimi-k3-1",
-		"minimax-code/MiniMax-M2.7-highspeed",
-		"codex/gpt-5.5",
-	}
-}
-
-// openAISettings jumps straight to the AI gateway page. A failed AI refine
-// should lead to the setting that can fix it, not to a generic settings page
-// the user then has to search.
+// openAISettings jumps straight to the AI page. A failed AI refine should lead
+// to the setting that can fix it, not to a generic settings page the user then
+// has to search.
 func (a *app) openAISettings() {
 	a.page = "ai"
 	a.showSettings()
@@ -461,7 +346,7 @@ func (a *app) openAISettings() {
 func (a *app) showSettings() {
 	a.hotkeyDraftsInit = false
 	a.initHotkeyDrafts()
-	a.loadMagpieModels()
+	a.loadAIModels()
 	a.resetVocabularyViewState()
 	if a.cfgWin != nil && !a.cfgWin.IsDestroyed() {
 		a.cfgWin.Show()
