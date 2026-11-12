@@ -13,10 +13,13 @@ import (
 // data, even when the developer is the user.
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "fastDictionary-tests-")
+	globalVocabOnce.Do(func() {}) // consume the Once; it must not overwrite the test store
 	if err != nil {
+		// Better an empty in-memory notebook than letting a test touch the
+		// developer's real vocabulary.json.
+		globalVocabStore = newMemoryVocabularyStore()
 		os.Exit(m.Run())
 	}
-	globalVocabOnce.Do(func() {}) // consume the Once; it must not overwrite the test store
 	globalVocabStore = &VocabularyStore{
 		path:    filepath.Join(dir, "vocabulary.json"),
 		entries: []VocabularyEntry{},

@@ -120,10 +120,19 @@ func (s *VocabularyStore) DueEntries(now time.Time) []VocabularyEntry {
 	return out
 }
 
-// DueCount is the badge number; it takes the same path as DueEntries so the
-// button and the queue can never disagree.
+// DueCount is the badge number; it is a plain count instead of len(DueEntries)
+// because the settings page asks on every frame and the queue only needs its
+// ordering once, when a session starts.
 func (s *VocabularyStore) DueCount(now time.Time) int {
-	return len(s.DueEntries(now))
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	n := 0
+	for _, e := range s.entries {
+		if reviewable(e) && e.reviewDue(now) {
+			n++
+		}
+	}
+	return n
 }
 
 // Get returns one entry by ID. The review queue holds IDs rather than copies,
