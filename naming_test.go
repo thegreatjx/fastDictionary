@@ -31,7 +31,10 @@ func TestOneNameEverywhere(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read go.mod: %v", err)
 	}
-	if !strings.Contains(string(gomod), "module "+appName+"\n") {
+	// Git on Windows may check the file out with CRLF; the declaration is
+	// still the same line.
+	gomodText := strings.ReplaceAll(string(gomod), "\r\n", "\n")
+	if !strings.Contains(gomodText, "module "+appName+"\n") {
 		t.Fatalf("go.mod does not declare `module %s`", appName)
 	}
 

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,6 +76,12 @@ func TestLogTextHidesSelectionByDefault(t *testing.T) {
 }
 
 func TestRecoverLogSwallowsBackgroundPanic(t *testing.T) {
+	// The recovered stack is written through the standard logger; silence it
+	// so a passing test does not print a panic that never happened.
+	prev := log.Writer()
+	log.SetOutput(io.Discard)
+	t.Cleanup(func() { log.SetOutput(prev) })
+
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
