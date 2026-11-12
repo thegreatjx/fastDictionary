@@ -1,8 +1,8 @@
-# fastpot 划词功能 —— 交接文档
+# fastDictionary 划词功能 —— 交接文档
 
 > 交接时间：2026-10-11 · 交接原因：划词小图标功能未完成，用户要求交给下一个模型
-> 项目路径：`D:\AI_workspace\translate\fastpot`（**不是 git 仓库**，无版本回退）
-> 构建产物：`fastpot-dev.exe`（`go build -o fastpot-dev.exe .`）
+> 项目路径：`D:\AI_workspace\translate\fastDictionary`（**不是 git 仓库**，无版本回退）
+> 构建产物：`fastDictionary-dev.exe`（`go build -o fastDictionary-dev.exe .`）
 
 ---
 
@@ -50,7 +50,7 @@
 ### 3.2 取词永远为空 —— 先弹窗再取词，焦点被自己抢走
 
 - **文件**：`popup.go` `openPopup()`
-- **根因**：原代码先 `win.Show()` + `win.Focus()`，**然后**才调 `CaptureSelection()`。此时前台已变成 fastpot 自己，UIA 和 Ctrl+C 都只能拿到自己的东西 → 永远取空。
+- **根因**：原代码先 `win.Show()` + `win.Focus()`，**然后**才调 `CaptureSelection()`。此时前台已变成 fastDictionary 自己，UIA 和 Ctrl+C 都只能拿到自己的东西 → 永远取空。
 - **修复**：改为**先取词、后弹窗**。拆出 `openPopupWithText(m, text)`，取词在它之前完成。
   ```go
   func (a *app) openPopup(m popupMode) {
@@ -88,14 +88,14 @@
 
 ### 4.1 已确凿的实测证据
 
-用 `fastpot-dev.exe --chip` 启动（`main.go` 里的调试开关，会在 (760,520) 显示图标并打印窗口真实状态）：
+用 `fastDictionary-dev.exe --chip` 启动（`main.go` 里的调试开关，会在 (760,520) 显示图标并打印窗口真实状态）：
 
 ```
 chip hwnd=0x250e60 rect=(0,0 263x67) visible=true iconic=false
   exstyle=0x8000188 toolwindow=true layered=false topmost=true noactivate=true appwindow=false
   style=0x6ca0000 child=false popup=false visibleBit=true owner=0x0
-fastpot: raw SetWindowPos ret=1 err=The operation completed successfully. -> (0,0), moved=false
-fastpot: MoveWindow ret=1 err=The operation completed successfully. -> (0,0), moved=false
+fastDictionary: raw SetWindowPos ret=1 err=The operation completed successfully. -> (0,0), moved=false
+fastDictionary: MoveWindow ret=1 err=The operation completed successfully. -> (0,0), moved=false
 ```
 
 **关键矛盾（这就是没解决的问题）**：
@@ -125,10 +125,10 @@ fastpot: MoveWindow ret=1 err=The operation completed successfully. -> (0,0), mo
    **验证方法**：在 `mygo` 源码里给每一处 `procSetWindowPos.Call` 加日志（改 `GOMODCACHE` 里的源码，或 `go mod edit -replace` 指向本地副本），看谁在把窗口拉回 (0,0)。
 
 2. **窗口其实移动了，但 `GetWindowRect` 读到的是别的窗口。**
-   已用 `EnumWindows` 列出本进程全部顶层窗口，只有一个 "fastpot selection"（hwnd=0x250e60），所以可能性较低，但**未 100% 排除句柄复用**。
+   已用 `EnumWindows` 列出本进程全部顶层窗口，只有一个 "fastDictionary selection"（hwnd=0x250e60），所以可能性较低，但**未 100% 排除句柄复用**。
 
 3. **DPI 虚拟化 / 进程 DPI 感知模式问题。**
-   进程若是 DPI-unaware，`SetWindowPos` 的坐标会被系统按虚拟化规则改写。fastpot 用 mygo（DWM/DirectComposition + `GetDpiForMonitor`），理论上 per-monitor aware，但**未验证**。
+   进程若是 DPI-unaware，`SetWindowPos` 的坐标会被系统按虚拟化规则改写。fastDictionary 用 mygo（DWM/DirectComposition + `GetDpiForMonitor`），理论上 per-monitor aware，但**未验证**。
    **验证方法**：`GetProcessDpiAwareness` 读实际感知级别。
 
 4. **窗口在非交互式桌面 / 不同虚拟桌面。**
@@ -178,7 +178,7 @@ fastpot: MoveWindow ret=1 err=The operation completed successfully. -> (0,0), mo
 
 ## 六、环境与配置
 
-- 配置路径：`%AppData%\fastpot-dev\config.json`（开发版）
+- 配置路径：`%AppData%\fastDictionary-dev\config.json`（开发版）
 - **关键配置项**：
   - `selection_trigger`: `icon` | `auto` | `hotkey`
   - `selection_capture`: `auto` | `copy` —— **取词失败时先让用户改成 `copy` 试**

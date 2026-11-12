@@ -351,7 +351,7 @@ func TestAIResultStateRenderingBaseline(t *testing.T) { /* idle/streaming/prose/
 每批结束后跑这四条，`gofmt -d .` 必须无输出：
 
 ```bash
-cd D:/AI_workspace/translate/fastpot
+cd D:/AI_workspace/translate/fastDictionary
 go test ./...
 go test -race ./...
 go vet ./...
@@ -548,7 +548,7 @@ gofmt -d .
 ### 批次 5f 验证记录（C10 截图框选会话边界收口）
 
 - 测试先行：新增 [c10_snip_session_test.go](<../c10_snip_session_test.go>)。`TestStartNativeSnipGuardsSingleton` 用项目既有 `source_assert_test.go` 的 `readSourceFile`/`countOccurrences`/`containsText`，断言 [snip.go](<../snip.go>) 声明 `beginSnipSessionLocked` 与 `endSnipSessionLocked`、切出 `StartNativeSnip` 函数体并断言含 `beginSnipSessionLocked(` 与 `defer` 且 `currentSnip = session` 裸赋值计数为 0、`snipWndProc` 取指针仍在 `snipMu` 锁内；修复前 FAIL：`缺少 beginSnipSessionLocked：连按截图仍会覆盖全局 session`，ok 6.214s。改后追加 `TestBeginSnipSessionLocked`（走一遍会话生命周期：占位成功 / 连按被拒且不覆盖 / 错配清理不误清 / 持有者结束后可重占 / 重复清理幂等；测试用 `t.Cleanup` 保存恢复 `currentSnip` 隔离其他测试），定向两条 PASS ok 6.352s。
-- 生产改动只落 [snip.go](<../snip.go>) 3 处（Python `read_bytes`/`write_bytes(s.encode("utf-8"))` 保持 LF，2 个锚点各命中 1 次，CRLF=0，无 `fastpot` 禁串）：`var` 块之后新增两个持锁纯方法（各带中文注释）；`StartNativeSnip` 的 `:463-465` 裸赋值替换为锁内 `beginSnipSessionLocked` 守卫（false 则 log + return）与 defer `endSnipSessionLocked`；`snipWndProc` / `:504-507` / 消息循环 / 裁剪写盘 / 回调一字没动。
+- 生产改动只落 [snip.go](<../snip.go>) 3 处（Python `read_bytes`/`write_bytes(s.encode("utf-8"))` 保持 LF，2 个锚点各命中 1 次，CRLF=0，无 `fastDictionary` 禁串）：`var` 块之后新增两个持锁纯方法（各带中文注释）；`StartNativeSnip` 的 `:463-465` 裸赋值替换为锁内 `beginSnipSessionLocked` 守卫（false 则 log + return）与 defer `endSnipSessionLocked`；`snipWndProc` / `:504-507` / 消息循环 / 裁剪写盘 / 回调一字没动。
 - 差分：`git diff -- snip.go` 改前 `/tmp/r18-before.diff` = **0 行（干净文件）** / 改后 51 行，全部属本批：新增行只有两个方法、守卫与 defer 块，唯一 `-` 行是 `currentSnip = session`（被守卫替换）；其余 12 个文件 diff 行数与开工一致，18 个用户改动逐字未动。
 - 本批四条：`gofmt -l .`（空，新建测试与 snip.go 经 `gofmt -w`）、`go vet ./...`（clean）、`go test -count=1 ./...` ok 9.400s、定向两条 PASS ok 6.352s。`go test -race -count=1 ./...` **首次即通过**（exit=0、DATA RACE 计数 0，存 `/tmp/r18-race-full.log`；本批未再出现 2c / 4b / 4d / 4e / 5b / 5c / 5d 的偶发 FAIL），仍不据此断言既有跨测试全局 breaker 污染已修。本批两测试 `-race -count=20` ok 1.507s。
 - 手工走查：仍未启动 GUI，清单新增第 13 条（连按截图快捷键 / 建窗失败后重试）仍待真人验证；`snipWndProc` 的字段迁移需真实 Win32 消息泵，自动化只覆盖会话边界的纯方法与源码契约两层。
@@ -653,7 +653,7 @@ gofmt -d .
 | 切读取点后 UI 少显示一个 Spinner | 新 `Phase` 与旧 bool 不是严格等价（例如 `aiBusy=false && aiText!=""` 的完成态） | 回退该点，先把状态集合补全再切 |
 | `go vet` 报未使用字段 | 阶段 A 不删旧字段（§1 第 3 步已改为「清点」）；若阶段 B 收敛字段时漏了读取点才会出现 | 补切读取点，不要加 `_ = a.xxx` 掩盖 |
 | 回滚后行为仍不同 | 说明改动落在了批次之外，或与工作区未提交改动混在一起 | 用 §6 的差分法比对改前改后的 `git diff` |
-| 新增 `.go` 文件让 `TestOneNameEverywhere` 变红 | 注释里写了旧项目名 `fastpot/`；该测试扫描所有 `.go` 文件（批次 1a 实际踩到） | 注释只写文件名或相对路径，不带 `fastpot/` 前缀 |
+| 新增 `.go` 文件让 `TestOneNameEverywhere` 变红 | 注释里写了旧项目名 `fastDictionary/`；该测试扫描所有 `.go` 文件（批次 1a 实际踩到） | 注释只写文件名或相对路径，不带 `fastDictionary/` 前缀 |
 | `go test -race ./...` 偶发 FAIL 但复测通过 | 工作区既有改动含未修复的并发读写（见 STATE_MACHINES.md C5、C10）；批次 2c 抓到完整堆栈：`ai_generation_race_test.go:296` 的 `freshBreakers()` 与 `services.go:647` 的 `engineBreaker.record()` 并发写同一块内存，属跨测试全局状态污染 | **首次 FAIL 必须重跑并把完整输出存盘**抓 `WARNING: DATA RACE` 堆栈，再判断与本批改动是否相关；原样复测一次 + 单独跑该测试 `-count=5` + 本批护栏 `-race -count=20`；复测通过只说明未再复现，不据此断言既有问题已修 |
 | 手册规则与实操自相矛盾（如「无 `if` 条件改动」却把 `if` 收成 `switch`） | 初版规则按「写时镜像」写的，改成「读时派生 + 逐点切读」后失效 | 按实际落地修正规则为「只改判断形式、不改判断结果」，并保留差分与基线表作为证据（批次 1b 已修） |
 | 用 Python heredoc 改 `.go` 文件后 `gofmt -d` 报整个文件都变了 | Windows 上 Python 文本模式写文件会把 LF 换行符写成 CRLF，全文件换行符与仓库不一致（批次 4d 实际踩到） | 用 `Path.write_bytes(s.encode("utf-8"))` 写回，或把 CRLF 批量还原成 LF；改 `.go` 优先用 edit 工具，它保留原换行符 |
@@ -674,7 +674,7 @@ gofmt -d .
 
 ## 10. 阶段 A 收尾：全库读取点清点表（批次 3）
 
-清点方法：对 `fastpot/` 下 227 个 `.go` 文件做四组全库检索
+清点方法：对 `fastDictionary/` 下 227 个 `.go` 文件做四组全库检索
 （`aiBusy` 67 处、`aiText` 61 处、`grammarResult|dictResult|writingResult` 123 处、
 `classifyAIResult|classifyAIView|cardReadyForMode`），再逐条区分
 「状态判断 / 内容读取 / 写入侧 / 结构体定义 / 测试夹具」。

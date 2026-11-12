@@ -1,6 +1,6 @@
 # 自定义 AI 指令与阅读蛙 1:1 复刻落地规范文档 (HANDOFF_AI_ACTIONS.md)
 
-> 更新时间：2026-10-11 · 本项目：D:\AI_workspace\translate\fastpot
+> 更新时间：2026-10-11 · 本项目：D:\AI_workspace\translate\fastDictionary
 > 编译产物：Dictionary.exe（正式版，无控制台，常驻托盘，内存 ~20MB）
 
 ---

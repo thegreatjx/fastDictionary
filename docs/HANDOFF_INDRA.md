@@ -5,7 +5,7 @@
 
 ## 目标
 
-把 `fastpot`（= `fastDictionary`）的截图 OCR 从 **Windows.Media.Ocr**（PowerShell 调 WinRT，
+把本项目（module `fastDictionary`）的截图 OCR 从 **Windows.Media.Ocr**（PowerShell 调 WinRT，
 580ms，非标准字体识别极差）换成 **Indra OCR**（纯 Go + onnxruntime，目标 60–120ms）。
 
 ## 为什么是 Indra
@@ -26,7 +26,7 @@
 
 ## 环境事实（已验证）
 
-- 项目：`D:\AI_workspace\translate\fastpot`，module `fastDictionary`，Go 1.27.3，mygo v0.8.3
+- 项目：`D:\AI_workspace\translate\fastDictionary`，module `fastDictionary`，Go 1.27.3，mygo v0.8.3
 - **`github.com/ebitengine/purego v0.11.1` 已在 go.sum**（间接依赖）
 - **`purego.Dlopen` 不支持 Windows**（`dlfcn.go` 的 build tag 只有 darwin/freebsd/linux/netbsd）
   → 必须用 `syscall.NewLazyDLL("kernel32.dll")` 的 `LoadLibraryW` + `GetProcAddress`

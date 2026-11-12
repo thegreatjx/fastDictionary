@@ -1,4 +1,4 @@
-# fastpot 产品规格（Spec v1）——融合 pot-desktop × read-frog 的桌面翻译客户端
+# fastDictionary 产品规格（Spec v1）——融合 pot-desktop × read-frog 的桌面翻译客户端
 
 > 2026-10-10 · 基于两个开源项目的源码级逆向 + 本机网络/音频实测
 > 原则：**速度优先、UI 精致**。热路径零 WebView；富界面才上 WebView。
@@ -14,7 +14,7 @@
 
 ## 1. 产品定位
 
-**fastpot = 桌面级阅读蛙**：read-frog 的引擎智慧 + pot 的系统级外壳，全部装进一个 ~18MB 的 Go 原生二进制。
+**fastDictionary = 桌面级阅读蛙**：read-frog 的引擎智慧 + pot 的系统级外壳，全部装进一个 ~18MB 的 Go 原生二进制。
 核心体验指标（对照欧陆词典/pot 的慢）：
 - 热键→弹窗可见：**< 50ms**（原生 UI，无 WebView 冷启动；已验证 mygo native 模式）
 - 弹窗→首条译文：**< 600ms P90**（微软+谷歌竞速，实测 195ms–1s）
@@ -81,12 +81,12 @@
 - **mygo 布局陷阱（重要）**：在 `ui.Column` 里，兄弟元素用 `ui.Row(c).Fill()` 会同时抢占垂直空间，把 `ui.Scroll(...).Grow(1)` 压成 0×0（表现为滚动区内容全部不可见、后续元素整体下移）。**行容器一律用 `FillWidth()`**，只有需要撑满高度的容器才用 `Fill()`/`FillHeight()`。`ui.Divider(c).Fill()` 同理会被纵向撑成一大块灰色矩形，必须用 `FillWidth()`。
 - **调试手段**：`ui.NewTester(view, w, h)` + `Tester.Find(text) (Rect, bool)` 能直接读元素几何，比截图快得多；`Tester.Image()` 可渲染成 PNG。应用内置 `--shot <png> [--shot-window settings] [--shot-delay ms]`，用 `Window.CapturePage()` 自截窗口，绕开 DPI 缩放与 z-order 干扰。
 - **弹窗高度**：按内容估算行数自适应（CJK 按 1 字宽、拉丁按 0.55 字宽估算换行），150–620px 钳制，超出交给 Scroll。
-- **配置路径**：`%AppData%\fastpot\config.json`（开发版为 `fastpot-dev`），首次运行即落盘默认值。
+- **配置路径**：`%AppData%\fastDictionary\config.json`（开发版为 `fastDictionary-dev`），首次运行即落盘默认值。
 - **不要用测试验证剪贴板副作用**：模拟 Ctrl+C 的取词测试会在无焦点环境阻塞，剪贴板保护逻辑改为人工验证。
 
 ## 4. 非目标（明确不做）
 
-- 不做浏览器插件（read-frog 已覆盖该场景，fastpot 是它的桌面互补）；
+- 不做浏览器插件（read-frog 已覆盖该场景，fastDictionary 是它的桌面互补）；
 - 不搬 read-frog 全量 26.8 万行（只移植算法与端点知识）；
 - OCR 截图翻译 M7 后再议（pot 的 tesseract/系统 OCR 方案可参考）；
 - 不做账号/云同步（pot 的 webdav/aliyun 备份可选做）。
