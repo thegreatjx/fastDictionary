@@ -27,8 +27,9 @@ fastDictionary 的源代码以 MIT License 发布，见 `LICENSE`。发布包还
 - 文件：`indra-models/det.onnx`、`rec.onnx`、`rec_cjk.onnx`、`script.onnx`、`meta.json`
 - 来源：https://huggingface.co/datalab-to/indra-ocr
 - 修订：`bd02167fdf2005a19962cc15188f8496a2c87d3b`
-- 许可证：**OpenRAIL**（Open RAIL-M 系列）。模型权重不是 MIT；使用与再分发
-  受 OpenRAIL 的使用限制约束，完整条款见模型仓库中的 `LICENSE`。
+- 许可证：**AI PUBS OPEN RAIL-M LICENSE (MODIFIED)**。模型权重不是 MIT；
+  使用与再分发受该许可证的使用限制约束，完整条款见
+  `docs/INDRA_MODEL_LICENSE.txt`（随发布包分发）以及模型仓库中的 `LICENSE`。
 - 用途：本地截图文字识别，推理在本机完成，不上传图片。
 
 ## 英文拼写表
