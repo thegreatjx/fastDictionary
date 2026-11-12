@@ -38,7 +38,7 @@ var aiPresets = []aiPreset{
 	{
 		ID: "deepseek", Name: "DeepSeek", NeedsKey: true,
 		BaseURL: "https://api.deepseek.com/v1",
-		Model:   "deepseek-chat",
+		Model:   "deepseek-flash",
 		KeyURL:  "https://platform.deepseek.com/api_keys",
 	},
 	{

@@ -37,7 +37,7 @@
 | 服务 | 需要 Key | 默认地址 | 默认模型 |
 | --- | --- | --- | --- |
 | 本机 Magpie | 否 | `http://127.0.0.1:3425/v1/chat/completions` | `workbuddy-ai/deepseek-v4.1-flash` |
-| DeepSeek | 是 | `https://api.deepseek.com/v1` | `deepseek-chat` |
+| DeepSeek | 是 | `https://api.deepseek.com/v1` | `deepseek-flash` |
 | 通义千问（百炼） | 是 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus` |
 | 智谱 GLM | 是 | `https://open.bigmodel.cn/api/paas/v4` | `glm-4-flash` |
 | 硅基流动 | 是 | `https://api.siliconflow.cn/v1` | （空，需选择） |
@@ -249,6 +249,11 @@ FASTDICT_LIVE_AI_BADKEY=1 go test -count=1 -run TestLiveProvidersRejectBadKey -v
 假 Key 探测：DeepSeek、通义、智谱、硅基流动、OpenAI 的对话与模型列表都正确识别为鉴权失败；
 OpenRouter 的 `/models` 是公开接口，不校验 Key（已知差异，不影响精翻）。
 Ollama 走本机 `/models` 同样不需要 Key。
+
+有效 Key 实测（DeepSeek，2026-11-12）：`/models` 返回 `deepseek-flash`、`deepseek-v4-pro`；
+`deepseek-flash` 精翻 1.35 s / 12 个分块，`deepseek-chat`（旧别名）1.18 s / 10 个分块，都能用。
+预设默认模型已改成列表里的 `deepseek-flash`，不再依赖不在列表中的旧别名。
+错误 Key 与成功路径都走真实接口验证过。
 
 ---
 
