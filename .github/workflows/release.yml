@@ -45,9 +45,20 @@ jobs:
             ./build.ps1 -Package -Overwrite -NoShortcuts -Version $version
           }
 
+      # build.ps1 把分发包写在仓库的上一级目录（dist 是仓库的兄弟目录），
+      # 而 action-gh-release 的 files 只接受工作区内的路径。先收进来。
+      - name: 收集产物
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item ../dist/*.zip dist/
+          Copy-Item ../dist/*.zip.sha256 dist/
+          Get-ChildItem dist | Select Name,Length
+
       - name: 上传 Release
         uses: softprops/action-gh-release@v2
         with:
+          name: fastDictionary ${{ github.ref_name }}
           files: |
             dist/*.zip
             dist/*.zip.sha256
