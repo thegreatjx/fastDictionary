@@ -60,6 +60,7 @@ func TestFirstRunStillWritesDefaults(t *testing.T) {
 		t.Fatalf("写出的默认配置不是合法 JSON：%v", err)
 	}
 	want := DefaultConfig()
+	applyFirstRunAIDefaults(&want) // 新装不预设 Magpie，见 TestFirstRunAIIsUnconfigured
 	if cfg.AIURL != want.AIURL || cfg.AIModel != want.AIModel {
 		t.Fatalf("首次运行写出的不是默认值：AIURL=%q AIModel=%q", cfg.AIURL, cfg.AIModel)
 	}

@@ -315,7 +315,14 @@ func (a *app) aiEnabledField(c *ui.Context, cfg Config) {
 		ui.Segmented(c, &idx, "关闭", "启用").MaxWidth(200).OnChange(func() {
 			a.store.Update(func(c *Config) { c.AIEnabled = idx == 1 })
 		})
-	}).Description("关闭后不显示 AI 卡片，也不会发起大模型请求。")
+	}).Description(aiStatusDescription(cfg))
+}
+
+func aiStatusDescription(cfg Config) string {
+	if problem := cfg.AISetupProblem(); cfg.AIEnabled && problem != "" {
+		return "还差一步：" + problem + "。补上之前不会发起大模型请求。"
+	}
+	return "关闭后不显示 AI 卡片，也不会发起大模型请求。"
 }
 
 func (a *app) aiServiceField(c *ui.Context, cfg Config) {

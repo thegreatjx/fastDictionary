@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -49,4 +52,91 @@ func TestLiveMagpieStream(t *testing.T) {
 		t.Skipf("magpie gateway not running: %v", err)
 	}
 	t.Logf("magpie in %v (first chunk %dms, %d deltas): %s", time.Since(start), firstAt, deltas, truncateFor(out, 60))
+}
+
+// TestLiveDirectProvider runs one real model list and one real refine
+// through the direct (non-Magpie) client path. Skipped unless
+// FASTDICT_LIVE_AI_PROVIDER is set:
+//
+//	FASTDICT_LIVE_AI_PROVIDER  preset ID, e.g. deepseek or custom
+//	FASTDICT_LIVE_AI_KEY_FILE  file holding the API key (never on the command line)
+//	FASTDICT_LIVE_AI_URL       optional address override (needed for custom)
+//	FASTDICT_LIVE_AI_MODEL     optional model override
+//
+// Without a key file a placeholder key is sent, which only works against a
+// service that ignores keys, such as the local Magpie gateway reached through
+// 自定义. The wrong-key check runs only with a real key.
+func TestLiveDirectProvider(t *testing.T) {
+	providerID := os.Getenv("FASTDICT_LIVE_AI_PROVIDER")
+	if providerID == "" {
+		t.Skip("set FASTDICT_LIVE_AI_PROVIDER to run")
+	}
+	preset, ok := aiPresetByID(providerID)
+	if !ok || preset.Magpie {
+		t.Fatalf("%q is not a direct preset", providerID)
+	}
+	cfg := DefaultConfig()
+	applyAIPreset(&cfg, preset)
+	if u := os.Getenv("FASTDICT_LIVE_AI_URL"); u != "" {
+		cfg.AIURL = u
+	}
+	if m := os.Getenv("FASTDICT_LIVE_AI_MODEL"); m != "" {
+		cfg.AIModel = m
+	}
+	realKey := false
+	if keyFile := os.Getenv("FASTDICT_LIVE_AI_KEY_FILE"); keyFile != "" {
+		key, err := os.ReadFile(keyFile)
+		if err != nil {
+			t.Fatalf("read key file: %v", err)
+		}
+		cfg.AIKey = strings.TrimSpace(string(key))
+		realKey = true
+	} else if preset.NeedsKey {
+		cfg.AIKey = "sk-placeholder-for-keyless-gateway"
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	models, err := FetchAvailableModels(ctx, cfg.AIConn(""))
+	switch {
+	case errors.Is(err, errAIModelsUnsupported):
+		t.Logf("%s: /models not supported", preset.Name)
+	case err != nil:
+		t.Fatalf("%s models: %v", preset.Name, err)
+	default:
+		t.Logf("%s: %d models, first %v", preset.Name, len(models), models[:min(5, len(models))])
+	}
+	if cfg.AIModel == "" {
+		if len(models) == 0 {
+			t.Fatal("preset has no default model and the list is empty")
+		}
+		cfg.AIModel = models[0]
+	}
+
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel2()
+	start := time.Now()
+	deltas := 0
+	out, err := StreamAI(ctx2, cfg.AIConn(cfg.AIModel), refineSystemPrompt,
+		"The quick brown fox jumps over the lazy dog", cfg.AIReasoningEffortFor(cfg.AIModel),
+		func(string) { deltas++ })
+	if err != nil {
+		t.Fatalf("%s refine with %s: %v", preset.Name, cfg.AIModel, err)
+	}
+	if strings.TrimSpace(out) == "" {
+		t.Fatal("empty answer")
+	}
+	t.Logf("%s %s in %v (%d deltas): %s", preset.Name, cfg.AIModel, time.Since(start), deltas, truncateFor(out, 60))
+
+	if !realKey {
+		return
+	}
+	// A wrong key must come back as the typed auth failure, not a raw 401.
+	bad := cfg
+	bad.AIKey = "sk-invalid-fastdict-probe"
+	_, err = StreamAI(ctx2, bad.AIConn(cfg.AIModel), refineSystemPrompt, "hi", "", nil)
+	var failure *aiFailure
+	if !errors.As(err, &failure) || failure.kind != aiFailureAuth && failure.kind != aiFailurePermission {
+		t.Errorf("bad key should map to auth failure, got %v", err)
+	}
 }

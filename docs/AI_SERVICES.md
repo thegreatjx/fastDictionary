@@ -61,6 +61,29 @@
 - 新服务不要 Key，或主机变了，就清空 Key，并提示「请重新填写 API Key」。
 - 在直连表单里改 API 地址，主机一变也清空 Key（同一规则，见 §4）。
 
+**就绪判定**（`Config.AISetupProblem`）：返回「还差什么」，空串表示可以发请求。
+所有 AI 入口都只问这一个问题，不再各自只看 `AIEnabled`。
+
+| 条件 | 返回 |
+| --- | --- |
+| 未启用 | `AI 精翻未启用` |
+| Magpie | 就绪（是否在运行只能靠请求来发现，失败另有提示） |
+| 自定义且地址为空 | `还没设置模型服务` |
+| 其他直连服务地址为空 | `还没填 API 地址` |
+| 需要 Key 而 Key 为空 | `还没填 API Key` |
+| 模型为空 | `还没选模型` |
+
+没就绪时各入口的表现：
+
+- 精翻按钮：不发请求，按钮旁显示「精翻失败：还没填 API Key」和「打开 AI 设置」。
+- 长难句 / 润色页签：回落到机器翻译，并提示缺什么。
+- 生词提取：静默跳过。它在每次划词后自动发起，不能每次都撞 401。
+- 设置页「状态」下方：显示「还差一步：…」。
+
+**新装**：配置文件不存在时，AI 保持启用，但服务设为「自定义」、地址和模型留空，
+即「未配置」。大多数人没装 Magpie，默认指向本机端口只会让每次划词都发一个必败的请求。
+已有配置文件的用户不受影响（见 §3）。
+
 ---
 
 ## 3. 配置与迁移
@@ -191,25 +214,42 @@
 | I14 | Magpie 回退模型不泄漏给直连服务 | `TestGetAIModelsDoesNotLeakMagpieFallbackToCustom` |
 | I15 | 取消的请求不重试 | `TestIsTransientAIError` |
 | I16 | 两种表单都能渲染 | `TestSettingsAIPageRendersBothServiceModes`、`TestSettingsAIHelpPanelUsesSelectedService` |
+| I17 | 就绪判定覆盖各种缺项 | `TestAISetupProblem` |
+| I18 | 新装是「未配置」，老 Magpie 配置升级后不变 | `TestFirstRunAIIsUnconfigured`、`TestExistingMagpieConfigStaysMagpie`、`TestFirstRunStillWritesDefaults` |
+| I19 | 没就绪时精翻、页签、生词提取都不发请求，设置页说出缺项 | `TestRefineWithAIExplainsMissingSetup`、`TestSwitchModeFallsBackWhenAINotReady`、`TestNotesSkipWhenAINotReady`、`TestSettingsAIPageNamesMissingSetup` |
 
 改动这块代码的最小检查集：
 
 ```powershell
 go build ./... ; go vet ./...
-go test -run 'Test(AI|DPAPI|ConfigSeals|ApplyAI|NormalizeAI|StreamAI|FetchAI|SettingsAI|GetAI|IsTransient)' .
+go test -run 'Test(AI|DPAPI|ConfigSeals|ApplyAI|NormalizeAI|StreamAI|FetchAI|SettingsAI|GetAI|IsTransient|FirstRun|ExistingMagpie|RefineWithAI|SwitchMode|Notes)' .
 go test -race -run 'TestAI(Probe|Model)' .
 ```
+
+**真实服务冒烟**（默认跳过，不进日常检查）：
+
+```bash
+# 本机 Magpie 路径
+go test -count=1 -run TestLiveMagpieStream -v .
+# 直连路径，借 Magpie 网关当 OpenAI 兼容服务（不需要 Key）
+FASTDICT_LIVE_AI_PROVIDER=custom FASTDICT_LIVE_AI_URL=http://127.0.0.1:3425/v1 FASTDICT_LIVE_AI_MODEL=auto/deepseek-v4.1-flash go test -count=1 -run TestLiveDirectProvider -v .
+# 真实服务商：Key 放文件里，不上命令行；会额外检查错误 Key 是否识别成鉴权失败
+FASTDICT_LIVE_AI_PROVIDER=deepseek FASTDICT_LIVE_AI_KEY_FILE=/path/to/key go test -count=1 -run TestLiveDirectProvider -v .
+```
+
+2026-11-12 实测：Magpie 路径 1.6 s；直连路径经 Magpie 网关，根地址、`/v1`、完整端点三种写法都通，
+`/models` 返回 28 个模型，`auto/deepseek-v4.1-flash` 精翻约 1.8–2.4 s。
 
 ---
 
 ## 8. 已知限制与后续
 
-按建议顺序排列。前两项影响新用户第一次使用，其余按需。
+按建议顺序排列。
 
-1. **新装默认值**：新装仍默认「本机 Magpie + 已启用」，没装 Magpie 的人第一次精翻会失败，
-   要靠错误提示引导去换服务。可以改成「未配置」状态，首次精翻直接跳到设置页。
-2. **真实服务商冒烟**：表里 8 家只用模拟服务器测过协议。发布前至少拿 DeepSeek
-   和一家国内服务商实际跑一次精翻、拉一次模型列表。
+1. ~~新装默认值~~：已改成「未配置」，见 §2。
+2. **真实服务商冒烟**：直连代码路径已经借 Magpie 网关实测通过；各家服务商自己的鉴权、
+   错误格式和 `/models` 差异还没在真实环境验证。发布前用 DeepSeek 或一家国内服务商的 Key
+   跑一次 `TestLiveDirectProvider`。
 3. **`friendlyAIError` 仍在 `msg` 里找 "Magpie"**：区分「Magpie 没启动」和一般网络错误，
    应改成独立的 kind 或在 `aiFailure` 上带服务标识。
 4. **`isTransientAIError` 保留了字符串兜底**：只为没经过 `aiFailure` 的旧路径；

@@ -234,7 +234,8 @@ func shouldExtractNotes(text string) bool {
 
 func (a *app) extractNotesForGen(gen requestToken, text string) {
 	cfg := a.store.Get()
-	if !cfg.AIEnabled || !cfg.ShowNotes || !shouldExtractNotes(text) {
+	// 生词提取在每次划词后自动发起；AI 没配好时静默跳过，不能每次都撞 401。
+	if cfg.AISetupProblem() != "" || !cfg.ShowNotes || !shouldExtractNotes(text) {
 		a.mu.Lock()
 		if gen == a.notesGen {
 			a.stopNotesLocked()
@@ -692,7 +693,7 @@ func (a *app) runAction(actionID string, text string) {
 	a.skipAIResultCache = false
 	a.mu.Unlock()
 	cfg := a.store.Get()
-	if !cfg.AIEnabled || strings.TrimSpace(text) == "" {
+	if cfg.AISetupProblem() != "" || strings.TrimSpace(text) == "" {
 		return
 	}
 	act := cfg.GetAction(actionID)
@@ -878,9 +879,10 @@ func (a *app) runAction(actionID string, text string) {
 // both invites comparing them character by character.
 func (a *app) refineWithAI() {
 	cfg := a.store.Get()
-	if !cfg.AIEnabled {
+	if problem := cfg.AISetupProblem(); problem != "" {
+		// 写进 aiRefineErr 而不是 errText：精翻按钮旁的错误行带「打开 AI 设置」。
 		a.mu.Lock()
-		a.errText = "AI 精翻需要先在设置里启用 AI"
+		a.aiRefineErr = problem
 		a.mu.Unlock()
 		if a.win != nil {
 			a.win.Update(func() {})

@@ -148,6 +148,46 @@ func (c Config) AIVisionAllowed() bool {
 	return c.IsMagpie() || c.AIVision
 }
 
+// AISetupProblem says what is still missing before an AI request can work;
+// empty means ready. Every AI entry point asks this one question instead of
+// checking AIEnabled alone: a direct service without a key would otherwise
+// answer 401 to every selection the notes extraction sends.
+//
+// Magpie is always "ready" here because whether it is running can only be
+// learned by trying; that failure has its own message.
+func (c Config) AISetupProblem() string {
+	if !c.AIEnabled {
+		return "AI 精翻未启用"
+	}
+	if c.IsMagpie() {
+		return ""
+	}
+	preset := aiPresetForConfig(c)
+	if strings.TrimSpace(c.AIURL) == "" {
+		if preset.ID == "custom" {
+			return "还没设置模型服务"
+		}
+		return "还没填 API 地址"
+	}
+	if preset.NeedsKey && normalizeAPIKey(c.AIKey) == "" {
+		return "还没填 API Key"
+	}
+	if strings.TrimSpace(c.AIModel) == "" {
+		return "还没选模型"
+	}
+	return ""
+}
+
+// applyFirstRunAIDefaults leaves a fresh install unconfigured instead of
+// pointing it at Magpie, which most people do not run. Only a missing config
+// file gets this; existing files keep whatever they had (see
+// normalizeAIProviderConfig), so current Magpie users are unaffected.
+func applyFirstRunAIDefaults(c *Config) {
+	c.AIProvider = "custom"
+	c.AIURL = ""
+	c.AIModel = ""
+}
+
 // AIReasoningEffortFor returns the wire value for this model, or "" when the
 // service should receive no reasoning field at all. Direct providers get "":
 // they disagree on whether reasoning_effort exists, and a strict one answers
@@ -352,6 +392,7 @@ func newStore() *store {
 		// and custom actions with no copy left to recover; run on the
 		// in-memory defaults instead and leave the file for manual repair.
 		if _, statErr := os.Stat(s.path); os.IsNotExist(statErr) {
+			applyFirstRunAIDefaults(&s.cfg)
 			if err := saveConfig(s.path, s.cfg); err != nil {
 				log.Printf("fastDictionary: could not write default config: %v", err)
 			}

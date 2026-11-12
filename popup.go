@@ -459,12 +459,12 @@ func (a *app) rerunCurrentModeFresh(text string) {
 func (a *app) switchMode(m popupMode) {
 	cfg := a.store.Get()
 	notice := ""
-	if (m == modeGrammar || m == modeWriting) && !cfg.AIEnabled {
-		// The AI tabs cannot run without the gateway. Falling back to the
+	if problem := cfg.AISetupProblem(); (m == modeGrammar || m == modeWriting) && problem != "" {
+		// The AI tabs cannot run without a usable service. Falling back to the
 		// machine translation is better than opening a blank card whose only
 		// explanation is an error.
 		m = modeTranslate
-		notice = "AI 精翻未启用，已使用机器翻译。可在 设置 → AI 精翻 中启用。"
+		notice = "AI 精翻暂不可用（" + problem + "），已使用机器翻译。可在 设置 → AI 精翻 中设置。"
 	}
 	a.stopScreenshotOCR()
 	a.mu.Lock()
