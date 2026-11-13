@@ -1,5 +1,28 @@
 # 更新日志
 
+## 1.1.0 — 2026-11-14（r3 构建）
+
+### 界面
+
+- 设计系统补齐淡蓝色板（`TintSurface` / `TintBorder`）、`SegmentedControlMapped`
+  显式值映射与 `SettingSliderRow`；分段控件精确扣除边框与内边距，白滑块不再
+  压住底边。
+- 设置中心 6 个页面全部迁出 `ui.Form`，改用 `SettingCard` / `SettingRow` /
+  `LongField`；侧栏选中态改为淡蓝底加竖条，滚动区增加底部留白。
+- 托盘去掉与 Flyout 重叠的外投影，Logo 加淡蓝底盒，底栏状态文案不再复读
+  划词模式。
+- 划词浮窗最小高度 260 → 196，Tabs、原文条与空状态统一；清除残余 Emoji、
+  `.Opacity(0.85)` 和组件文件里的散落硬编码色值。
+- 生词发现改由显式 `notesPhase` 驱动；`requestToken` 继续承担异步代次校验。
+
+### 发布
+
+- 源码提交：`0427668c65eb16199f4e23411d564c648c87cf8a`（`0427668`）。
+- 分发包：`fastDictionary-v2026.11.14-r3-win64.zip`（33,693,106 B），
+  SHA256 `2A443B7B8E24266F918C1A2589F9FEF4BD970B791C0763BC399940E8693ED1CE`。
+  包放在仓库外的 `dist/`，不纳入 Git。
+- 验证：出包脚本执行 gofmt / go vet / go build；`go test ./...` 798 passed。
+
 ## 1.1.0 — 2026-11-13
 
 ### 生词复习
