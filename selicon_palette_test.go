@@ -75,9 +75,11 @@ func TestChipPaletteIsCoolAndDesaturated(t *testing.T) {
 	const (
 		minHue = 175.0
 		maxHue = 290.0
-		// 0.26 leaves room for a steel blue accent (#4A6E8A is 0.25) while
-		// excluding the 0.67+ of the old per-action palette.
-		maxChroma = 0.26
+		// 二轮精修把主图标与 hover 恢复为明快系统蓝（#2563EB / #1D4ED8，
+		// chroma 约 0.73–0.78），所以墨色放宽到 0.85；表面、边框和提示牌
+		// 仍必须保持安静的低饱和。冷色相规则对两者都不变。
+		maxSurfaceChroma = 0.26
+		maxInkChroma     = 0.85
 	)
 	for _, dark := range []bool{false, true} {
 		theme := chipThemeForTest(t, dark)
@@ -98,9 +100,14 @@ func TestChipPaletteIsCoolAndDesaturated(t *testing.T) {
 			if c.A == 0 {
 				continue // transparent, nothing to measure
 			}
-			if got := chroma(c); got > maxChroma {
-				t.Errorf("dark=%v %s %v has chroma %.2f, want at most %.2f (a quiet colour)",
-					dark, name, c, got, maxChroma)
+			limit := maxInkChroma
+			switch name {
+			case "surface", "border", "tip fill", "tip text":
+				limit = maxSurfaceChroma
+			}
+			if got := chroma(c); got > limit {
+				t.Errorf("dark=%v %s %v has chroma %.2f, want at most %.2f",
+					dark, name, c, got, limit)
 			}
 			// Near-neutral colours have an unstable hue, so the hue rule
 			// only applies where there is enough chroma to name a hue.

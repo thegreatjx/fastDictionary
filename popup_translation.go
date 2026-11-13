@@ -18,7 +18,7 @@ func (a *app) renderPopupHeader(c *ui.Context, t *ui.Theme, cfg Config, s snapsh
 			a.renderPopupModeTabs(c, s)
 		}
 		ui.Spacer(c).Grow(1)
-		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+		ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
 			if s.mode == modeTranslate || s.mode == modeInput || s.mode == modeSelectionPreview {
 				targetLabel := langLabels[cfg.TargetLang]
 				if targetLabel == "" {
@@ -91,7 +91,7 @@ func (a *app) switchPopupMode(index int) {
 
 func (a *app) renderPopupModeTabs(c *ui.Context, s snapshot) {
 	modeIdx := popupModeIndex(s.mode, s.inputTargetMode)
-	ui.Segmented(c, &modeIdx, popupModeLabels[:]...).Height(30).FontSize(12).Shrink(0).
+	SegmentedControlCompact(c, &modeIdx, popupModeLabels[:]...).
 		Label("阅读工具").OnChange(func() { a.switchPopupMode(modeIdx) })
 }
 
@@ -209,33 +209,35 @@ func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s
 
 						// 猜你想存：靠右展示。AI提取时显示原生 Spinner 圈，提取就绪后显示带文字的卡片展开/收起按钮
 						if cfg.ShowNotes && shouldExtractNotes(s.source) {
-							if s.notesBusy && len(s.notes) == 0 {
-								ui.Row(c).Gap(4).AlignItems(ui.Center).Padding(0, 4).Children(func() {
+							switch notesViewPhase(s) {
+							case notesLoading:
+								ui.Row(c).Gap(Space1).AlignItems(ui.Center).Padding(0, Space1).Children(func() {
 									ui.Spinner(c).Size(12, 12)
-									ui.Text(c, "发现生词中…").FontSize(11).TextColor(t.TextMuted)
+									ui.Text(c, "发现生词中…").Font(fontUI).FontSize(FontHelper).TextColor(t.TextMuted)
 								})
-							} else if len(s.notes) > 0 {
+							case notesReady:
 								btnText := fmt.Sprintf("猜你想存 · %d", len(s.notes))
 								tip := "展开生词推荐"
 								if s.notesExpanded {
 									btnText = fmt.Sprintf("收起生词 · %d", len(s.notes))
 									tip = "收起生词推荐"
 								}
-								btnNotes := ui.Button(c, "").Tooltip(tip).Height(24).Padding(0, 8).Radius(6).Center()
-								bg := t.SurfaceHover
-								borderCol := t.Border
+								btnNotes := ui.Button(c, "").Tooltip(tip).Height(HeightCompact).Padding(0, Space2).Radius(RadiusSM).Center()
+								at := appTheme(t)
+								bg := at.TintSurface
+								borderCol := at.TintBorder
 								if s.notesExpanded {
-									bg = withAlpha(t.Accent, 0.12)
-									borderCol = withAlpha(t.Accent, 0.3)
+									bg = at.AccentSoft
+									borderCol = at.AccentRing
 								}
 								if btnNotes.Hovered() {
-									bg = withAlpha(t.Accent, 0.2)
+									bg = at.SurfaceHover
 								}
 								btnNotes.Background(bg).Border(1, borderCol)
 								btnNotes.Children(func() {
-									ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-										ui.Icon(c, iconBookmark).Size(12, 12).TextColor(t.Accent)
-										ui.Text(c, btnText).FontSize(11).FontWeight(600).TextColor(t.Accent)
+									ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
+										ui.Icon(c, iconBookmark).Size(14, 14).TextColor(at.Accent)
+										ui.Text(c, btnText).Font(fontUI).FontSize(FontHelper).FontWeight(600).TextColor(at.Accent)
 									})
 								})
 								if btnNotes.Clicked() {
@@ -312,31 +314,34 @@ func langDisplayName(tag string) string {
 }
 
 func (a *app) renderTranslationSource(c *ui.Context, t *ui.Theme, s snapshot) {
+	at := appTheme(t)
 	text := s.source
 	isLong := len([]rune(text)) > 110 || strings.Contains(text, "\n")
 	if isLong && !s.sourceExpanded {
 		text = TruncateEllipsis(text, 110)
 	}
-	ui.Box(c).FillWidth().Padding(8, 10).Radius(6).Background(t.SurfaceHover).Children(func() {
-		ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(4).Children(func() {
-			ui.Text(c, text).FontSize(13).TextColor(t.TextMuted).Wrap().Grow(1).LineHeight(1.5)
+	ui.Box(c).FillWidth().Padding(Space2, Space3).Radius(RadiusSM).
+		Background(at.TintSurface).Border(1, at.TintBorder).Children(func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(Space1).Children(func() {
+			ui.Text(c, text).Font(fontUI).FontSize(FontControl).
+				TextColor(at.TextSec).Wrap().Grow(1).LineHeight(1.5)
 			ui.Row(c).Gap(0).AlignItems(ui.Center).Children(func() {
 				if isLong {
 					icon, tip := iconChevronDown, "展开完整原文"
 					if s.sourceExpanded {
 						icon, tip = iconChevronUp, "收起原文"
 					}
-					if renderIconButton(c, icon, tip, 28, 14, false).Clicked() {
+					if renderIconButton(c, icon, tip, HeightIconMd, 14, false).Clicked() {
 						a.mu.Lock()
 						a.sourceExpanded = !a.sourceExpanded
 						a.mu.Unlock()
 						a.fitHeight()
 					}
 				}
-				if renderIconButton(c, iconCopy, "复制原文", 28, 14, false).Clicked() {
+				if renderIconButton(c, iconCopy, "复制原文", HeightIconMd, 14, false).Clicked() {
 					a.copyToClipboard(s.source)
 				}
-				if renderIconButton(c, iconSpeak, "朗读原文", 28, 14, false).Clicked() {
+				if renderIconButton(c, iconSpeak, "朗读原文", HeightIconMd, 14, false).Clicked() {
 					PlaySpeechLang(s.source, a.speechLang(), false)
 				}
 			})

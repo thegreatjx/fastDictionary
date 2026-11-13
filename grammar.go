@@ -368,18 +368,11 @@ func (a *app) renderGrammarVisualCard(c *ui.Context, t *ui.Theme, origText strin
 
 	ui.Box(c).FillWidth().Padding(14, 16).Radius(8).
 		Background(t.Surface).Border(1, t.Border).
-		Shadow(0, 2, 8, 0, ui.RGBA(0, 0, 0, 0.08)).Children(func() {
+		Shadow(0, 2, 8, 0, withAlpha(appTheme(t).ShadowColor, 0.67)).Children(func() {
 		ui.Column(c).FillWidth().Gap(10).Children(func() {
 			// 1. Header: mode label and the speak button
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
-				topBg := ui.Hex("#F1F5F9")
-				topBorder := ui.Hex("#E2E8F0")
-				topText := ui.Hex("#475569")
-				if t.Dark {
-					topBg = t.SurfaceHover
-					topBorder = t.Border
-					topText = t.TextMuted
-				}
+				topBg, topBorder, topText := grammarHeaderColors(t)
 				ui.Box(c).Padding(3, 10).Radius(12).
 					Background(topBg).Border(1, topBorder).Children(func() {
 					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
@@ -456,30 +449,7 @@ func (a *app) renderGrammarVisualCard(c *ui.Context, t *ui.Theme, origText strin
 			// 4. Hard structures: what makes the sentence difficult, and how to
 			// put it back in plain order.
 			if len(obstacles) > 0 {
-				cardBg := ui.Hex("#FAF6F4")
-				cardBorder := ui.Hex("#E8DDD8")
-				cardTitle := ui.Hex("#8A5044")
-				badgeBg := ui.Hex("#F0E4DF")
-				badgeBorder := ui.Hex("#E0CFC8")
-				badgeText := ui.Hex("#8A5044")
-				obsText := ui.Hex("#3F3A38")
-				restoreLabel := ui.Hex("#A26B5C")
-				restoreText := ui.Hex("#55708C")
-				noteLabel := ui.Hex("#9A8478")
-				noteText := ui.Hex("#5C524C")
-				if t.Dark {
-					cardBg = ink.obstacleBg
-					cardBorder = withAlpha(ink.obstacle, 0.35)
-					cardTitle = ink.obstacle
-					badgeBg = withAlpha(ink.obstacle, 0.22)
-					badgeBorder = withAlpha(ink.obstacle, 0.45)
-					badgeText = ink.obstacle
-					obsText = ink.body
-					restoreLabel = ink.obstacle
-					restoreText = ink.predicateLine
-					noteLabel = ink.muted
-					noteText = ink.body
-				}
+				cardBg, cardBorder, cardTitle, badgeBg, badgeBorder, badgeText, obsText, restoreLabel, restoreText, noteLabel, noteText := grammarObstacleColors(t, ink)
 				ui.Box(c).FillWidth().Padding(10, 12).Radius(6).
 					Background(cardBg).Border(1, cardBorder).Children(func() {
 					ui.Column(c).FillWidth().Gap(8).Children(func() {
@@ -608,10 +578,10 @@ func (a *app) renderGrammarVisualCard(c *ui.Context, t *ui.Theme, origText strin
 					return
 				}
 				btnSave := ui.Button(c, "").Height(26).Padding(2, 14).Radius(5).
-					Background(saveButtonColor(t)).TextColor(ui.Hex("#FFFFFF")).Tooltip("将这条长难句分析保存到生词本的长难句分类")
+					Background(saveButtonColor(t)).TextColor(t.AccentText).Tooltip("将这条长难句分析保存到生词本的长难句分类")
 				btnSave.Children(func() {
 					ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-						ui.Icon(c, iconBookmark).Size(13, 13).TextColor(ui.Hex("#FFFFFF"))
+						ui.Icon(c, iconBookmark).Size(13, 13).TextColor(t.AccentText)
 						ui.Text(c, "保存到长难句本").FontSize(11).FontWeight(600)
 					})
 				})
@@ -849,39 +819,6 @@ type grammarInk struct {
 	muted          ui.Color
 }
 
-func grammarInkFor(t *ui.Theme) grammarInk {
-	if t != nil && t.Dark {
-		return grammarInk{
-			subjectLine:    ui.Hex("#5EEAD4"),
-			predicateLine:  ui.Hex("#86A6FF"),
-			objectLine:     ui.Hex("#FDBA74"),
-			complementLine: ui.Hex("#C4B5FD"),
-			connector:      ui.Hex("#5CCB99"),
-			clauseTint:     ui.RGBA(92, 203, 153, 0.13),
-			clauseTint2:    ui.RGBA(92, 203, 153, 0.20),
-			clauseText:     ui.Hex("#A7B4C4"),
-			obstacle:       ui.Hex("#FF8A70"),
-			obstacleBg:     ui.RGBA(255, 138, 112, 0.12),
-			body:           ui.Hex("#E4EAF1"),
-			muted:          ui.Hex("#7D8595"),
-		}
-	}
-	return grammarInk{
-		subjectLine:    ui.Hex("#0E7C86"),
-		predicateLine:  ui.Hex("#2A57C4"),
-		objectLine:     ui.Hex("#A21CAF"),
-		complementLine: ui.Hex("#6D28D9"),
-		connector:      ui.Hex("#15803D"),
-		clauseTint:     ui.RGBA(23, 122, 83, 0.08),
-		clauseTint2:    ui.RGBA(23, 122, 83, 0.13),
-		clauseText:     ui.Hex("#4B5563"),
-		obstacle:       ui.Hex("#C43D27"),
-		obstacleBg:     ui.RGBA(196, 61, 39, 0.08),
-		body:           ui.Hex("#1E293B"),
-		muted:          ui.Hex("#8C94A3"),
-	}
-}
-
 // renderGrammarSpans draws the marked-up sentence.
 //
 // Every word is rendered once, in order. A word carries at most one mark, taken
@@ -1075,9 +1012,7 @@ func grammarToggle(c *ui.Context, t *ui.Theme, label string, on bool, tip string
 	text := t.Text
 	border := t.Border
 	if on {
-		bg = ui.Hex("#55708C")
-		text = ui.Hex("#FFFFFF")
-		border = ui.Hex("#4A6E8A")
+		bg, text, border = grammarToggleOnColors(t)
 	}
 	btn := ui.Button(c, "").Height(24).Padding(2, 10).Radius(5).
 		Background(bg).TextColor(text).Border(1, border).Tooltip(tip)

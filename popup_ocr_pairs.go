@@ -147,27 +147,29 @@ func (a *app) renderScreenshotPairActions(c *ui.Context, t *ui.Theme, cfg Config
 		ui.Spacer(c).Grow(1)
 		renderEngineCaptionWithAIState(c, t, s, cfg)
 		if cfg.ShowNotes && shouldExtractNotes(s.source) {
-			if s.notesBusy && len(s.notes) == 0 {
-				ui.Row(c).Gap(4).AlignItems(ui.Center).Padding(0, 4).Children(func() {
+			switch notesViewPhase(s) {
+			case notesLoading:
+				ui.Row(c).Gap(Space1).AlignItems(ui.Center).Padding(0, Space1).Children(func() {
 					ui.Spinner(c).Size(12, 12)
-					ui.Text(c, "发现生词中…").FontSize(11).TextColor(t.TextMuted)
+					ui.Text(c, "发现生词中…").Font(fontUI).FontSize(FontHelper).TextColor(t.TextMuted)
 				})
-			} else if len(s.notes) > 0 {
+			case notesReady:
 				btnText := fmt.Sprintf("猜你想存 · %d", len(s.notes))
 				tip := "展开生词推荐"
 				if s.notesExpanded {
 					btnText = fmt.Sprintf("收起生词 · %d", len(s.notes))
 					tip = "收起生词推荐"
 				}
-				btnNotes := ui.Button(c, "").Tooltip(tip).Height(24).Padding(0, 8).Radius(6).Center()
-				bg := t.SurfaceHover
-				borderCol := t.Border
+				btnNotes := ui.Button(c, "").Tooltip(tip).Height(HeightCompact).Padding(0, Space2).Radius(RadiusSM).Center()
+				at := appTheme(t)
+				bg := at.TintSurface
+				borderCol := at.TintBorder
 				if s.notesExpanded {
-					bg = withAlpha(t.Accent, 0.12)
-					borderCol = withAlpha(t.Accent, 0.3)
+					bg = at.AccentSoft
+					borderCol = at.AccentRing
 				}
 				if btnNotes.Hovered() {
-					bg = withAlpha(t.Accent, 0.2)
+					bg = at.SurfaceHover
 				}
 				btnNotes.Background(bg).Border(1, borderCol)
 				btnNotes.Children(func() {

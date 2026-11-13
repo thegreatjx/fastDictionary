@@ -208,15 +208,15 @@ func popupContentHeight(s snapshot, w float32) float32 {
 		}
 	}
 
-	if h < 260 {
-		h = 260
+	if h < 196 {
+		h = 196
 	}
 	return h
 }
 
 // autofitMinHeight is the smallest window the popup may shrink to in translation mode.
 // It covers header, footer, source, target and action bar so controls are never clipped.
-const autofitMinHeight float32 = 260
+const autofitMinHeight float32 = 196
 
 // autofitHeight corrects the estimated height with what the last frame
 // actually laid out.

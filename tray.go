@@ -38,16 +38,13 @@ func (a *app) toggleTrayFlyout() {
 	})
 }
 
-// trayStatusText 只描述当前配置，不冒充运行时健康检查。
+// trayStatusText 只描述运行状态，不复读上方已选的划词模式。
 func trayStatusText(cfg Config) string {
-	switch cfg.SelectionTrigger {
-	case "auto":
-		return "划词：直接翻译"
-	case "hotkey":
-		return "划词：仅快捷键"
-	default:
-		return "划词：显示图标"
+	hk := strings.TrimSpace(cfg.HotkeySelection)
+	if hk != "" {
+		return "运行中 · 划词 " + hk
 	}
+	return "运行中"
 }
 
 // trayFlyoutView 是单层 Surface 面板：顶栏 / 搜索 / 两列快捷按钮 / 状态与退出底栏。
@@ -60,15 +57,17 @@ func (a *app) trayFlyoutView(c *ui.Context) {
 
 	c.Root().Background(ui.Transparent)
 	panel := ui.Column(c).Fill().Background(at.Surface).Radius(RadiusWindow).
-		Border(1, at.BorderWindow).Padding(Space3).Gap(Space3).
-		Shadow(0, 10, 28, 0, at.ShadowColor)
+		Border(1, at.BorderWindow).Padding(Space3).Gap(Space3)
 	if at.Dark {
 		panel.InsetShadow(0, 0, 1, 0, at.InsetColor)
 	}
 	panel.Children(func() {
-		// 1. 顶栏：单色 Logo + 应用名 + Ghost 齿轮。
+		// 1. 顶栏：淡蓝微底盒 Logo + 应用名 + Ghost 设置齿轮
 		ui.Row(c).FillWidth().Height(HeightIconMd).AlignItems(ui.Center).Gap(Space2).Children(func() {
-			ui.Icon(c, iconDict).Size(IconSize, IconSize).TextColor(at.Accent)
+			ui.Box(c).Size(HeightIconSm, HeightIconSm).Radius(RadiusSM).Center().
+				Background(at.AccentSoft).Children(func() {
+				ui.Icon(c, iconDict).Size(14, 14).TextColor(at.Accent)
+			})
 			ui.Text(c, "fast词典").Font(fontUI).FontSize(FontControl).
 				FontWeight(600).TextColor(at.Text).Grow(1)
 			if IconButton(c, t, iconGear, "设置").Clicked() {
@@ -134,25 +133,21 @@ func (a *app) trayFlyoutView(c *ui.Context) {
 			}
 		})
 
-		// 划词模式切换保留原功能，用同一套自适应 Segmented。
+		// 划词模式切换：Compact 版 + 显式值映射，不依赖魔法下标。
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
 			ui.Text(c, "划词").Font(fontUI).FontSize(FontHelper).
 				TextColor(at.TextMuted).SingleLine()
-			modeIdx := 0
-			switch cfg.SelectionTrigger {
-			case "auto":
-				modeIdx = 1
-			case "hotkey":
-				modeIdx = 2
-			}
-			SegmentedControl(c, &modeIdx, "显示图标", "直接翻译", "仅快捷键").OnChange(func() {
-				modes := []string{"icon", "auto", "hotkey"}
-				a.store.Update(func(c *Config) { c.SelectionTrigger = modes[modeIdx] })
+			SegmentedControlMapped(c, true, cfg.SelectionTrigger, func(mode string) {
+				a.store.Update(func(c *Config) { c.SelectionTrigger = mode })
 				a.applySelectionMode()
 				// The tray menu's radio is fixed when built; without this it keeps
 				// showing the mode that was active before the flyout changed it.
 				a.rebuildTray()
-			})
+			},
+				SegmentedOption[string]{Value: "icon", Label: "显示图标"},
+				SegmentedOption[string]{Value: "auto", Label: "直接翻译"},
+				SegmentedOption[string]{Value: "hotkey", Label: "仅快捷键"},
+			)
 		})
 
 		// 4. 底栏：1px 分割线 + 状态 + Danger-Ghost 退出。

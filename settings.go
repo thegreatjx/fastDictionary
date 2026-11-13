@@ -96,20 +96,22 @@ func (a *app) settingsNavItem(c *ui.Context, t *ui.Theme, at AppTheme, item sett
 		Role(ui.RoleTreeItem).Focusable().FillWidth().
 		Padding(0, Space2).Gap(Space2).AlignItems(ui.Center)
 	if active {
-		b.Background(at.SurfaceSubtle)
+		b.Background(at.AccentSoft)
 	} else if b.Hovered() {
 		b.Background(at.SurfaceHover)
 	}
 	bar := ui.Transparent
-	ink := at.TextSec
+	iconCol := at.TextSec
+	textCol := at.TextSec
+	weight := 500
 	if active {
-		bar, ink = at.Accent, at.Text
+		bar, iconCol, textCol, weight = at.Accent, at.Accent, at.Text, 600
 	}
 	b.Children(func() {
 		ui.Box(c).Width(3).Height(IconSize).Radius(RadiusXS).Background(bar)
-		ui.Icon(c, item.icon).Size(IconSize, IconSize).TextColor(ink)
+		ui.Icon(c, item.icon).Size(IconSize, IconSize).TextColor(iconCol)
 		ui.Text(c, item.label).Font(fontUI).FontSize(FontControl).
-			FontWeight(500).TextColor(ink).SingleLine()
+			FontWeight(weight).TextColor(textCol).SingleLine()
 	})
 	if b.Clicked() && !active {
 		a.page = item.id
@@ -149,7 +151,7 @@ func (a *app) settingsView(c *ui.Context) {
 		})
 
 		ui.Scroll(c).TrackScroll(&a.settingsScroll).Grow(1).FillHeight().
-			Padding(Space6, Space8, Space6, Space8).ScrollbarInsets(0, 0, Space2).Children(func() {
+			Padding(Space6, Space8, Space8+Space4, Space8).ScrollbarInsets(0, 0, Space2).Children(func() {
 			// One measured column instead of controls stretched across the
 			// whole window: a form reads as a form, not as a spreadsheet.
 			ui.Column(c).FillWidth().MaxWidth(ContentMaxWidth).Gap(Space6).Children(func() {

@@ -43,7 +43,10 @@ func TestPauseAndModeChangeResetGestureGate(t *testing.T) {
 // mode until something else rebuilt it.
 func TestTrayFlyoutRebuildsTrayOnModeChange(t *testing.T) {
 	src := readSourceFile(t, "tray.go")
-	idx := strings.Index(src, `modes := []string{"icon", "auto", "hotkey"}`)
+	// 模式切换改用显式值映射 SegmentedControlMapped，定位锚点随之更新；
+	// 断言的语义不变：切换后必须重建托盘菜单，否则单选状态会停在旧模式。
+	const anchor = "SegmentedControlMapped(c, true, cfg.SelectionTrigger"
+	idx := strings.Index(src, anchor)
 	if idx < 0 {
 		t.Fatal("找不到托盘浮层的划词模式切换")
 	}

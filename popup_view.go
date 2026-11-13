@@ -12,7 +12,7 @@ import (
 // to be strictly horizontally and vertically centered with crisp feedback.
 func renderIconButton(c *ui.Context, icon *ui.SVG, tip string, size, iconSize float32, active bool) ui.Element {
 	t := c.Theme()
-	b := ui.Button(c, "").Size(size, size).Padding(0, 0).Radius(5).Center().Tooltip(tip).Label(tip)
+	b := ui.Button(c, "").Size(size, size).Padding(0, 0).Radius(RadiusSM).Center().Tooltip(tip).Label(tip)
 	bg := ui.Color{}
 	fg := t.TextMuted
 	if active {
@@ -118,7 +118,7 @@ func (a *app) popupView(c *ui.Context) {
 				// A quiet confirmation that a copy actually landed with positive success feedback.
 				if s.copiedMsg != "" {
 					ui.Box(c).FillWidth().Padding(6, 10).Radius(6).
-						Background(ui.RGBA(34, 197, 94, 0.10)).Border(1, ui.RGBA(34, 197, 94, 0.25)).Children(func() {
+						Background(appTheme(t).SuccessSoft).Border(1, appTheme(t).Success.Alpha(0.25)).Children(func() {
 						ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
 							ui.Icon(c, iconCheckSquare).Size(13, 13).TextColor(t.Success)
 							ui.Text(c, s.copiedMsg).FontSize(12).TextColor(t.Success).Wrap().Grow(1)
@@ -129,7 +129,7 @@ func (a *app) popupView(c *ui.Context) {
 				// A save that landed shows a gentle success confirmation banner.
 				if s.actionSavedMsg != "" {
 					ui.Box(c).FillWidth().Padding(6, 10).Radius(6).
-						Background(ui.RGBA(34, 197, 94, 0.10)).Border(1, ui.RGBA(34, 197, 94, 0.25)).Children(func() {
+						Background(appTheme(t).SuccessSoft).Border(1, appTheme(t).Success.Alpha(0.25)).Children(func() {
 						ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
 							ui.Icon(c, iconCheckSquare).Size(13, 13).TextColor(t.Success)
 							ui.Text(c, s.actionSavedMsg).FontSize(12).TextColor(t.Success).Wrap().Grow(1)
@@ -141,9 +141,9 @@ func (a *app) popupView(c *ui.Context) {
 				// empty is not useful without a way to try again; keep the
 				// reason and the retry together.
 				if s.errText != "" {
-					ui.Box(c).FillWidth().Padding(9, 10).Radius(7).
-						Background(ui.RGBA(239, 68, 68, 0.07)).
-						Border(1, ui.RGBA(239, 68, 68, 0.28)).Children(func() {
+					ui.Box(c).FillWidth().Padding(Space2, Space3).Radius(RadiusTrack).
+						Background(dangerSoft(t)).
+						Border(1, dangerLine(t)).Children(func() {
 						ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 							ui.Icon(c, iconInfo).Size(13, 13).TextColor(t.Danger)
 							ui.Text(c, s.errText).FontSize(12).TextColor(t.Danger).Wrap().Grow(1)
@@ -308,7 +308,7 @@ func (a *app) autofitDecision(delta float32, ok bool) (float32, bool) {
 func renderNotesBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 	ui.Box(c).FillWidth().Padding(12, 14).Radius(8).
 		Background(t.Surface).Border(1, t.Border).
-		Shadow(0, 2, 6, 0, ui.RGBA(0, 0, 0, 0.06)).Children(func() {
+		Shadow(0, 2, 6, 0, withAlpha(appTheme(t).ShadowColor, 0.5)).Children(func() {
 		ui.Column(c).FillWidth().Gap(8).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
 				ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
@@ -371,7 +371,7 @@ func renderNotesBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 			if len(s.notes) > 0 {
 				ui.Row(c).FillWidth().Justify(ui.End).Children(func() {
 					if s.notesSaved {
-						ui.Box(c).Height(24).Padding(2, 12).Radius(5).
+						ui.Box(c).Height(HeightIconSm).Padding(2, 12).Radius(RadiusSM).
 							Background(t.Surface).Border(1, t.Border).Children(func() {
 							ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
 								ui.Icon(c, iconCheckSquare).Size(12, 12).TextColor(t.Success)
@@ -379,10 +379,10 @@ func renderNotesBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 							})
 						})
 					} else {
-						btnSave := ui.Button(c, "").Height(24).Padding(2, 14).Radius(5).Background(saveButtonColor(t)).TextColor(ui.Hex("#FFFFFF")).Tooltip("保存所选生词到笔记本 (Ctrl+S)")
+						btnSave := ui.Button(c, "").Height(HeightIconSm).Padding(2, 14).Radius(RadiusSM).Background(saveButtonColor(t)).TextColor(t.AccentText).Tooltip("保存所选生词到笔记本 (Ctrl+S)")
 						btnSave.Children(func() {
 							ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-								ui.Icon(c, iconBookmark).Size(12, 12).TextColor(ui.Hex("#FFFFFF"))
+								ui.Icon(c, iconBookmark).Size(12, 12).TextColor(t.AccentText)
 								ui.Text(c, "保存所选生词").FontSize(11).FontWeight(600)
 							})
 						})
@@ -400,7 +400,7 @@ func renderNotesBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 func renderWordSaveButton(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 	isSaved := s.savedDictTerm != "" && strings.EqualFold(strings.TrimSpace(s.savedDictTerm), strings.TrimSpace(s.source))
 	if isSaved {
-		ui.Box(c).Height(24).Padding(2, 8).Radius(5).
+		ui.Box(c).Height(HeightIconSm).Padding(2, 8).Radius(RadiusSM).
 			Background(t.Surface).Border(1, t.Border).Children(func() {
 			ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
 				ui.Icon(c, iconCheckSquare).Size(12, 12).TextColor(t.Success)
@@ -409,11 +409,11 @@ func renderWordSaveButton(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 		})
 		return
 	}
-	save := ui.Button(c, "").Height(24).Padding(2, 8).Radius(5).
-		Background(saveButtonColor(t)).TextColor(ui.Hex("#FFFFFF")).Tooltip("将该单词保存到生词本 (Ctrl+S)")
+	save := ui.Button(c, "").Height(HeightIconSm).Padding(2, 8).Radius(RadiusSM).
+		Background(saveButtonColor(t)).TextColor(t.AccentText).Tooltip("将该单词保存到生词本 (Ctrl+S)")
 	save.Children(func() {
 		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-			ui.Icon(c, iconBookmark).Size(12, 12).TextColor(ui.Hex("#FFFFFF"))
+			ui.Icon(c, iconBookmark).Size(12, 12).TextColor(t.AccentText)
 			ui.Text(c, "保存生词").FontSize(11).FontWeight(600)
 		})
 	})
@@ -502,7 +502,7 @@ func (a *app) renderEmptyActionStart(c *ui.Context, t *ui.Theme, s snapshot, act
 	ui.Row(c).FillWidth().Padding(6, 4).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, tip).FontSize(12).TextColor(t.TextMuted)
 		ui.Spacer(c).Grow(1)
-		btnStart := ui.Button(c, "").Height(24).Padding(2, 10).Radius(5).Background(t.Accent).TextColor(t.AccentText)
+		btnStart := ui.Button(c, "").Height(HeightIconSm).Padding(2, 10).Radius(RadiusSM).Background(t.Accent).TextColor(t.AccentText)
 		btnStart.Children(func() {
 			ui.Text(c, "立即开始").FontSize(11).FontWeight(600)
 		})
@@ -620,15 +620,33 @@ func renderAiMarkdown(c *ui.Context, text string, busy bool) {
 	}
 }
 
+// renderPopupEmptyState 是浮窗空状态的统一组件：Lucide 图标 + 标题 + 说明，
+// 不再用 Emoji 字符。
+func renderPopupEmptyState(c *ui.Context, t *ui.Theme, icon *ui.SVG, title, desc string) {
+	at := appTheme(t)
+	ui.Column(c).FillWidth().Padding(Space6, Space4).Gap(Space2).Center().Children(func() {
+		ui.Box(c).Size(40, 40).Radius(RadiusTrack).Center().
+			Background(at.TintSurface).Border(1, at.TintBorder).Children(func() {
+			ui.Icon(c, icon).Size(20, 20).TextColor(at.Accent)
+		})
+		ui.Text(c, title).Font(fontUI).FontSize(FontSection).
+			FontWeight(600).TextColor(at.Text).Balance().Center()
+		if desc != "" {
+			ui.Text(c, desc).Font(fontUI).FontSize(FontHelper).
+				TextColor(at.TextMuted).MaxWidth(280).LineHeight(1.5).Balance().Center()
+		}
+	})
+}
+
 func (a *app) renderGrammarEmptyState(c *ui.Context, t *ui.Theme, s snapshot) {
 	if s.source != "" {
 		ui.Box(c).FillWidth().Padding(14, 16).Radius(8).
 			Background(t.Surface).Border(1, t.Border).Children(func() {
 			ui.Column(c).FillWidth().Gap(8).Children(func() {
 				ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
-					ui.Text(c, "🔍 长难句拆解待就绪").FontSize(13).FontWeight(600).TextColor(t.Text)
+					ui.Text(c, "长难句拆解待就绪").FontSize(13).FontWeight(600).TextColor(t.Text)
 					ui.Spacer(c).Grow(1)
-					btnStart := ui.Button(c, "开始拆解长难句").Height(26).Padding(2, 12).Radius(5).
+					btnStart := ui.Button(c, "开始拆解长难句").Height(HeightCompact).Padding(2, 12).Radius(RadiusSM).
 						Background(t.Accent).TextColor(t.AccentText)
 					if btnStart.Clicked() {
 						a.runAction("default-sentence-analysis", s.source)
@@ -642,11 +660,8 @@ func (a *app) renderGrammarEmptyState(c *ui.Context, t *ui.Theme, s snapshot) {
 	ui.Box(c).FillWidth().Padding(28, 16).Radius(8).
 		Background(t.Surface).Border(1, t.Border).Children(func() {
 		ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
-			ui.Text(c, "🔍").FontSize(24)
-			ui.Text(c, "长难句拆解").FontSize(14).FontWeight(600).TextColor(t.Text)
-			ui.Text(c, "在任意界面选中英文长句后按快捷键，AI 将自动分析句子主干与从属修饰关系。").
-				FontSize(12).TextColor(t.TextMuted).Wrap()
-			btnInput := ui.Button(c, "键盘输入长句").Height(26).Padding(2, 12).Radius(5).Background(t.SurfaceHover)
+			renderPopupEmptyState(c, t, iconSearch, "长难句拆解", "在任意界面选中英文长句后按快捷键，AI 将自动分析句子主干与从属修饰关系。")
+			btnInput := ui.Button(c, "键盘输入长句").Height(HeightCompact).Padding(2, 12).Radius(RadiusSM).Background(t.SurfaceHover)
 			if btnInput.Clicked() {
 				a.mu.Lock()
 				a.inputTargetMode = modeGrammar
@@ -663,9 +678,9 @@ func (a *app) renderWritingEmptyState(c *ui.Context, t *ui.Theme, s snapshot) {
 			Background(t.Surface).Border(1, t.Border).Children(func() {
 			ui.Column(c).FillWidth().Gap(8).Children(func() {
 				ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
-					ui.Text(c, "✏️ 写作批改待就绪").FontSize(13).FontWeight(600).TextColor(t.Text)
+					ui.Text(c, "写作批改待就绪").FontSize(13).FontWeight(600).TextColor(t.Text)
 					ui.Spacer(c).Grow(1)
-					btnStart := ui.Button(c, "开始批改润色").Height(26).Padding(2, 12).Radius(5).
+					btnStart := ui.Button(c, "开始批改润色").Height(HeightCompact).Padding(2, 12).Radius(RadiusSM).
 						Background(t.Accent).TextColor(t.AccentText)
 					if btnStart.Clicked() {
 						a.runAction("default-improve-writing", s.source)
@@ -679,11 +694,8 @@ func (a *app) renderWritingEmptyState(c *ui.Context, t *ui.Theme, s snapshot) {
 	ui.Box(c).FillWidth().Padding(28, 16).Radius(8).
 		Background(t.Surface).Border(1, t.Border).Children(func() {
 		ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
-			ui.Text(c, "✏️").FontSize(24)
-			ui.Text(c, "AI 写作批改与润色").FontSize(14).FontWeight(600).TextColor(t.Text)
-			ui.Text(c, "选中草拟的英文句子或段落，AI 将进行语法纠错与场景得体性润色。").
-				FontSize(12).TextColor(t.TextMuted).Wrap()
-			btnInput := ui.Button(c, "键盘输入句子").Height(26).Padding(2, 12).Radius(5).Background(t.SurfaceHover)
+			renderPopupEmptyState(c, t, iconPolish, "AI 写作批改与润色", "选中草拟的英文句子或段落，AI 将进行语法纠错与场景得体性润色。")
+			btnInput := ui.Button(c, "键盘输入句子").Height(HeightCompact).Padding(2, 12).Radius(RadiusSM).Background(t.SurfaceHover)
 			if btnInput.Clicked() {
 				a.mu.Lock()
 				a.inputTargetMode = modeWriting
@@ -698,11 +710,8 @@ func (a *app) renderDictionaryEmptyState(c *ui.Context, t *ui.Theme, s snapshot)
 	ui.Box(c).FillWidth().Padding(28, 16).Radius(8).
 		Background(t.Surface).Border(1, t.Border).Children(func() {
 		ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
-			ui.Text(c, "📘").FontSize(24)
-			ui.Text(c, "词典精读").FontSize(14).FontWeight(600).TextColor(t.Text)
-			ui.Text(c, "选中文中陌生单词，即可查看权威释义、音标发音与生词卡。").
-				FontSize(12).TextColor(t.TextMuted).Wrap()
-			btnInput := ui.Button(c, "键盘输入查词").Height(26).Padding(2, 12).Radius(5).Background(t.SurfaceHover)
+			renderPopupEmptyState(c, t, iconDict, "词典精读", "选中文中陌生单词，即可查看权威释义、音标发音与生词卡。")
+			btnInput := ui.Button(c, "键盘输入查词").Height(HeightCompact).Padding(2, 12).Radius(RadiusSM).Background(t.SurfaceHover)
 			if btnInput.Clicked() {
 				a.mu.Lock()
 				a.inputTargetMode = modeDictionary
@@ -717,11 +726,8 @@ func (a *app) renderTranslateEmptyState(c *ui.Context, t *ui.Theme) {
 	ui.Box(c).FillWidth().Padding(28, 16).Radius(8).
 		Background(t.Surface).Border(1, t.Border).Children(func() {
 		ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
-			ui.Text(c, "📘").FontSize(24)
-			ui.Text(c, "划词翻译就绪").FontSize(14).FontWeight(600).TextColor(t.Text)
-			ui.Text(c, "选中文本后按划词快捷键（默认 Alt+D）即可自动翻译；也可点击下方按钮直接输入。").
-				FontSize(12).TextColor(t.TextMuted).Wrap()
-			btnInput := ui.Button(c, "键盘输入翻译").Height(26).Padding(2, 12).Radius(5).
+			renderPopupEmptyState(c, t, iconTranslate, "划词翻译就绪", "选中文本后按划词快捷键（默认 Alt+D）即可自动翻译；也可点击下方按钮直接输入。")
+			btnInput := ui.Button(c, "键盘输入翻译").Height(HeightCompact).Padding(2, 12).Radius(RadiusSM).
 				Background(t.Accent).TextColor(t.AccentText)
 			if btnInput.Clicked() {
 				a.mu.Lock()

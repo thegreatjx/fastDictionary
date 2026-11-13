@@ -53,14 +53,14 @@ func TestWrappedLinesGrowsWithText(t *testing.T) {
 	}
 }
 
-// TestPopupContentHeightFloor pins the 260px minimum: a window shorter than
+// TestPopupContentHeightFloor pins the 196px minimum: a window shorter than
 // that clips the source and the target together.
 func TestPopupContentHeightFloor(t *testing.T) {
-	if h := popupContentHeight(snapshot{mode: modeTranslate}, 440); h < 260 {
-		t.Fatalf("empty translate popup = %vpx, below the 260 floor", h)
+	if h := popupContentHeight(snapshot{mode: modeTranslate}, 440); h < 196 {
+		t.Fatalf("empty translate popup = %vpx, below the 196 floor", h)
 	}
-	if h := popupContentHeight(snapshot{mode: modeInput}, 440); h < 260 {
-		t.Fatalf("empty input popup = %vpx, below the 260 floor", h)
+	if h := popupContentHeight(snapshot{mode: modeInput}, 440); h < 196 {
+		t.Fatalf("empty input popup = %vpx, below the 196 floor", h)
 	}
 }
 

@@ -279,9 +279,9 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 			cAll, cWords, cSentences, cWriting := vocabStore.CategoryCounts()
 			catNames := []string{
 				fmt.Sprintf("全部 (%d)", cAll),
-				fmt.Sprintf("📘 生词 (%d)", cWords),
-				fmt.Sprintf("🔍 长难句 (%d)", cSentences),
-				fmt.Sprintf("✏️ 写作 (%d)", cWriting),
+				fmt.Sprintf("生词 (%d)", cWords),
+				fmt.Sprintf("长难句 (%d)", cSentences),
+				fmt.Sprintf("写作 (%d)", cWriting),
 			}
 			ui.Row(c).FillWidth().Children(func() {
 				ui.Segmented(c, &a.vocabCategoryIdx, catNames...).FillWidth().Height(28).FontSize(12).
@@ -420,7 +420,7 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 				}
 
 				// [✨ 补全]
-				btnEnrich := ui.Button(c, "✨ 补全").Height(28).Padding(2, 8).Radius(5).
+				btnEnrich := ui.Button(c, "补全").Height(28).Padding(2, 8).Radius(5).
 					Tooltip("为生词自动补全音标、CEFR 难度、例句与记忆技巧")
 				if btnEnrich.Clicked() {
 					go func() {
@@ -501,7 +501,7 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 		ui.Box(c).FillWidth().Padding(36, 20).Radius(8).Background(t.Surface).Border(1, t.Border).Children(func() {
 			ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 				if a.vocabSearchQuery != "" {
-					ui.Text(c, "🔍").FontSize(24)
+					ui.Icon(c, iconSearch).Size(24, 24)
 					ui.Text(c, fmt.Sprintf("未找到与「%s」相关的笔记", a.vocabSearchQuery)).FontSize(14).FontWeight(600).TextColor(t.Text)
 					ui.Text(c, "尝试缩短搜索词，或切换上方分类查看。").FontSize(12).TextColor(t.TextMuted)
 					btnClearSearch := ui.Button(c, "清除搜索关键词").Height(26).Padding(2, 12).Radius(5).Background(t.SurfaceHover)
@@ -510,7 +510,7 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 						a.settingsRefresh()
 					}
 				} else {
-					ui.Text(c, "📘").FontSize(24)
+					ui.Icon(c, iconDict).Size(24, 24)
 					title := "笔记本还是空的"
 					desc := "在划词弹窗里点击【保存】即可自动归档；存下来的词可以在这里展开完整词卡与导出 Anki。"
 					switch a.vocabCategoryIdx {
@@ -548,12 +548,12 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 				ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
 					// Left: badges
 					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-						srcLabel := "📘 生词"
+						srcLabel := "生词"
 						switch classifyVocabEntry(entry) {
 						case vocabCategorySentences:
-							srcLabel = "🔍 长难句"
+							srcLabel = "长难句"
 						case vocabCategoryWriting:
-							srcLabel = "✏️ 写作"
+							srcLabel = "写作"
 						}
 						ui.Box(c).Padding(1, 6).Radius(4).Background(t.SurfaceHover).Children(func() {
 							ui.Text(c, srcLabel).FontSize(11).FontWeight(600).TextColor(t.Accent)

@@ -67,40 +67,48 @@ func (a *app) refineCurrentTranslation(s snapshot) {
 }
 
 func renderAIRefineControls(c *ui.Context, t *ui.Theme, a *app, s snapshot) {
-	// 单字截图常常是 OCR 残字（例如 unfolded -> untolc），更需要 AI 看图精翻。
-	// 只有普通划词单词继续保留词典卡行为。
 	if s.source == "" || (s.isWord && !s.isScreenshotMode) {
 		return
 	}
+	at := appTheme(t)
 	state := aiRefineViewFor(s)
-	btn := ui.Button(c, "").Tooltip(state.tip).Height(28).Padding(1, 8).Radius(6).Center()
+	btn := ui.ButtonBase(c).Tooltip(state.tip).Height(HeightCompact).
+		Padding(0, Space2+2).Radius(RadiusSM).Center()
+	bg := at.Surface
+	border := at.BorderCtrl
+	iconCol := at.Accent
+	labelCol := at.Text
 	if state.active {
-		btn.Background(withAlpha(t.Accent, 0.14)).Border(1, withAlpha(t.Accent, 0.38))
+		bg = at.AccentSoft
+		border = at.AccentRing
+		labelCol = at.Accent
+	} else if btn.Hovered() {
+		bg = at.TintSurface
+		border = at.TintBorder
 	}
-	textColor := t.TextMuted
-	if state.active {
-		textColor = t.Accent
-	}
+	btn.Background(bg).Border(1, border)
 	btn.Children(func() {
-		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+		ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
 			if state.busy {
 				ui.Spinner(c).Size(12, 12)
 			} else {
-				ui.Icon(c, iconSparkles).Size(13, 13).TextColor(textColor)
+				ui.Icon(c, iconSparkles).Size(14, 14).TextColor(iconCol)
 			}
-			ui.Text(c, state.label).FontSize(10).FontWeight(600).TextColor(textColor).SingleLine()
+			ui.Text(c, state.label).Font(fontUI).FontSize(FontHelper).
+				FontWeight(500).TextColor(labelCol).SingleLine()
 		})
 	})
 	if btn.Clicked() && !state.busy {
 		a.refineCurrentTranslation(s)
 	}
 	if s.aiRefineErr != "" {
-		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "精翻失败："+s.aiRefineErr).FontSize(10).TextColor(t.Danger).SingleLine()
-			if ui.Button(c, "重试").Height(20).Padding(0, 6).FontSize(10).Radius(4).Clicked() {
+		ui.Row(c).Gap(Space2).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "精翻失败："+s.aiRefineErr).Font(fontUI).
+				FontSize(FontHelper).TextColor(at.Danger).SingleLine()
+			if GhostButton(c, t, "重试").Height(HeightIconSm).Radius(RadiusXS).Clicked() {
 				a.refineCurrentTranslation(s)
 			}
-			if ui.Button(c, "打开 AI 设置").Height(20).Padding(0, 6).FontSize(10).Radius(4).Clicked() {
+			if GhostButton(c, t, "打开 AI 设置").Height(HeightIconSm).Radius(RadiusXS).Clicked() {
 				a.openAISettings()
 			}
 		})
@@ -111,10 +119,12 @@ func renderEngineCaptionWithAIState(c *ui.Context, t *ui.Theme, s snapshot, cfg 
 	if !cfg.ShowEngineTag || s.engine == "" {
 		return
 	}
-	color := t.TextMuted
+	at := appTheme(t)
+	color := at.TextMuted
 	if isAIResultEngine(s.engine) || s.aiRefining {
-		color = t.Accent
+		color = at.Accent
 	}
 	ui.Text(c, translationEngineCaption(s, cfg.TargetLang)).
-		FontSize(10).TextColor(color).SingleLine().Opacity(0.85)
+		Font(fontUI).FontFeatures("tnum").FontSize(FontMicro).
+		TextColor(color).SingleLine()
 }

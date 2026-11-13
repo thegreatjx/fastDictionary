@@ -97,6 +97,8 @@ type AppTheme struct {
 
 	ShadowColor ui.Color
 	InsetColor  ui.Color
+	TintSurface ui.Color // 清冷淡蓝微底（浮窗原文条 / 轻量强调底）
+	TintBorder  ui.Color // 淡蓝微边框
 }
 
 func defaultAccent(dark bool) ui.Color {
@@ -131,7 +133,7 @@ func newAppTheme(dark bool, accent ui.Color) AppTheme {
 			Accent:        accent,
 			AccentHover:   ui.Hex("#2563EB"),
 			AccentPress:   ui.Hex("#1D4ED8"),
-			AccentSoft:    accent.Alpha(0.09),
+			AccentSoft:    accent.Alpha(0.16),
 			AccentRing:    accent.Alpha(0.45),
 			AccentText:    white,
 			Danger:        danger,
@@ -141,6 +143,8 @@ func newAppTheme(dark bool, accent ui.Color) AppTheme {
 			Warning:       ui.Hex("#F59E0B"),
 			ShadowColor:   ui.RGBA(0, 0, 0, 0.35),
 			InsetColor:    ui.RGBA(255, 255, 255, 0.14),
+			TintSurface:   ui.Hex("#171D28"),
+			TintBorder:    ui.RGBA(96, 165, 250, 0.20),
 		}
 	}
 	danger := ui.Hex("#DC2626")
@@ -164,7 +168,7 @@ func newAppTheme(dark bool, accent ui.Color) AppTheme {
 		Accent:        accent,
 		AccentHover:   ui.Hex("#1D4ED8"),
 		AccentPress:   ui.Hex("#1E40AF"),
-		AccentSoft:    accent.Alpha(0.09),
+		AccentSoft:    accent.Alpha(0.11),
 		AccentRing:    accent.Alpha(0.45),
 		AccentText:    white,
 		Danger:        danger,
@@ -174,6 +178,8 @@ func newAppTheme(dark bool, accent ui.Color) AppTheme {
 		Warning:       ui.Hex("#B45309"),
 		ShadowColor:   ui.RGBA(15, 23, 42, 0.12),
 		InsetColor:    ui.Transparent,
+		TintSurface:   ui.Hex("#F3F7FF"),
+		TintBorder:    ui.RGBA(37, 99, 235, 0.16),
 	}
 }
 
@@ -386,6 +392,29 @@ func SettingRow(c *ui.Context, t *ui.Theme, label, desc string, control func()) 
 	})
 }
 
+// SettingSliderRow 是设置页滑块的统一行：左侧标签与说明，右侧滑块 + 等宽数值。
+func SettingSliderRow(c *ui.Context, t *ui.Theme, label, desc, valueText string, buildSlider func()) {
+	at := appTheme(t)
+	ui.Box(c).FillWidth().Padding(Space4, Space4).
+		BorderWidth(0, 0, 1, 0).BorderColor(at.BorderSubtle).Children(func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space4).Children(func() {
+			ui.Column(c).Grow(1).Gap(Space1).Children(func() {
+				ui.Text(c, label).Font(fontUI).FontSize(FontControl).FontWeight(500).TextColor(at.Text)
+				if desc != "" {
+					HelperText(c, t, desc).MaxWidth(320)
+				}
+			})
+			ui.Row(c).AlignItems(ui.Center).Gap(Space3).Shrink(0).Children(func() {
+				buildSlider()
+				ui.Box(c).Width(52).AlignItems(ui.End).Children(func() {
+					ui.Text(c, valueText).Font(fontMono).FontFeatures("tnum").
+						FontSize(FontHelper).FontWeight(500).TextColor(at.TextSec).SingleLine()
+				})
+			})
+		})
+	})
+}
+
 // LongField 是脱离 ui.Form 的独立字段：标签在控件正上方左对齐。
 func LongField(c *ui.Context, t *ui.Theme, label, desc string, control func() ui.Element) {
 	at := appTheme(t)
@@ -409,19 +438,40 @@ func LongField(c *ui.Context, t *ui.Theme, label, desc string, control func() ui
 
 // SegmentedControl 基于 ui.SegmentedBase，宽度随选项内容自适应。
 func SegmentedControl(c *ui.Context, selected *int, labels ...string) ui.Element {
+	return segmentedControlWithHeight(c, selected, HeightControl, labels...)
+}
+
+// SegmentedControlCompact 用于托盘与浮窗 Tabs 的紧凑态。
+func SegmentedControlCompact(c *ui.Context, selected *int, labels ...string) ui.Element {
+	return segmentedControlWithHeight(c, selected, HeightCompact, labels...)
+}
+
+func segmentedControlWithHeight(c *ui.Context, selected *int, height float32, labels ...string) ui.Element {
 	at := appTheme(c.Theme())
+	pad := float32(3)
+	if height <= HeightCompact {
+		pad = 2
+	}
+	// 精确扣除上下 1px Border 与上下 Padding，滑块不再压住底边框。
+	segH := height - 2 - pad*2
 	parts := ui.SegmentedBase(c, selected, len(labels))
-	track := parts.Track.Radius(RadiusTrack).Padding(2).Gap(2).
+	track := parts.Track.Height(height).Radius(RadiusTrack).Padding(pad).Gap(2).
+		AlignItems(ui.Center).Shrink(0).
 		Background(at.SurfaceSubtle).Border(1, at.BorderSubtle)
 	track.Children(func() {
 		for i, label := range labels {
-			seg := parts.Segment(i).Radius(RadiusSM).
-				Padding(Space1, Space3).Height(HeightCompact)
+			seg := parts.Segment(i).Height(segH).Radius(RadiusSM).
+				Padding(0, Space3).Center()
+			if height <= HeightCompact {
+				seg.Padding(0, Space2+2)
+			}
 			ink := at.TextSec
+			weight := 500
 			if i == *selected {
 				ink = at.Text
-				seg.Background(at.SurfaceElev).
-					Shadow(0, 1, 2, 0, ui.RGBA(0, 0, 0, 0.12))
+				weight = 600
+				seg.Background(at.SurfaceElev).Border(1, at.BorderSubtle).
+					Shadow(0, 1, 1, 0, ui.RGBA(15, 23, 42, 0.06))
 				if at.Dark {
 					seg.InsetShadow(0, 1, 0, 0, at.InsetColor)
 				}
@@ -429,11 +479,39 @@ func SegmentedControl(c *ui.Context, selected *int, labels ...string) ui.Element
 			seg.TextColor(ink)
 			seg.Children(func() {
 				ui.Text(c, label).Font(fontUI).FontSize(FontControl).
-					FontWeight(500).TextColor(ink).SingleLine()
+					FontWeight(weight).TextColor(ink).SingleLine()
 			})
 		}
 	})
 	return track
+}
+
+// SegmentedOption 与 SegmentedControlMapped 用显式值映射代替魔法下标 0/1/2。
+type SegmentedOption[T comparable] struct {
+	Value T
+	Label string
+}
+
+func SegmentedControlMapped[T comparable](c *ui.Context, compact bool, current T, onSelect func(T), opts ...SegmentedOption[T]) {
+	idx := 0
+	labels := make([]string, len(opts))
+	for i, opt := range opts {
+		labels[i] = opt.Label
+		if opt.Value == current {
+			idx = i
+		}
+	}
+	var seg ui.Element
+	if compact {
+		seg = SegmentedControlCompact(c, &idx, labels...)
+	} else {
+		seg = SegmentedControl(c, &idx, labels...)
+	}
+	seg.OnChange(func() {
+		if idx >= 0 && idx < len(opts) {
+			onSelect(opts[idx].Value)
+		}
+	})
 }
 
 // ---- 过渡辅助（P1 推广完设置页后删除）----
@@ -561,20 +639,20 @@ const (
 // pure white or pure black — a trace of blue in it keeps the bar from
 // looking pasted on top of the page.
 const (
-	chipSurfaceLight = "#FBFCFD"
-	chipSurfaceDark  = "#1B2027"
-	chipBorderLight  = "#E3E8EE"
-	chipBorderDark   = "#2E3641"
-	chipInkLight     = "#3F4A5A"
-	chipInkDark      = "#AEBAC8"
-	chipInkHoverL    = "#1E2A38"
-	chipInkHoverD    = "#E4EAF1"
-	chipAccentLight  = "#4A6E8A"
-	chipAccentDark   = "#7FA6C4"
-	chipTipBgLight   = "#26303B"
-	chipTipBgDark    = "#E8EDF2"
-	chipTipFgLight   = "#EAF0F6"
-	chipTipFgDark    = "#1A2028"
+	chipSurfaceLight = "#F4F8FF" // 95% 白 + 5% 冰川蓝：通透不艳俗
+	chipSurfaceDark  = "#171D28"
+	chipBorderLight  = "#D4E2FA" // 极细冰蓝框，不再灰蒙蒙
+	chipBorderDark   = "#2B394F"
+	chipInkLight     = "#3A4960"
+	chipInkDark      = "#B6C5DA"
+	chipInkHoverL    = "#1D4ED8"
+	chipInkHoverD    = "#E2ECFA"
+	chipAccentLight  = "#2563EB" // 主图标恢复明快系统蓝
+	chipAccentDark   = "#60A5FA"
+	chipTipBgLight   = "#1E293B"
+	chipTipBgDark    = "#E8EDF5"
+	chipTipFgLight   = "#F1F5F9"
+	chipTipFgDark    = "#0F172A"
 )
 
 // chipSurface is the pill the buttons sit on.
@@ -605,14 +683,14 @@ func chipBorderColor(t *ui.Theme) ui.Color {
 func chipToneColors(t *ui.Theme, tone chipTone) (fg, wash ui.Color) {
 	if t.Dark {
 		if tone == chipTonePrimary {
-			return ui.Hex(chipAccentDark), ui.RGBA(127, 166, 196, 0.16)
+			return ui.Hex(chipAccentDark), ui.RGBA(96, 165, 250, 0.16)
 		}
-		return ui.Hex(chipInkDark), ui.RGBA(174, 186, 200, 0.12)
+		return ui.Hex(chipInkDark), ui.RGBA(96, 165, 250, 0.12)
 	}
 	if tone == chipTonePrimary {
-		return ui.Hex(chipAccentLight), ui.RGBA(74, 110, 138, 0.10)
+		return ui.Hex(chipAccentLight), ui.RGBA(37, 99, 235, 0.11)
 	}
-	return ui.Hex(chipInkLight), ui.RGBA(63, 74, 90, 0.07)
+	return ui.Hex(chipInkLight), ui.RGBA(37, 99, 235, 0.08)
 }
 
 // chipIconHover is the icon colour while the pointer is on the button: the ink
@@ -636,4 +714,73 @@ func chipTipColors(t *ui.Theme) (bg, fg ui.Color) {
 		return ui.Hex(chipTipBgDark), ui.Hex(chipTipFgDark)
 	}
 	return ui.Hex(chipTipBgLight), ui.Hex(chipTipFgLight)
+}
+
+// ---- 内容语义色板：从 grammar.go / popup_view.go 收口到 theme.go ----
+
+// grammarInkFor 是长难句标注的明暗色板。颜色只在这里定义。
+func grammarInkFor(t *ui.Theme) grammarInk {
+	if t != nil && t.Dark {
+		return grammarInk{
+			subjectLine:    ui.Hex("#5EEAD4"),
+			predicateLine:  ui.Hex("#86A6FF"),
+			objectLine:     ui.Hex("#FDBA74"),
+			complementLine: ui.Hex("#C4B5FD"),
+			connector:      ui.Hex("#5CCB99"),
+			clauseTint:     ui.RGBA(92, 203, 153, 0.13),
+			clauseTint2:    ui.RGBA(92, 203, 153, 0.20),
+			clauseText:     ui.Hex("#A7B4C4"),
+			obstacle:       ui.Hex("#FF8A70"),
+			obstacleBg:     ui.RGBA(255, 138, 112, 0.12),
+			body:           ui.Hex("#E4EAF1"),
+			muted:          ui.Hex("#7D8595"),
+		}
+	}
+	return grammarInk{
+		subjectLine:    ui.Hex("#0E7C86"),
+		predicateLine:  ui.Hex("#2A57C4"),
+		objectLine:     ui.Hex("#A21CAF"),
+		complementLine: ui.Hex("#6D28D9"),
+		connector:      ui.Hex("#15803D"),
+		clauseTint:     ui.RGBA(23, 122, 83, 0.08),
+		clauseTint2:    ui.RGBA(23, 122, 83, 0.13),
+		clauseText:     ui.Hex("#4B5563"),
+		obstacle:       ui.Hex("#C43D27"),
+		obstacleBg:     ui.RGBA(196, 61, 39, 0.08),
+		body:           ui.Hex("#1E293B"),
+		muted:          ui.Hex("#8C94A3"),
+	}
+}
+
+// grammarHeaderColors 是长难句卡片顶部「拆解」标签的底、边、字。
+func grammarHeaderColors(t *ui.Theme) (bg, border, text ui.Color) {
+	at := appTheme(t)
+	return at.SurfaceSubtle, at.BorderSubtle, at.TextSec
+}
+
+// grammarObstacleColors 是「句式难点」暖色卡片的明暗色板。
+func grammarObstacleColors(t *ui.Theme, ink grammarInk) (cardBg, cardBorder, cardTitle, badgeBg, badgeBorder, badgeText, obsText, restoreLabel, restoreText, noteLabel, noteText ui.Color) {
+	if t != nil && t.Dark {
+		return ink.obstacleBg,
+			withAlpha(ink.obstacle, 0.35),
+			ink.obstacle,
+			withAlpha(ink.obstacle, 0.22),
+			withAlpha(ink.obstacle, 0.45),
+			ink.obstacle,
+			ink.body,
+			ink.obstacle,
+			ink.predicateLine,
+			ink.muted,
+			ink.body
+	}
+	return ui.Hex("#FAF6F4"), ui.Hex("#E8DDD8"), ui.Hex("#8A5044"),
+		ui.Hex("#F0E4DF"), ui.Hex("#E0CFC8"), ui.Hex("#8A5044"),
+		ui.Hex("#3F3A38"), ui.Hex("#A26B5C"), ui.Hex("#55708C"),
+		ui.Hex("#9A8478"), ui.Hex("#5C524C")
+}
+
+// grammarToggleOnColors 是长难句卡片开关的选中态。
+func grammarToggleOnColors(t *ui.Theme) (bg, text, border ui.Color) {
+	at := appTheme(t)
+	return ui.Hex("#55708C"), at.AccentText, ui.Hex("#4A6E8A")
 }

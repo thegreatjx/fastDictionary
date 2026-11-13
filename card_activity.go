@@ -71,3 +71,29 @@ func cardActivityOf(s snapshot) cardActivity {
 func cardHasPendingWork(s snapshot) bool {
 	return cardActivityOf(s).busy()
 }
+
+// notesViewPhase is the explicit, mutually exclusive phase of the "猜你想存"
+// strip. Rendering switches on this value instead of guessing a state from a
+// combination of notesBusy and len(notes); the conversion lives here only.
+// requestToken 已经提供「发起新任务取新代次、回调写入前校验」的 Epoch 语义，
+// 所有异步路径共用它，因此不重复引入第二套 AsyncEpoch。
+type notesPhase uint8
+
+const (
+	notesIdle notesPhase = iota
+	notesLoading
+	notesReady
+	notesEmpty
+	notesError
+)
+
+func notesViewPhase(s snapshot) notesPhase {
+	switch {
+	case len(s.notes) > 0:
+		return notesReady
+	case s.notesBusy:
+		return notesLoading
+	default:
+		return notesEmpty
+	}
+}
