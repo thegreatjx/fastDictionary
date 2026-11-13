@@ -127,8 +127,8 @@ func (a *app) testAIConnection() {
 			a.aiProbe.msg = "失败：" + aiErrorDetail(err)
 		} else {
 			a.aiProbe.phase = aiProbeSucceeded
-			a.aiProbe.msg = fmt.Sprintf("正常 · %s · %s · 返回 %s",
-				cfg.AIModel, took.Round(time.Millisecond), truncateFor(out, 20))
+			a.aiProbe.msg = fmt.Sprintf("正常 · 用时 %s · %s · 返回 %s",
+				took.Round(time.Millisecond), cfg.AIModel, truncateFor(out, 20))
 		}
 		msg := a.aiProbe.msg
 		a.mu.Unlock()

@@ -67,6 +67,28 @@ func TestSettingsAIHelpPanelUsesSelectedService(t *testing.T) {
 	}
 }
 
+func TestAIConnectionResultShowsFullModelAndTime(t *testing.T) {
+	a := newTestApp()
+	a.page = "ai"
+	cfg := a.store.Get()
+	msg := "正常 · 用时 1.234s · minimax-code/MiniMax-M2.7-highspeed · 返回 pong"
+	a.aiProbe = aiProbeState{phase: aiProbeSucceeded, source: aiProbeSource(cfg), msg: msg}
+
+	tt := ui.NewTester(a.settingsView, 880, 1400)
+	for _, want := range []string{"用时 1.234s", "minimax-code/MiniMax-M2.7-highspeed", "返回 pong"} {
+		if !tt.HasText(want) {
+			t.Errorf("连通性结果缺少 %q：%v", want, tt.Texts())
+		}
+	}
+	r, ok := tt.Find(msg)
+	if !ok {
+		t.Fatalf("找不到完整结果文本：%v", tt.Texts())
+	}
+	if r.W <= 220 {
+		t.Errorf("结果仍被限制在 220px 内：%+v", r)
+	}
+}
+
 func TestSettingsAIPageShowsGeminiModelGuidance(t *testing.T) {
 	a := newTestApp()
 	a.page = "ai"

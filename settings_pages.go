@@ -533,24 +533,27 @@ func (a *app) aiTestField(c *ui.Context, t *ui.Theme, cfg Config) {
 	state := a.aiProbeStatus(cfg)
 	at := appTheme(t)
 	SettingRow(c, t, "连通性", "发送一条最小测试请求，会消耗极少额度。", func() {
-		ui.Row(c).Gap(Space2).AlignItems(ui.Center).Shrink(0).Children(func() {
-			switch state.phase {
-			case aiProbeSucceeded:
-				ui.Text(c, "● "+state.msg).Font(fontMono).FontFeatures("tnum").
-					FontSize(FontHelper).TextColor(at.Success).
-					MaxWidth(220).SingleLine().Ellipsis("…")
-			case aiProbeFailed:
-				ui.Text(c, "● "+state.msg).Font(fontMono).FontFeatures("tnum").
-					FontSize(FontHelper).TextColor(at.Danger).
-					MaxWidth(220).SingleLine().Ellipsis("…")
-			}
-			label := "测试连接"
-			if state.phase == aiProbeRunning {
-				label = "测试中…"
-			}
-			if SecondaryButton(c, t, label).Disabled(state.phase == aiProbeRunning).Clicked() {
-				a.testAIConnection()
-			}
+		label := "测试连接"
+		if state.phase == aiProbeRunning {
+			label = "测试中…"
+		}
+		if SecondaryButton(c, t, label).Disabled(state.phase == aiProbeRunning).Clicked() {
+			a.testAIConnection()
+		}
+	})
+	// 结果单独占一行：模型名、耗时和错误详情都不再挤在按钮旁的单行里，
+	// 长文本直接换行，不会被省略号截掉。
+	if state.phase != aiProbeSucceeded && state.phase != aiProbeFailed {
+		return
+	}
+	ink, bg := at.Success, at.SuccessSoft
+	if state.phase == aiProbeFailed {
+		ink, bg = at.Danger, at.DangerHoverBg
+	}
+	ui.Box(c).FillWidth().Padding(Space3, Space4).Children(func() {
+		ui.Box(c).FillWidth().Padding(Space2, Space3).Radius(RadiusSM).Background(bg).Children(func() {
+			ui.Text(c, state.msg).Font(fontMono).FontFeatures("tnum").
+				FontSize(FontHelper).LineHeight(1.5).TextColor(ink).Wrap()
 		})
 	})
 }
