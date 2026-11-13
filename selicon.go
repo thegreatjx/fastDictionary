@@ -1150,14 +1150,15 @@ func (a *app) selIconView(c *ui.Context) {
 	a.chipTip.mu.Unlock()
 
 	enabledActions := cfg.GetEnabledActions()
+	contact, lift := chipShadows(t)
 	ui.Row(c).Fill().AlignItems(ui.Center).Justify(ui.Center).Gap(chipRowGap).
 		Padding(chipPadV, chipPadH).Radius(11).
 		Background(chipSurface(t)).Border(1, chipBorderColor(t)).
 		// Two shadows instead of one: a tight contact shadow that seats the
 		// pill on the page, and a wide soft one that lifts it. A single
 		// 12px blur at 12% looked like a grey halo.
-		Shadow(0, 1, 2, 0, ui.RGBA(16, 24, 38, 0.06)).
-		Shadow(0, 6, 20, 0, ui.RGBA(16, 24, 38, 0.10)).
+		Shadow(0, 1, 2, 0, contact).
+		Shadow(0, 6, 20, 0, lift).
 		Children(func() {
 			a.chipIconButton(c, t, iconTranslate, chipTonePrimary, "划词翻译（"+cfg.HotkeySelection+"）", func() {
 				a.actOnSelection(func(text string) { a.openPopupAction(modeTranslate, text) })

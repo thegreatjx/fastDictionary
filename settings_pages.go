@@ -287,11 +287,13 @@ func (a *app) pageAI(c *ui.Context, t *ui.Theme, cfg Config) {
 		})
 		SettingCard(c, t, "模型", func() {
 			a.aiModelField(c, t, cfg)
-			a.aiEffortRow(c, t, cfg)
+			a.aiTestField(c, t, cfg)
 		})
 		SettingCard(c, t, "偏好", func() {
 			a.aiDefaultModeRow(c, t, cfg)
-			a.aiTestField(c, t, cfg)
+			a.aiEffortRow(c, t, cfg)
+		})
+		SettingCard(c, t, "维护", func() {
 			a.aiCacheRow(c, t)
 		})
 		a.aiHelpField(c, t, cfg)

@@ -53,14 +53,14 @@ func TestWrappedLinesGrowsWithText(t *testing.T) {
 	}
 }
 
-// TestPopupContentHeightFloor pins the 196px minimum: a window shorter than
-// that clips the source and the target together.
+// TestPopupContentHeightFloor pins the 260px minimum: a window shorter than
+// that clips the source, the translation or the bottom action bar.
 func TestPopupContentHeightFloor(t *testing.T) {
-	if h := popupContentHeight(snapshot{mode: modeTranslate}, 440); h < 196 {
-		t.Fatalf("empty translate popup = %vpx, below the 196 floor", h)
+	if h := popupContentHeight(snapshot{mode: modeTranslate}, 440); h < popupMinHeight {
+		t.Fatalf("empty translate popup = %vpx, below the %v floor", h, popupMinHeight)
 	}
-	if h := popupContentHeight(snapshot{mode: modeInput}, 440); h < 196 {
-		t.Fatalf("empty input popup = %vpx, below the 196 floor", h)
+	if h := popupContentHeight(snapshot{mode: modeInput}, 440); h < popupMinHeight {
+		t.Fatalf("empty input popup = %vpx, below the %v floor", h, popupMinHeight)
 	}
 }
 
@@ -116,13 +116,21 @@ func TestPopupContentHeightWritingCountsAnnotations(t *testing.T) {
 	}
 }
 
-// TestClampPopupHeight covers the work-area cap.
+// TestClampPopupHeight covers the work-area and auto-height caps.
 func TestClampPopupHeight(t *testing.T) {
-	if got := clampPopupHeight(900, 0, 1080); got != 900 {
-		t.Fatalf("clampPopupHeight(900, 0, 1080) = %v, want 900 (already fits)", got)
+	if got := clampPopupHeight(500, 0, 1080); got != 500 {
+		t.Fatalf("clampPopupHeight(500, 0, 1080) = %v, want 500 (already fits)", got)
 	}
-	if got := clampPopupHeight(2000, 0, 1080); got != 1080 {
-		t.Fatalf("clampPopupHeight(2000, 0, 1080) = %v, want 1080 (capped)", got)
+	// 1080px work area would allow 669px at 62%, so the fixed 580 cap wins.
+	if got := clampPopupHeight(900, 0, 1080); got != popupMaxAutoHeight {
+		t.Fatalf("clampPopupHeight(900, 0, 1080) = %v, want %v", got, popupMaxAutoHeight)
+	}
+	if got := clampPopupHeight(2000, 0, 1080); got != popupMaxAutoHeight {
+		t.Fatalf("clampPopupHeight(2000, 0, 1080) = %v, want %v", got, popupMaxAutoHeight)
+	}
+	// On a short work area 62% is the tighter bound: 800 * 0.62 = 496.
+	if got := clampPopupHeight(900, 0, 800); got != 496 {
+		t.Fatalf("clampPopupHeight(900, 0, 800) = %v, want 496", got)
 	}
 	// Margins wider than the work area must not yield a negative height.
 	if got := clampPopupHeight(500, 600, 500); got > 500 {

@@ -456,12 +456,12 @@ func segmentedControlWithHeight(c *ui.Context, selected *int, height float32, la
 	segH := height - 2 - pad*2
 	parts := ui.SegmentedBase(c, selected, len(labels))
 	track := parts.Track.Height(height).Radius(RadiusTrack).Padding(pad).Gap(2).
-		AlignItems(ui.Center).Shrink(0).
+		AlignItems(ui.Center).AlignSelf(ui.Start).Shrink(0).
 		Background(at.SurfaceSubtle).Border(1, at.BorderSubtle)
 	track.Children(func() {
 		for i, label := range labels {
 			seg := parts.Segment(i).Height(segH).Radius(RadiusSM).
-				Padding(0, Space3).Center()
+				Padding(0, Space3).Center().Shrink(0)
 			if height <= HeightCompact {
 				seg.Padding(0, Space2+2)
 			}
@@ -670,6 +670,15 @@ func chipBorderColor(t *ui.Theme) ui.Color {
 		return ui.Hex(chipBorderDark)
 	}
 	return ui.Hex(chipBorderLight)
+}
+
+// chipShadows 返回贴合阴影与扩散提亮阴影。颜色留在 theme.go，
+// 悬浮条渲染不再写散落色值。
+func chipShadows(t *ui.Theme) (contact, lift ui.Color) {
+	if t.Dark {
+		return ui.RGBA(0, 0, 0, 0.28), ui.RGBA(0, 0, 0, 0.40)
+	}
+	return ui.RGBA(15, 23, 42, 0.06), ui.RGBA(30, 58, 138, 0.10)
 }
 
 // chipToneColors returns the icon colour of a chip action and the wash its

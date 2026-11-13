@@ -76,40 +76,54 @@ type settingsNavEntry struct {
 	icon  *ui.SVG
 }
 
-var settingsNavItems = []settingsNavEntry{
-	{"general", "通用", iconGear},
-	{"selection", "划词", iconTranslate},
-	{"actions", "AI 指令", iconSparkles},
-	{"vocabulary", "生词本", iconBookmark},
-	{"translate", "翻译", iconSwap},
-	{"dict", "词典与发音", iconDict},
-	{"ai", "AI 精翻", iconPolish},
-	{"hotkey", "快捷键", iconKeyboard},
-	{"about", "关于", iconInfo},
+type settingsNavGroup struct {
+	title string
+	items []settingsNavEntry
 }
 
-// settingsNavItem 是 32px 的导航行：选中态用浅底 + 左侧 3px Accent 竖条，
-// 不再用框架的实心蓝块。
+// 导航按用户心智分组。分组只影响侧栏，页面路由仍由 id 决定。
+var settingsNavGroups = []settingsNavGroup{
+	{"常规", []settingsNavEntry{
+		{"general", "通用", iconGear},
+		{"hotkey", "快捷键", iconKeyboard},
+	}},
+	{"划词与翻译", []settingsNavEntry{
+		{"selection", "划词", iconTranslate},
+		{"translate", "翻译", iconSwap},
+		{"dict", "词典与发音", iconDict},
+	}},
+	{"AI 与学习", []settingsNavEntry{
+		{"ai", "AI 精翻", iconPolish},
+		{"actions", "AI 指令", iconSparkles},
+		{"vocabulary", "生词本", iconBookmark},
+	}},
+	{"其他", []settingsNavEntry{
+		{"about", "关于", iconInfo},
+	}},
+}
+
+// settingsNavItem 是 32px 的导航行：图标占固定列宽并左对齐，选中态用
+// 圆角淡蓝整行高亮，不再靠外置竖条区分。
 func (a *app) settingsNavItem(c *ui.Context, t *ui.Theme, at AppTheme, item settingsNavEntry) {
 	active := a.page == item.id
 	b := ui.ButtonBase(c).Height(HeightControl).Radius(RadiusSM).
 		Role(ui.RoleTreeItem).Focusable().FillWidth().
-		Padding(0, Space2).Gap(Space2).AlignItems(ui.Center)
+		Padding(0, Space2).Gap(Space2).Justify(ui.Start).AlignItems(ui.Center)
 	if active {
 		b.Background(at.AccentSoft)
 	} else if b.Hovered() {
 		b.Background(at.SurfaceHover)
 	}
-	bar := ui.Transparent
 	iconCol := at.TextSec
 	textCol := at.TextSec
 	weight := 500
 	if active {
-		bar, iconCol, textCol, weight = at.Accent, at.Accent, at.Text, 600
+		iconCol, textCol, weight = at.Accent, at.Text, 600
 	}
 	b.Children(func() {
-		ui.Box(c).Width(3).Height(IconSize).Radius(RadiusXS).Background(bar)
-		ui.Icon(c, item.icon).Size(IconSize, IconSize).TextColor(iconCol)
+		ui.Box(c).Width(IconSize).Height(IconSize).Shrink(0).Center().Children(func() {
+			ui.Icon(c, item.icon).Size(IconSize, IconSize).TextColor(iconCol)
+		})
 		ui.Text(c, item.label).Font(fontUI).FontSize(FontControl).
 			FontWeight(weight).TextColor(textCol).SingleLine()
 	})
@@ -144,9 +158,13 @@ func (a *app) settingsView(c *ui.Context) {
 		ui.Column(c).Width(NavWidth).FillHeight().Padding(Space3).Gap(Space1).
 			Background(at.Canvas).Children(func() {
 			ui.Text(c, appTitle).Font(fontUI).FontSize(FontControl).FontWeight(600).
-				Padding(Space2, Space2).TextColor(at.Text)
-			for _, item := range settingsNavItems {
-				a.settingsNavItem(c, t, at, item)
+				Padding(Space1, Space2).TextColor(at.Text)
+			for _, group := range settingsNavGroups {
+				ui.Text(c, group.title).Font(fontUI).FontSize(FontMicro).FontWeight(500).
+					Padding(Space1, Space2).TextColor(at.TextMuted).SingleLine()
+				for _, item := range group.items {
+					a.settingsNavItem(c, t, at, item)
+				}
 			}
 		})
 

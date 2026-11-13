@@ -208,15 +208,21 @@ func popupContentHeight(s snapshot, w float32) float32 {
 		}
 	}
 
-	if h < 196 {
-		h = 196
+	if h < popupMinHeight {
+		h = popupMinHeight
 	}
 	return h
 }
 
-// autofitMinHeight is the smallest window the popup may shrink to in translation mode.
-// It covers header, footer, source, target and action bar so controls are never clipped.
-const autofitMinHeight float32 = 196
+// 浮窗高度只有两个边界，入口和模式共用，避免各页面再各自加减常量。
+const (
+	// popupMinHeight 是收起后的下限：原文、译文与底部操作栏要同时可读。
+	// 更长的内容交给正文 Scroll，不再把窗口压缩到只剩一条缝。
+	popupMinHeight float32 = 260
+	// popupMaxAutoHeight 是自动增高的上限。长回答在正文内滚动，
+	// 不把浮窗撑成整屏面板。
+	popupMaxAutoHeight float32 = 580
+)
 
 // autofitHeight corrects the estimated height with what the last frame
 // actually laid out.
@@ -268,8 +274,8 @@ func (a *app) applyPopupHeight(delta float32) {
 	// left the window exactly that border shorter than the content and clipped
 	// the last row.
 	target := float32(curH) + delta
-	if target < autofitMinHeight {
-		target = autofitMinHeight
+	if target < popupMinHeight {
+		target = popupMinHeight
 	}
 
 	pt := mygo.Point{X: curX, Y: curY}
@@ -296,11 +302,20 @@ func (a *app) applyPopupHeight(delta float32) {
 	win.SetBounds(mygo.Rectangle{X: curX, Y: newY, Width: curW, Height: h})
 }
 
-// clampPopupHeight caps a height to what the work area can show, between the
-// two margins.
+// clampPopupHeight caps an automatic height to 62% of the work area and to
+// popupMaxAutoHeight, whichever is smaller. The two margins are already
+// subtracted by the caller, so the ratio stays conservative on small screens.
 func clampPopupHeight(h float32, waTop, waBottom float32) float32 {
-	if maxH := waBottom - waTop; h > maxH {
-		return maxH
+	avail := waBottom - waTop
+	if avail <= 0 {
+		return h
+	}
+	cap := avail * 0.62
+	if cap > popupMaxAutoHeight {
+		cap = popupMaxAutoHeight
+	}
+	if h > cap {
+		return cap
 	}
 	return h
 }
@@ -353,12 +368,11 @@ func (a *app) fitHeight() {
 	h = clampPopupHeight(h, float32(waTop), float32(waBottom))
 
 	targetH := int(h)
-	// fitHeight runs when the content changes, and it works from an estimate.
-	// Shrinking from an estimate is what made the window jump in AI streaming modes
-	// where content arrives incrementally. In translation mode and during card toggles,
-	// allowing targetH to shrink removes excessive white space immediately.
+	// fitHeight 在换页、折叠和结果落地时调用。流式回答尚未结束时，
+	// 估算会随增量抖动，先不缩；一旦结果落地或用户折叠面板，就按
+	// 新的内容高度回落，而不是把展开时的尺寸永久留在窗口上。
 	if _, curH := win.Size(); targetH < curH {
-		if s.mode != modeTranslate {
+		if s.busy || s.aiBusy || s.notesBusy {
 			targetH = curH
 		}
 	}

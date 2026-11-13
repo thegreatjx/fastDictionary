@@ -68,9 +68,9 @@ func TestPopupContentHeightCardGuardBaseline(t *testing.T) {
 		{"dictionary/完整卡片", snapshot{mode: modeDictionary, dictResult: &DictionaryResult{Term: "seize", Definition: "抓住，攫取", Context: "seize the day", ContextTranslation: "把握当下", MemoryTips: "与 cease 区分"}}, 380},
 		{"grammar/无卡片", snapshot{mode: modeGrammar}, 420},
 		{"grammar/有译文卡片", snapshot{mode: modeGrammar, grammarResult: &SentenceAnalysisResult{Translation: "这是一个译句"}}, 436},
-		{"writing/无卡片", snapshot{mode: modeWriting}, autofitMinHeight},
+		{"writing/无卡片", snapshot{mode: modeWriting}, popupMinHeight},
 		{"writing/有批注卡片", snapshot{mode: modeWriting, writingResult: &ImproveWritingResult{Annotations: []WritingAnnotation{{Text: "alpha", Fix: "beta", Note: "说明"}}, Improved: "改写后的句子", Summary: "摘要"}}, 366},
-		{"translate/三张外来卡片", snapshot{mode: modeTranslate, grammarResult: &SentenceAnalysisResult{}, dictResult: &DictionaryResult{}, writingResult: &ImproveWritingResult{}}, autofitMinHeight},
+		{"translate/三张外来卡片", snapshot{mode: modeTranslate, grammarResult: &SentenceAnalysisResult{}, dictResult: &DictionaryResult{}, writingResult: &ImproveWritingResult{}}, popupMinHeight},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

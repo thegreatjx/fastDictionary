@@ -87,7 +87,7 @@ func TestAIPageRendersGroupedCardsInBothThemes(t *testing.T) {
 		a.store.Update(func(c *Config) { c.ThemeMode = themeModeFor(dark) })
 		tt := ui.NewTester(a.settingsView, 880, 640)
 		tt.Frame()
-		for _, want := range []string{"服务", "模型", "偏好", "状态", "模型服务", "推理强度", "测试连接", "默认模式"} {
+		for _, want := range []string{"服务", "模型", "偏好", "维护", "状态", "模型服务", "推理强度", "测试连接", "默认模式"} {
 			if !tt.HasText(want) {
 				t.Errorf("dark=%v AI 页缺少 %q：%v", dark, want, tt.Texts())
 			}
@@ -110,6 +110,122 @@ func TestTraySourceHasNoHardcodedColor(t *testing.T) {
 	}
 	if !strings.Contains(s, "DangerGhostButton") {
 		t.Error("tray.go 的退出按钮没有用 DangerGhostButton")
+	}
+	chipSrc, err := os.ReadFile("selicon.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(chipSrc), "ui.Hex(") || strings.Contains(string(chipSrc), "ui.RGBA(") {
+		t.Error("selicon.go 仍含硬编码色值，应移到 theme.go 的 chip 色板")
+	}
+}
+
+// TestSegmentedControlGeometry 钉住第 1 批的两个结论：轨道不随父列横拉，
+// 白滑块严格居中不压底边。
+func TestSegmentedControlGeometry(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		t.Run(map[bool]string{false: "light", true: "dark"}[dark], func(t *testing.T) {
+			tt := ui.NewTester(func(c *ui.Context) {
+				applyTheme(c, themeModeFor(dark), dark)
+				idx := 1
+				ui.Column(c).FillWidth().Padding(Space4).Gap(Space3).Children(func() {
+					SegmentedControl(c, &idx, "显示图标", "直接翻译", "仅快捷键").Label("std-track")
+					SegmentedControlCompact(c, &idx, "显示图标", "直接翻译", "仅快捷键").Label("cmp-track")
+				})
+			}, 880, 240)
+			tt.Frame()
+
+			std, ok := tt.Find("std-track")
+			if !ok {
+				t.Fatal("找不到标准分段轨道")
+			}
+			compact, ok := tt.Find("cmp-track")
+			if !ok {
+				t.Fatal("找不到紧凑分段轨道")
+			}
+			if std.H != HeightControl {
+				t.Fatalf("标准分段高度 = %v，want %v", std.H, HeightControl)
+			}
+			if compact.H != HeightCompact {
+				t.Fatalf("紧凑分段高度 = %v，want %v", compact.H, HeightCompact)
+			}
+			if std.W >= 500 || compact.W >= 500 {
+				t.Fatalf("分段控件被 880px 父列拉宽：std=%v cmp=%v", std.W, compact.W)
+			}
+
+			label, ok := tt.Find("直接翻译")
+			if !ok {
+				t.Fatal("找不到选中分段文本")
+			}
+			topGap := label.Y - std.Y
+			bottomGap := (std.Y + std.H) - (label.Y + label.H)
+			if diff := topGap - bottomGap; diff < -1.5 || diff > 1.5 {
+				t.Fatalf("分段文本未垂直居中：topGap=%v bottomGap=%v", topGap, bottomGap)
+			}
+		})
+	}
+}
+
+// TestChipPaletteCoolBlue 防止悬浮条退回中性灰：主图标必须偏冷蓝，浅色底
+// 必须带蓝调，hover 微底必须可见。
+func TestChipPaletteCoolBlue(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		th := ui.Theme{Dark: dark, Accent: defaultAccent(dark)}
+		surf := chipSurface(&th)
+		border := chipBorderColor(&th)
+		primFg, primWash := chipToneColors(&th, chipTonePrimary)
+		inkFg, _ := chipToneColors(&th, chipToneInk)
+		if surf == border || primFg == inkFg {
+			t.Fatalf("dark=%v: 悬浮条颜色塌缩", dark)
+		}
+		if primFg.B <= primFg.R {
+			t.Fatalf("dark=%v: 主图标应偏冷蓝，得到 %+v", dark, primFg)
+		}
+		if primWash.A <= 0 {
+			t.Fatalf("dark=%v: 主图标 hover 微底不可见", dark)
+		}
+		if !dark && surf.B <= surf.R {
+			t.Fatalf("浅色悬浮条底色应保留淡蓝调，得到 %+v", surf)
+		}
+	}
+}
+
+// TestSettingsNavIsGroupedAndAligned 确认侧栏按 4 组呈现，且所有图标后的
+// 文本左缘在同一列。
+func TestSettingsNavIsGroupedAndAligned(t *testing.T) {
+	a := newTestApp()
+	a.page = "general"
+	tt := ui.NewTester(a.settingsView, 880, 640)
+	tt.Frame()
+
+	for _, group := range []string{"常规", "划词与翻译", "AI 与学习", "其他"} {
+		if !tt.HasText(group) {
+			t.Errorf("侧栏缺少分组 %q", group)
+		}
+	}
+
+	// 窗口最小高度 480 时，最后一个入口仍须完整可见。
+	small := ui.NewTester(a.settingsView, 880, 480)
+	small.Frame()
+	last, ok := small.Find("关于")
+	if !ok || last.Y+last.H > 480 {
+		t.Errorf("最小高度下侧栏最后一项被裁切：ok=%v rect=%+v", ok, last)
+	}
+
+	labels := []string{"通用", "快捷键", "划词", "翻译", "词典与发音", "AI 精翻", "AI 指令", "生词本", "关于"}
+	var wantX float32
+	for i, label := range labels {
+		r, ok := tt.Find(label)
+		if !ok {
+			t.Fatalf("侧栏缺少 %q", label)
+		}
+		if i == 0 {
+			wantX = r.X
+			continue
+		}
+		if diff := r.X - wantX; diff < -0.5 || diff > 0.5 {
+			t.Errorf("导航文本 %q 左缘 x=%v，应为 %v", label, r.X, wantX)
+		}
 	}
 }
 
