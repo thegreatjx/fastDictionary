@@ -92,9 +92,15 @@ func (a *app) pageVocabReview(c *ui.Context, t *ui.Theme) {
 		Border(1, t.Border).Shadow(0, 2, 8, 0, ui.RGBA(0, 0, 0, 0.05)).Children(func() {
 		ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
 			ui.Text(c, entry.Term).FontSize(30).FontWeight(700).TextColor(t.Text).Wrap()
-			if entry.Phonetic != "" {
-				ui.Text(c, entry.Phonetic).FontSize(14).TextColor(t.TextMuted)
-			}
+			// 音标和朗读按钮放在同一行；即使条目没有保存音标，也能听发音。
+			ui.Row(c).AlignItems(ui.Center).Gap(4).Children(func() {
+				if entry.Phonetic != "" {
+					ui.Text(c, entry.Phonetic).FontSize(14).TextColor(t.TextMuted)
+				}
+				if renderIconButton(c, iconSpeak, "朗读发音", 28, 15, false).Clicked() {
+					PlaySpeechLang(entry.Term, "", false)
+				}
+			})
 			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 				if entry.PartOfSpeech != "" {
 					ui.Box(c).Padding(1, 6).Radius(4).Background(t.SurfaceHover).Children(func() {

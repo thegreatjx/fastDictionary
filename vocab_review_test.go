@@ -146,6 +146,9 @@ func TestReviewPageShowsTermThenAnswer(t *testing.T) {
 	if !tt.HasText("serendipity") || !tt.HasText("显示答案") {
 		t.Fatalf("card is missing the term or the reveal button: %v", tt.Texts())
 	}
+	if _, ok := tt.Find("朗读发音"); !ok {
+		t.Errorf("review card is missing the pronunciation button: %v", tt.Texts())
+	}
 	if tt.HasText("机缘巧合") {
 		t.Fatalf("answer leaked before reveal: %v", tt.Texts())
 	}
