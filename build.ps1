@@ -373,7 +373,7 @@ if ($Package) {
     
     # 写入 BUILD_INFO.txt
     $goVer = (& go version).Trim()
-    $mygoVer = "v0.8.3"
+    $mygoVer = "v0.9.0"
     $goModPath = Join-Path $PSScriptRoot "go.mod"
     if (Test-Path $goModPath) {
         $match = Select-String -Path $goModPath -Pattern 'github\.com/egoist/mygo\s+(v[^\s]+)'

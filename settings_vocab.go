@@ -12,7 +12,7 @@ import (
 func (a *app) pageCustomActions(c *ui.Context, t *ui.Theme, cfg Config) {
 	if a.editingActionID == "" {
 		// List View
-		heading(c, t, "AI 指令", "管理与定制划词悬浮窗中的独立 AI 指令。支持独立开关、模型配置与提示词深度定制。")
+		PageTitle(c, t, "AI 指令", "管理与定制划词悬浮窗中的独立 AI 指令。支持独立开关、模型配置与提示词深度定制。")
 
 		ui.Column(c).FillWidth().Gap(10).Children(func() {
 			for _, action := range cfg.CustomActions {
@@ -97,7 +97,7 @@ func (a *app) pageCustomActions(c *ui.Context, t *ui.Theme, cfg Config) {
 	} else {
 		// Customization View: Fully responsive cards with multi-line TextArea
 		act := a.customizingAction
-		heading(c, t, "定制化指令："+act.Name, "自由配置此指令调用的独立模型、系统提示词与输入模板。")
+		PageTitle(c, t, "定制化指令："+act.Name, "自由配置此指令调用的独立模型、系统提示词与输入模板。")
 
 		// Top nav bar: [← 返回指令列表]  [恢复默认提示词]
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
@@ -269,7 +269,7 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 	if vocabPath == "" {
 		vocabPath = "仅内存（未落盘）"
 	}
-	heading(c, t, "生词本与长难句笔记", "本地持久化存储（"+vocabPath+"）。支持分类归档、格式导出导入与智能补全。")
+	PageTitle(c, t, "生词本与长难句笔记", "本地持久化存储（"+vocabPath+"）。支持分类归档、格式导出导入与智能补全。")
 
 	// Filter & Action Bar
 	ui.Box(c).FillWidth().Padding(10, 12).Radius(8).Background(t.Surface).Border(1, t.Border).Children(func() {

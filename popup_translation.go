@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -201,54 +200,12 @@ func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s
 							PlaySpeechLang(spText, spLang, false)
 						}
 					}
-					if s.source != "" && !s.isWord {
-						// AI refine: a second, slower answer for when the machine one
-						// reads wrong. It replaces the translation in place, so the
-						// button shows the state rather than opening a second view.
-						tip := "AI 精翻（较慢，术语与长句更准）"
-						if s.isScreenshotMode {
-							tip = "AI 精翻（先读 OCR 文字，失败时用截图校正）"
-						}
-						if s.aiRefining {
-							tip = "AI 精翻中…"
-						} else if s.engine == "AI 精翻" {
-							tip = "已是 AI 精翻 · 点击重新生成"
-						}
-						btn := ui.Button(c, "").Tooltip(tip).Size(28, 28).Padding(0, 0).Radius(6).Center()
-						btn.Children(func() {
-							col := t.TextMuted
-							if s.engine == "AI 精翻" {
-								col = t.Accent
-							}
-							ic := ui.Icon(c, iconSparkles).Size(15, 15).TextColor(col)
-							if s.aiRefining {
-								ic.Rotate(ic.Loop("spin", time.Second, ui.Linear) * 360)
-							}
-						})
-						if btn.Clicked() && !s.aiRefining {
-							a.refineWithAI()
-						}
-						if s.aiRefineErr != "" {
-							ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-								ui.Text(c, "精翻失败："+s.aiRefineErr).FontSize(10).TextColor(t.Danger).SingleLine()
-								if ui.Button(c, "重试").Height(20).Padding(0, 6).FontSize(10).Radius(4).Clicked() {
-									a.refineWithAI()
-								}
-								if ui.Button(c, "打开 AI 设置").Height(20).Padding(0, 6).FontSize(10).Radius(4).Clicked() {
-									a.openAISettings()
-								}
-							})
-						}
-					}
-
+					renderAIRefineControls(c, t, a, s)
 					// The spacer pushes engine caption and notes controls to the right.
 					ui.Spacer(c).Grow(1)
 
 					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-						if cfg.ShowEngineTag && s.engine != "" {
-							ui.Text(c, translationEngineCaption(s, cfg.TargetLang)).FontSize(10).
-								TextColor(t.TextMuted).SingleLine().Opacity(0.85)
-						}
+						renderEngineCaptionWithAIState(c, t, s, cfg)
 
 						// 猜你想存：靠右展示。AI提取时显示原生 Spinner 圈，提取就绪后显示带文字的卡片展开/收起按钮
 						if cfg.ShowNotes && shouldExtractNotes(s.source) {
@@ -576,8 +533,8 @@ func (a *app) renderEngineMenu(c *ui.Context, cfg Config, s snapshot) {
 	case "race":
 		label = raceLabel
 	}
-	if s.engine == "AI 精翻" {
-		label = "AI 精翻 · " + modelShortName(cfg.AIModel)
+	if isAIResultEngine(s.engine) {
+		label = s.engine + " · " + modelShortName(cfg.AIModel)
 	}
 	options := []struct{ label, mode string }{
 		{"Microsoft Translator", "microsoft"},

@@ -27,21 +27,41 @@ function Await-Async($asyncOp, $type) {
 # glyphs. Asking for the language explicitly is the fix; "auto" keeps the old
 # behaviour for anyone who has not chosen.
 #
-# The tag is a BCP-47 language tag, and the engine only accepts a tag that
-# matches an installed OCR recognizer exactly enough for the OS to resolve it,
-# so a missing pack falls back to the profile list rather than failing.
+# A requested BCP-47 tag must match an installed OCR recognizer. Silently
+# falling back to the profile list used to turn Japanese kana into unrelated
+# Chinese glyphs, so an unavailable language pack is now a clear error.
+function Get-InstalledOcrLanguage([string]$tag) {
+  $available = @([Windows.Media.Ocr.OcrEngine]::AvailableRecognizerLanguages)
+  foreach ($item in $available) {
+    if ($item.LanguageTag -ieq $tag) {
+      return $item
+    }
+  }
+  $prefix = ($tag -split '-')[0]
+  foreach ($item in $available) {
+    if ($item.LanguageTag -ieq $prefix -or
+        $item.LanguageTag.StartsWith($prefix + '-', [System.StringComparison]::OrdinalIgnoreCase)) {
+      return $item
+    }
+  }
+  return $null
+}
+
 function New-OcrEngine([string]$tag) {
   if (-not $tag -or $tag -eq "auto") {
     return [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
   }
-  try {
-    $lang = [Windows.Globalization.Language]::new($tag)
-    $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($lang)
-    if ($engine) { return $engine }
-  } catch {
-    # Unknown tag or no pack installed: fall through to the profile list.
+  $lang = Get-InstalledOcrLanguage $tag
+  if (-not $lang) {
+    $available = @([Windows.Media.Ocr.OcrEngine]::AvailableRecognizerLanguages)
+    $tags = ($available | ForEach-Object { $_.LanguageTag }) -join ', '
+    throw "Windows OCR language pack '$tag' is not installed; available: $tags. Add the language pack in Windows Settings, or set screenshot OCR language to auto."
   }
-  return [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
+  $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($lang)
+  if (-not $engine) {
+    throw "Windows could not create OCR engine for '$($lang.LanguageTag)'; check the installed language pack."
+  }
+  return $engine
 }
 
 if ($ImagePath -and (Test-Path $ImagePath)) {

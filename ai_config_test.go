@@ -47,38 +47,47 @@ func TestNormalizeAIProviderConfig(t *testing.T) {
 	}
 }
 
-func TestApplyAIPresetClearsKeyOnHostChange(t *testing.T) {
+func TestApplyAIPresetKeepsOtherProviderKeySeparate(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.AIProvider = "custom"
 	cfg.AIURL = "https://a.example/v1"
 	cfg.AIModel = "model-a"
 	cfg.AIKey = "sk-a"
 	deepseek, _ := aiPresetByID("deepseek")
+	custom, _ := aiPresetByID("custom")
 
 	if !applyAIPreset(&cfg, deepseek) {
-		t.Fatal("switching to another host should report the cleared key")
+		t.Fatal("a keyed provider without a saved key should ask for one")
 	}
 	if cfg.AIProvider != "deepseek" || cfg.AIURL != deepseek.BaseURL || cfg.AIModel != deepseek.Model {
 		t.Fatalf("preset was not applied: %+v", cfg)
 	}
 	if cfg.AIKey != "" || cfg.AIKeyEnc != "" {
-		t.Fatalf("key survived a host change: key=%q enc=%q", cfg.AIKey, cfg.AIKeyEnc)
+		t.Fatalf("custom key leaked into deepseek: key=%q enc=%q", cfg.AIKey, cfg.AIKeyEnc)
+	}
+	applyAIPreset(&cfg, custom)
+	if cfg.AIKey != "sk-a" {
+		t.Fatalf("custom key lost on return: %q", cfg.AIKey)
 	}
 }
 
-func TestApplyAIPresetKeepsKeyOnSameHost(t *testing.T) {
+func TestApplyAIPresetNoKeyServiceDoesNotLeakOrForgetKey(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.AIProvider = "custom"
-	cfg.AIURL = "https://a.example/v1"
-	cfg.AIModel = "model-a"
+	cfg.AIURL = "http://127.0.0.1:11434/v1"
 	cfg.AIKey = "sk-a"
-	other := aiPreset{ID: "other", Name: "Other", BaseURL: "https://a.example/v1", Model: "model-b", NeedsKey: true}
+	ollama, _ := aiPresetByID("ollama")
+	custom, _ := aiPresetByID("custom")
 
-	if applyAIPreset(&cfg, other) {
-		t.Fatal("same-host switch should not clear the key")
+	if applyAIPreset(&cfg, ollama) {
+		t.Fatal("a no-key service should not ask for a key")
 	}
+	if cfg.AIKey != "" || cfg.AIConn("").Key != "" {
+		t.Fatalf("key leaked into no-key service: key=%q conn=%q", cfg.AIKey, cfg.AIConn("").Key)
+	}
+	applyAIPreset(&cfg, custom)
 	if cfg.AIKey != "sk-a" {
-		t.Fatalf("key = %q, want sk-a", cfg.AIKey)
+		t.Fatalf("key lost after returning from no-key service: %q", cfg.AIKey)
 	}
 }
 
@@ -91,17 +100,57 @@ func TestApplyAIPresetCustomFromMagpieClearsDefaults(t *testing.T) {
 	}
 }
 
-func TestApplyAIPresetNoKeyServiceClearsKey(t *testing.T) {
-	cfg := DefaultConfig()
-	cfg.AIProvider = "custom"
-	cfg.AIURL = "http://127.0.0.1:11434/v1"
-	cfg.AIKey = "sk-a"
-	ollama, _ := aiPresetByID("ollama")
-	if !applyAIPreset(&cfg, ollama) {
-		t.Fatal("switching to a no-key service should report the cleared key")
+func TestLegacyAIKeyEncMigratesToProviderMap(t *testing.T) {
+	enc, err := protectSecret("sk-legacy")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if cfg.AIKey != "" {
-		t.Fatalf("key = %q, want empty", cfg.AIKey)
+	path := filepath.Join(t.TempDir(), "config.json")
+	raw := map[string]any{
+		"ai_enabled":  true,
+		"ai_provider": "gemini",
+		"ai_url":      "https://generativelanguage.googleapis.com/v1beta/openai/",
+		"ai_model":    "gemini-3.5-flash-lite",
+		"ai_key_enc":  enc,
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	swapConfigPath(t, path)
+
+	cfg := newStore().Get()
+	if cfg.AIKey != "sk-legacy" {
+		t.Fatalf("legacy key = %q, want sk-legacy", cfg.AIKey)
+	}
+	if cfg.AIKeyEncByProvider["gemini"] != enc {
+		t.Fatal("legacy ai_key_enc was not migrated into the provider map")
+	}
+}
+
+func TestAIURLHostChangeForgetsCurrentProviderKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	swapConfigPath(t, path)
+
+	s := newStore()
+	s.Update(func(c *Config) {
+		p, _ := aiPresetByID("gemini")
+		applyAIPreset(c, p)
+		c.AIKey = "sk-gemini"
+	})
+	s.Update(func(c *Config) {
+		if endpointHost(c.AIURL) != "" {
+			c.AIURL = "https://other.example/v1"
+			c.AIKey = ""
+			c.AIKeyEnc = ""
+		}
+	})
+
+	if got := newStore().Get().AIKey; got != "" {
+		t.Fatalf("key survived a host change: %q", got)
 	}
 }
 
@@ -130,6 +179,9 @@ func TestConfigSealsAIKeyAndLoadsIt(t *testing.T) {
 	}
 	if raw["ai_key_enc"] == "" || raw["ai_key_enc"] == nil {
 		t.Fatal("encrypted key was not written")
+	}
+	if _, ok := raw["ai_key_enc_by_provider"]; !ok {
+		t.Fatal("per-provider encrypted key map was not written")
 	}
 	if _, ok := raw["ai_key"]; ok {
 		t.Fatal("ai_key must not be written")

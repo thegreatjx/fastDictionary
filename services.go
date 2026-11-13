@@ -110,6 +110,46 @@ func detectLocal(text string) string {
 	}
 }
 
+// loneLatinWord reports text that is one word of ASCII letters: no spaces,
+// digits, punctuation or accented letters. The engines get no second word to
+// detect a language from.
+func loneLatinWord(text string) bool {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return false
+	}
+	for _, r := range text {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
+			return false
+		}
+	}
+	return true
+}
+
+// sourceLangFor returns the source language to hand the engines.
+//
+// detectLocal settles the script and leaves plain ASCII undecided, because a
+// French or Dutch sentence is ASCII too. A lone word has no other word to
+// settle it with, and the engines get it wrong often: measured 2026-11-13
+// against 微软, 8 of 25 common English words came back translated as another
+// language — "fast" (de) 几乎, "war" (de) 是, "sin" (es) 然而, "hat" (de) 具有,
+// "tag" (de) 一天. Looking such a word up is what this app is for, so a single
+// ASCII word is sent as English.
+//
+// The cost is the reverse case: a lone German or French word is now read as
+// English ("nicht" comes back untranslated). Sentences keep the old behaviour
+// — they are long enough for the engines to detect, and guessing "en" for
+// ASCII is what once had a French sentence read by an English voice.
+func sourceLangFor(text string) string {
+	if tag := detectLocal(text); tag != "" {
+		return tag
+	}
+	if loneLatinWord(text) {
+		return "en"
+	}
+	return ""
+}
+
 // ---------------------------------------------------------------------------
 // Microsoft: unauthenticated translatetext endpoint (successor of the
 // api-edge.cognitive.microsofttranslator.com flow whose token endpoint
@@ -395,6 +435,11 @@ type raceResult struct {
 	Engine   string
 	Detected string
 	Err      error
+	// Untranslated marks an answer that came back as the source text: the
+	// engine replied, it just had nothing to change. That is not a failure
+	// (a retry returns the same text), so the card says so instead of showing
+	// a red error the retry button cannot clear.
+	Untranslated bool
 }
 
 // racePreferred is the engine the race waits a moment for. 微软 reads complex
@@ -452,12 +497,9 @@ func TranslateRace(ctx context.Context, text, from, to, mode string) raceResult 
 			currentBreaker().record("google", err)
 			res = raceResult{Text: t, Engine: "谷歌", Detected: d, Err: err}
 		}
-		// The same echo check the race applies. Pinning an engine asks for
-		// that engine, not for an unchecked answer from it.
-		if res.Err == nil && looksUntranslated(text, res.Text, from, to) {
-			res.Err = fmt.Errorf("%s: returned the source text unchanged", res.Engine)
-		}
-		return res
+		// Pinning an engine asks for that engine, not for an unchecked answer
+		// from it: the same repairs and checks the race applies.
+		return finalizePinned(text, from, to, res)
 	}
 
 	// The race: whichever engine answers first wins.
@@ -551,6 +593,7 @@ func TranslateRace(ctx context.Context, text, from, to, mode string) raceResult 
 
 	var errs []string
 	var held *raceResult
+	var echoed *raceResult
 	var grace <-chan time.Time
 	for i := 0; i < len(cands); i++ {
 		var r raceResult
@@ -560,6 +603,9 @@ func TranslateRace(ctx context.Context, text, from, to, mode string) raceResult 
 			cancel()
 			return *held
 		}
+		if r.Err == nil {
+			r.Text = repairSplitLatin(text, r.Text)
+		}
 		if r.Engine == racePreferred {
 			preferredPending = false
 		}
@@ -568,7 +614,14 @@ func TranslateRace(ctx context.Context, text, from, to, mode string) raceResult 
 			// pair, and a race that accepts it wins with the sentence the
 			// reader already had. Measured on a Portuguese sentence: 腾讯
 			// returned it verbatim in 365ms while 微软 translated it.
-			r.Err = fmt.Errorf("%s: returned the source text unchanged", r.Engine)
+			//
+			// The echo still may not win, but it is an answer rather than a
+			// failure: keep it in case every engine echoes, so the card can say
+			// what happened instead of listing three "failures" that a retry
+			// reproduces.
+			r.Untranslated = true
+			echoed = &r
+			continue
 		}
 		if r.Err == nil && r.Text != "" {
 			if r.Engine == racePreferred || !preferredPending {
@@ -600,7 +653,42 @@ func TranslateRace(ctx context.Context, text, from, to, mode string) raceResult 
 		cancel()
 		return *held
 	}
+	if echoed != nil {
+		cancel()
+		return *echoed
+	}
 	return raceResult{Err: fmt.Errorf("all engines failed: %s", strings.Join(errs, " | "))}
+}
+
+// finalizePinned applies the repairs and the echo classification a pinned
+// engine's answer gets before it reaches the card.
+//
+// An echoed answer used to become an error. That was wrong: 微软 returns a name
+// it does not translate ("fastDictionary", "GitHub", "kubernetes" -> "Kubernetes")
+// exactly as it received it, and pressing 重试 produces the same text again. A
+// failure needs a cause a retry could change; an echo only needs saying out
+// loud.
+func finalizePinned(source, from, to string, res raceResult) raceResult {
+	if res.Err != nil {
+		return res
+	}
+	res.Text = repairSplitLatin(source, res.Text)
+	res.Untranslated = looksUntranslated(source, res.Text, from, to)
+	return res
+}
+
+// pickEchoAnswer decides what the card shows when a pinned engine echoed the
+// source: another engine's answer when the race produced one, otherwise the
+// echo itself.
+//
+// The race already drops echoed answers, so a usable fallback there is a real
+// translation. Pinning is about which engine the reader asked for, not about
+// showing them nothing when that engine has nothing to say.
+func pickEchoAnswer(pinned, fallback raceResult) (raceResult, bool) {
+	if fallback.Err == nil && !fallback.Untranslated && strings.TrimSpace(fallback.Text) != "" {
+		return fallback, true
+	}
+	return pinned, false
 }
 
 // looksUntranslated reports whether an engine echoed the sentence back instead
@@ -616,6 +704,90 @@ func looksUntranslated(source, result, from, to string) bool {
 		return strings.Join(strings.Fields(s), " ")
 	}
 	return norm(source) != "" && norm(source) == norm(result)
+}
+
+// repairSplitLatin puts back a Latin word that an engine cut in two.
+//
+// Measured 2026-11-14 against the endpoint this app calls,
+// edge.microsoft.com/translate/translatetext:
+//
+//	in:  I can't believe now I am counting on Huawei and Deepseek for the very
+//	     survival of the OSS community. What a loss...
+//	out: 我简直不敢相信现在我竟然指望华为和Deepsee克来拯救OSS社区的生存。真是损失......
+//
+// The engine keeps the word up to its last letter and renders that letter as a
+// Han character ("k" → 克). The same sentence with the brand's own spelling
+// "DeepSeek" survives intact, so this is the tokenizer meeting an unknown
+// all-lowercase name, not a missing glossary entry. 腾讯 answers the exact
+// sentence correctly, which is why the race made the defect look random: the
+// reader sees it only on the runs 微软 wins.
+//
+// The repair is narrow on purpose: a run of Latin letters in the output must
+// spell the start of a Latin word from the source, that word must be missing
+// whole from the output, the run must be at least four letters, and exactly one
+// letter must be missing — one letter is what one Han character can stand in
+// for. Outside that shape the output is left alone: a wrong repair costs more
+// than the letter it saves.
+func repairSplitLatin(source, translated string) string {
+	if source == "" || translated == "" {
+		return translated
+	}
+	var words []string
+	for _, w := range strings.FieldsFunc(source, func(r rune) bool { return !isLatinLetter(r) }) {
+		// Shorter words cannot be split and still leave a four-letter run.
+		if len(w) >= 5 {
+			words = append(words, w)
+		}
+	}
+	if len(words) == 0 {
+		return translated
+	}
+	lower := strings.ToLower(translated)
+	rs := []rune(translated)
+	var b strings.Builder
+	b.Grow(len(translated))
+	for i := 0; i < len(rs); {
+		if !isLatinLetter(rs[i]) {
+			b.WriteRune(rs[i])
+			i++
+			continue
+		}
+		j := i
+		for j < len(rs) && isLatinLetter(rs[j]) {
+			j++
+		}
+		run := string(rs[i:j])
+		if j < len(rs) && isCJK(rs[j]) && len(run) >= 4 {
+			if word, ok := wholeWordBehind(words, run, lower); ok {
+				b.WriteString(word)
+				i = j + 1 // the Han character stood in for the lost letters
+				continue
+			}
+		}
+		b.WriteString(run)
+		i = j
+	}
+	return b.String()
+}
+
+// wholeWordBehind answers "which source word starts with run and is missing
+// whole from the output", which is the signature of the split above.
+func wholeWordBehind(words []string, run, translatedLower string) (string, bool) {
+	for _, w := range words {
+		if len(w)-len(run) != 1 || !strings.EqualFold(w[:len(run)], run) {
+			continue
+		}
+		if strings.Contains(translatedLower, strings.ToLower(w)) {
+			// The word is already there somewhere; the run is something else.
+			continue
+		}
+		return w, true
+	}
+	return "", false
+}
+
+func isLatinLetter(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
 }
 
 // engineKey maps a display name onto the breaker's key.

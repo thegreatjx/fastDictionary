@@ -17,16 +17,32 @@ import (
 const (
 	magpieDefaultEndpoint = "http://127.0.0.1:3425/v1/chat/completions"
 	magpieDefaultModel    = "workbuddy-ai/deepseek-v4.1-flash"
+	geminiDefaultEndpoint = "https://generativelanguage.googleapis.com/v1beta/openai/"
+	geminiDefaultModel    = "gemini-3.5-flash-lite"
+	geminiKeyURL          = "https://aistudio.google.com/apikey"
 )
 
+// Google 会调整免费模型范围。这份清单只用于未请求 /models 时离线展示；
+// 点「获取模型」后，设置页改用账号实际可用的实时列表。
+var defaultGeminiModels = []string{
+	geminiDefaultModel,
+	"gemini-3.1-flash-lite",
+	"gemini-3.8-flash",
+	"gemini-3-flash-preview",
+	"gemini-2.5-flash-lite",
+	"gemini-2.5-flash",
+	"gemini-2.5-pro",
+}
+
 type aiPreset struct {
-	ID       string
-	Name     string
-	BaseURL  string
-	Model    string
-	KeyURL   string
-	NeedsKey bool
-	Magpie   bool
+	ID           string
+	Name         string
+	BaseURL      string
+	Model        string
+	ModelOptions []string
+	KeyURL       string
+	NeedsKey     bool
+	Magpie       bool
 }
 
 var aiPresets = []aiPreset{
@@ -68,6 +84,13 @@ var aiPresets = []aiPreset{
 		ID: "openai", Name: "OpenAI", NeedsKey: true,
 		BaseURL: "https://api.openai.com/v1",
 		KeyURL:  "https://platform.openai.com/api-keys",
+	},
+	{
+		ID: "gemini", Name: "Gemini（Google AI Studio）", NeedsKey: true,
+		BaseURL:      geminiDefaultEndpoint,
+		Model:        geminiDefaultModel,
+		ModelOptions: defaultGeminiModels,
+		KeyURL:       geminiKeyURL,
 	},
 	{
 		ID: "ollama", Name: "Ollama（本机）",
@@ -130,17 +153,23 @@ func aiPresetForConfig(cfg Config) aiPreset {
 	return p
 }
 
-// applyAIPreset changes the active service. It returns true when a non-empty
-// key was discarded, so the page can tell the user why the field is empty.
+// applyAIPreset changes the active service. It returns true when the new
+// service needs a key but has none saved, so the page can prompt for one.
 //
-// A key is tied to a host. Switching to a different host without clearing it
-// would send one provider's secret to another, which is exactly the kind of
-// implicit state this app should not have.
+// A provider owns its key, address and model choice. Before switching, all
+// three are stored under the old provider; after the switch, the new provider's
+// own values are restored. This keeps a secret from crossing to another
+// service without resetting the user's model selection when they return.
 func applyAIPreset(c *Config, p aiPreset) bool {
-	if normalizeAIProvider(c.AIProvider) == p.ID {
+	oldProvider := normalizeAIProvider(c.AIProvider)
+	if oldProvider == p.ID {
 		return false
 	}
-	oldHost := endpointHost(c.AIURL)
+	c.rememberAISettingsFor(oldProvider)
+	// Best effort on Windows; a DPAPI failure leaves the in-memory key alone
+	// rather than replacing it with an unusable blob.
+	_ = c.sealAIKey()
+
 	c.AIProvider = p.ID
 	c.AIVision = false
 
@@ -168,15 +197,18 @@ func applyAIPreset(c *Config, p aiPreset) bool {
 		}
 	}
 
-	cleared := false
-	if !p.NeedsKey || endpointHost(c.AIURL) != oldHost {
-		if c.AIKey != "" {
-			cleared = true
-		}
+	if settings, ok := c.restoreAISettingsFor(p.ID); ok {
+		c.AIURL = settings.URL
+		c.AIModel = settings.Model
+	}
+	c.rememberAISettingsFor(p.ID)
+	if err := c.restoreAIKeyFor(p.ID); err != nil {
+		// A corrupt blob only disables that provider's saved key. Other
+		// providers stay in the map and remain restorable.
 		c.AIKey = ""
 		c.AIKeyEnc = ""
 	}
-	return cleared
+	return p.NeedsKey && p.ID != "custom" && normalizeAPIKey(c.AIKey) == ""
 }
 
 // aiEndpointSource identifies the endpoint a model list belongs to. The key

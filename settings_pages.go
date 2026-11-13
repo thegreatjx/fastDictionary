@@ -11,15 +11,8 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-func heading(c *ui.Context, t *ui.Theme, title, sub string) {
-	ui.Text(c, title).FontSize(19).FontWeight(600).TextColor(t.Text)
-	if sub != "" {
-		ui.Text(c, sub).FontSize(12).TextColor(t.TextMuted).Wrap()
-	}
-}
-
 func (a *app) pageGeneral(c *ui.Context, t *ui.Theme, cfg Config) {
-	heading(c, t, "通用", "外观、透明度与窗口行为。改动即时保存。")
+	PageTitle(c, t, "通用", "外观、透明度与窗口行为。改动即时保存。")
 	ui.Form(c, func() {
 		ui.Field(c, "外观主题", func() {
 			idx := 0
@@ -29,7 +22,7 @@ func (a *app) pageGeneral(c *ui.Context, t *ui.Theme, cfg Config) {
 			case "dark":
 				idx = 2
 			}
-			ui.Segmented(c, &idx, "跟随系统", "浅色", "深色").MaxWidth(340).OnChange(func() {
+			SegmentedControl(c, &idx, "跟随系统", "浅色", "深色").OnChange(func() {
 				mode := []string{"system", "light", "dark"}[idx]
 				a.store.Update(func(c *Config) { c.ThemeMode = mode })
 			})
@@ -39,13 +32,13 @@ func (a *app) pageGeneral(c *ui.Context, t *ui.Theme, cfg Config) {
 			if op <= 0 {
 				op = 0.95
 			}
-			ui.Slider(c, &op, 0.6, 1.0).Width(240).Step(0.05).OnChange(func() {
+			ui.Slider(c, &op, 0.6, 1.0).Width(InputWidth).Step(0.05).OnChange(func() {
 				a.store.Update(func(c *Config) { c.WindowOpacity = op })
 				if a.win != nil {
 					a.win.SetOpacity(op)
 				}
 			})
-			ui.Textf(c, "%.0f%%", op*100).FontSize(12).TextColor(t.TextMuted)
+			ui.Textf(c, "%.0f%%", op*100).FontSize(FontHelper).TextColor(t.TextMuted)
 		}).Description("调节划词弹窗透明度（60% - 100%）")
 		ui.Field(c, "失焦自动关闭", func() {
 			v := cfg.CloseOnBlur
@@ -64,10 +57,10 @@ func (a *app) pageGeneral(c *ui.Context, t *ui.Theme, cfg Config) {
 		})
 		ui.Field(c, "弹窗宽度", func() {
 			w := float64(cfg.PopupWidth)
-			ui.Slider(c, &w, 360, 680).Width(240).Step(20).OnChange(func() {
+			ui.Slider(c, &w, 360, 680).Width(InputWidth).Step(20).OnChange(func() {
 				a.store.Update(func(cfg *Config) { cfg.PopupWidth = float32(w) })
 			})
-			ui.Textf(c, "%.0f px", w).FontSize(12).TextColor(t.TextMuted)
+			ui.Textf(c, "%.0f px", w).FontSize(FontHelper).TextColor(t.TextMuted)
 		}).Description("像素宽度，超长内容纵向平滑滚动")
 	})
 }
@@ -91,7 +84,7 @@ func cleanBlockedAppName(raw string) string {
 
 // pageSelection configures how a text selection triggers fastDictionary.
 func (a *app) pageSelection(c *ui.Context, t *ui.Theme, cfg Config) {
-	heading(c, t, "划词", "选中文字之后发生什么。")
+	PageTitle(c, t, "划词", "选中文字之后发生什么。")
 	ui.Form(c, func() {
 		ui.Field(c, "选中后", func() {
 			idx := 0
@@ -101,7 +94,7 @@ func (a *app) pageSelection(c *ui.Context, t *ui.Theme, cfg Config) {
 			case "hotkey":
 				idx = 2
 			}
-			ui.Segmented(c, &idx, "显示图标", "直接翻译", "仅快捷键").MaxWidth(340).OnChange(func() {
+			SegmentedControl(c, &idx, "显示图标", "直接翻译", "仅快捷键").OnChange(func() {
 				mode := []string{"icon", "auto", "hotkey"}[idx]
 				a.store.Update(func(c *Config) { c.SelectionTrigger = mode })
 				a.applySelectionMode()
@@ -116,27 +109,27 @@ func (a *app) pageSelection(c *ui.Context, t *ui.Theme, cfg Config) {
 			case "uia":
 				idx = 2
 			}
-			ui.Segmented(c, &idx, "自动", "模拟复制", "仅 UIA").MaxWidth(340).OnChange(func() {
+			SegmentedControl(c, &idx, "自动", "模拟复制", "仅 UIA").OnChange(func() {
 				mode := []string{"auto", "copy", "uia"}[idx]
 				a.store.Update(func(c *Config) { c.SelectionCapture = mode })
 			})
 		}).Description("自动：优先 UI Automation，读不到再模拟 Ctrl+C（推荐）；模拟复制：始终模拟 Ctrl+C，兼容性最好；仅 UIA：绝不模拟按键，最安静但终端类程序取不到词")
 
 		ui.Field(c, "这些程序里不划词", func() {
-			// One card holds the list and the add row, so a remove button
+			// One SurfaceCard holds the list and the add row, so a remove button
 			// sits next to its own name instead of being pushed to the far
 			// edge of the form.
 			// FillWidth, not a fixed 420: the form's label column already
 			// takes space, so a fixed width overflowed the window as soon
 			// as it was narrowed.
-			ui.Box(c).FillWidth().Padding(10, 10).Radius(6).
+			ui.Box(c).FillWidth().Padding(Space3, Space3).Radius(RadiusTrack).
 				Background(t.Surface).Border(1, t.Border).Children(func() {
-				ui.Column(c).FillWidth().Gap(6).Children(func() {
+				ui.Column(c).FillWidth().Gap(Space2).Children(func() {
 					for _, name := range cfg.SelectionBlocklist {
 						n := name
-						ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
-							ui.Text(c, n).FontSize(12).TextColor(t.Text).Grow(1)
-							btnDel := ui.Button(c, "移除").Height(22).Padding(1, 8).Radius(4).
+						ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
+							ui.Text(c, n).FontSize(FontHelper).TextColor(t.Text).Grow(1)
+							btnDel := SecondaryButton(c, t, "移除").
 								TextColor(t.TextMuted)
 							if btnDel.Clicked() {
 								a.store.Update(func(c *Config) {
@@ -152,7 +145,7 @@ func (a *app) pageSelection(c *ui.Context, t *ui.Theme, cfg Config) {
 							}
 						})
 					}
-					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
+					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
 						addApp := func() {
 							name := cleanBlockedAppName(a.newBlockedApp)
 							if name != "" {
@@ -169,7 +162,7 @@ func (a *app) pageSelection(c *ui.Context, t *ui.Theme, cfg Config) {
 							}
 						}
 						ui.TextInput(c, &a.newBlockedApp).Placeholder("程序名，例如 pixpin.exe").Grow(1).OnSubmit(addApp)
-						btnAdd := ui.Button(c, "添加").Height(26).Padding(2, 10).Radius(5)
+						btnAdd := SecondaryButton(c, t, "添加")
 						if btnAdd.Clicked() {
 							addApp()
 						}
@@ -179,13 +172,13 @@ func (a *app) pageSelection(c *ui.Context, t *ui.Theme, cfg Config) {
 		}).Description("在这些程序里拖动鼠标不会被当成划词。截图工具必须在这里，否则框选区域会被误判成划词。")
 
 		ui.Field(c, "关于剪贴板", func() {
-			ui.Text(c, "模拟复制会先备份剪贴板再还原，图片与富文本一并保留。若某个程序取不到词，把「取词方式」改成「模拟复制」再试。").FontSize(12).TextColor(t.TextMuted).Wrap()
+			ui.Text(c, "模拟复制会先备份剪贴板再还原，图片与富文本一并保留。若某个程序取不到词，把「取词方式」改成「模拟复制」再试。").FontSize(FontHelper).TextColor(t.TextMuted).Wrap()
 		})
 	})
 }
 
 func (a *app) pageTranslate(c *ui.Context, t *ui.Theme, cfg Config) {
-	heading(c, t, "翻译", "微软、谷歌、腾讯三家都免密钥，装上就能用；竞速是三家并发，微软有 350ms 宽限，慢一点但更准。")
+	PageTitle(c, t, "翻译", "微软、谷歌、腾讯三家都免密钥，装上就能用；竞速是三家并发，微软有 350ms 宽限，慢一点但更准。")
 	ui.Form(c, func() {
 		ui.Field(c, "引擎", func() {
 			idx := 0
@@ -197,16 +190,16 @@ func (a *app) pageTranslate(c *ui.Context, t *ui.Theme, cfg Config) {
 			case "tencent":
 				idx = 3
 			}
-			ui.Segmented(c, &idx, "竞速", "仅微软", "仅谷歌", "仅腾讯").MaxWidth(460).OnChange(func() {
+			SegmentedControl(c, &idx, "竞速", "仅微软", "仅谷歌", "仅腾讯").OnChange(func() {
 				mode := []string{"race", "microsoft", "google", "tencent"}[idx]
 				a.store.Update(func(c *Config) { c.EngineMode = mode })
 			})
 		}).Description("竞速：三家并发，先回来先用，微软有 350ms 宽限。腾讯只参与它支持的目标语言，不支持时会自动退出")
 		ui.Field(c, "引擎状态", func() {
-			ui.Column(c).FillWidth().Gap(5).Children(func() {
+			ui.Column(c).FillWidth().Gap(Space2).Children(func() {
 				for _, h := range engineHealths() {
-					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
-						ui.Text(c, h.Engine).FontSize(12).TextColor(t.Text).Width(48)
+					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space3).Children(func() {
+						ui.Text(c, h.Engine).FontSize(FontHelper).TextColor(t.Text).Width(48)
 						status := "正常"
 						col := t.TextMuted
 						if h.Open {
@@ -220,9 +213,9 @@ func (a *app) pageTranslate(c *ui.Context, t *ui.Theme, cfg Config) {
 							status = fmt.Sprintf("连续失败 %d 次", h.Fails)
 							col = t.TextMuted
 						}
-						ui.Text(c, status).FontSize(11).TextColor(col).Width(160)
+						ui.Text(c, status).FontSize(FontHelper).TextColor(col).Width(160)
 						if h.LastError != "" {
-							ui.Text(c, truncateFor(h.LastError, 88)).FontSize(10).TextColor(t.TextMuted).Grow(1).SingleLine()
+							ui.Text(c, truncateFor(h.LastError, 88)).FontSize(FontHelper).TextColor(t.TextMuted).Grow(1).SingleLine()
 						}
 					})
 				}
@@ -258,7 +251,7 @@ func (a *app) pageTranslate(c *ui.Context, t *ui.Theme, cfg Config) {
 }
 
 func (a *app) pageDict(c *ui.Context, t *ui.Theme, cfg Config) {
-	heading(c, t, "词典与发音", "单个单词自动显示音标与释义，点音标即可朗读。")
+	PageTitle(c, t, "词典与发音", "单个单词自动显示音标与释义，点音标即可朗读。")
 	ui.Form(c, func() {
 		ui.Field(c, "单词词典卡", func() {
 			v := cfg.DictEnabled
@@ -274,7 +267,7 @@ func (a *app) pageDict(c *ui.Context, t *ui.Theme, cfg Config) {
 			case "us":
 				idx = 2
 			}
-			ui.Segmented(c, &idx, "关闭", "英音", "美音").MaxWidth(340).OnChange(func() {
+			SegmentedControl(c, &idx, "关闭", "英音", "美音").OnChange(func() {
 				v := []string{"off", "uk", "us"}[idx]
 				a.store.Update(func(c *Config) { c.AutoPronounce = v })
 			})
@@ -284,92 +277,102 @@ func (a *app) pageDict(c *ui.Context, t *ui.Theme, cfg Config) {
 			if v <= 0 {
 				v = 80
 			}
-			ui.Slider(c, &v, 0, 100).Width(240).Step(5).OnChange(func() {
+			ui.Slider(c, &v, 0, 100).Width(InputWidth).Step(5).OnChange(func() {
 				a.store.Update(func(c *Config) { c.AudioVolume = int(v) })
 			})
-			ui.Textf(c, "%.0f%%", v).FontSize(12).TextColor(t.TextMuted)
+			ui.Textf(c, "%.0f%%", v).FontSize(FontHelper).TextColor(t.TextMuted)
 		}).Description("发音音量，改动后下一次朗读生效")
 	})
 }
 
 func (a *app) pageAI(c *ui.Context, t *ui.Theme, cfg Config) {
-	heading(c, t, "AI 精翻", "可选。用你自己的大模型 API，或本机 Magpie；不配置也能正常查词和机翻。")
-	ui.Form(c, func() {
-		a.aiEnabledField(c, cfg)
-		a.aiServiceField(c, cfg)
-		if cfg.IsMagpie() {
-			a.aiMagpieFields(c, t, cfg)
-		} else {
-			a.aiDirectFields(c, t, cfg)
-		}
-		a.aiDefaultModeField(c, cfg)
+	PageTitle(c, t, "AI 精翻", "可选。用你自己的大模型 API，或本机 Magpie；不配置也能正常查词和机翻。")
+	ui.Column(c).FillWidth().Gap(Space6).Children(func() {
+		SettingCard(c, t, "服务", func() {
+			a.aiEnabledRow(c, t, cfg)
+			a.aiServiceField(c, t, cfg)
+			if cfg.IsMagpie() {
+				a.aiMagpieFields(c, t, cfg)
+			} else {
+				a.aiDirectFields(c, t, cfg)
+			}
+		})
+		SettingCard(c, t, "模型", func() {
+			a.aiModelField(c, t, cfg)
+			a.aiEffortRow(c, t, cfg)
+		})
+		SettingCard(c, t, "偏好", func() {
+			a.aiDefaultModeRow(c, t, cfg)
+			a.aiTestField(c, t, cfg)
+			a.aiCacheRow(c, t)
+		})
 		a.aiHelpField(c, t, cfg)
-		a.aiCacheField(c, t)
 	})
 }
 
-func (a *app) aiEnabledField(c *ui.Context, cfg Config) {
+func (a *app) aiEnabledRow(c *ui.Context, t *ui.Theme, cfg Config) {
 	idx := 0
 	if cfg.AIEnabled {
 		idx = 1
 	}
-	ui.Field(c, "状态", func() {
-		ui.Segmented(c, &idx, "关闭", "启用").MaxWidth(200).OnChange(func() {
+	SettingRow(c, t, "状态", aiStatusDescription(cfg), func() {
+		SegmentedControl(c, &idx, "关闭", "启用").OnChange(func() {
 			a.store.Update(func(c *Config) { c.AIEnabled = idx == 1 })
 		})
-	}).Description(aiStatusDescription(cfg))
+	})
 }
 
 func aiStatusDescription(cfg Config) string {
 	if problem := cfg.AISetupProblem(); cfg.AIEnabled && problem != "" {
 		return "还差一步：" + problem + "。补上之前不会发起大模型请求。"
 	}
-	return "关闭后不显示 AI 卡片，也不会发起大模型请求。"
+	return "关闭后不显示 AI 卡片，也不发起请求。"
 }
 
-func (a *app) aiServiceField(c *ui.Context, cfg Config) {
+func (a *app) aiServiceField(c *ui.Context, t *ui.Theme, cfg Config) {
 	preset := aiPresetForConfig(cfg)
 	current := preset.Name
-	ui.Field(c, "模型服务", func() {
-		ui.Select(c, &current, aiPresetNames()).Grow(1).OnChange(func() {
+	LongField(c, t, "模型服务", "本机网关或任意 OpenAI 兼容服务；没有 Magpie 就选一个服务商。", func() ui.Element {
+		return ui.Select(c, &current, aiPresetNames()).FillWidth().
+			Height(HeightControl).Radius(RadiusSM).OnChange(func() {
 			next, ok := aiPresetByName(current)
 			if !ok || next.ID == preset.ID {
 				return
 			}
-			cleared := false
+			needKey := false
 			a.store.Update(func(c *Config) {
-				cleared = applyAIPreset(c, next)
+				needKey = applyAIPreset(c, next)
 			})
 			a.resetAIStatus()
+			a.loadAIModels()
 			a.aiShowKey = false
 			a.aiHelpOpen = false
-			if cleared && next.NeedsKey {
+			if needKey {
 				a.mu.Lock()
 				a.actionSaveFeedback = "已切换服务，请重新填写 API Key"
 				a.mu.Unlock()
 			}
 			a.settingsRefresh()
 		})
-	}).Description("Magpie 是本机网关；没有装就选一个服务商，或选「自定义」填任意 OpenAI 兼容地址。")
+	})
 }
 
 func (a *app) aiMagpieFields(c *ui.Context, t *ui.Theme, cfg Config) {
-	ui.Field(c, "网关地址", func() {
+	LongField(c, t, "网关地址", "只在本机使用，不需要 API Key。", func() ui.Element {
 		v := cfg.AIURL
-		ui.TextInput(c, &v).FillWidth().Placeholder(magpieDefaultEndpoint).OnChange(func() {
+		return ui.TextInput(c, &v).FillWidth().Height(HeightControl).Radius(RadiusSM).
+			Placeholder(magpieDefaultEndpoint).OnChange(func() {
 			a.store.Update(func(c *Config) { c.AIURL = v })
 		})
-	}).Description("只在本机使用，不需要 API Key。")
-	a.aiModelField(c, t, cfg)
-	a.aiEffortField(c, cfg)
-	a.aiTestField(c, t, cfg)
+	})
 }
 
 func (a *app) aiDirectFields(c *ui.Context, t *ui.Theme, cfg Config) {
 	preset := aiPresetForConfig(cfg)
-	ui.Field(c, "API 地址", func() {
+	LongField(c, t, "API 地址", "通常以 /v1 结尾，程序会自动补 /chat/completions。远程地址请用 https://。", func() ui.Element {
 		v := cfg.AIURL
-		ui.TextInput(c, &v).FillWidth().Placeholder("https://api.deepseek.com/v1").OnChange(func() {
+		return ui.TextInput(c, &v).FillWidth().Height(HeightControl).Radius(RadiusSM).
+			Placeholder("https://api.deepseek.com/v1").OnChange(func() {
 			cleared := false
 			a.store.Update(func(c *Config) {
 				oldHost := endpointHost(c.AIURL)
@@ -387,32 +390,34 @@ func (a *app) aiDirectFields(c *ui.Context, t *ui.Theme, cfg Config) {
 				a.settingsRefresh()
 			}
 		})
-	}).Description("填服务商文档里的地址，通常以 /v1 结尾；程序会自动补 /chat/completions。也可以粘贴完整接口地址。远程地址请用 https://，http:// 只适合本机服务。")
+	})
 
 	if preset.NeedsKey {
-		a.aiKeyField(c, cfg, preset)
+		a.aiKeyField(c, t, cfg, preset)
 	}
-	a.aiModelField(c, t, cfg)
-	ui.Field(c, "图片输入", func() {
+	SettingRow(c, t, "图片输入", "是否发送截图由「截图识别模式」决定。", func() {
 		v := cfg.AIVision
 		ui.Switch(c, &v).OnChange(func() {
 			a.store.Update(func(c *Config) { c.AIVision = v })
 		})
-	}).Description("截图翻译时把图片一起发给模型；只有支持看图的模型才需要打开。")
-	a.aiTestField(c, t, cfg)
-	ui.Text(c, "划词内容会发送到你选择的服务商；本机 Ollama 或本机网关不会出本机。").
-		FontSize(12).TextColor(t.TextMuted).Wrap()
+	})
+	HelperText(c, t, "划词内容会发送到你选择的服务商；本机 Ollama 或本机网关不会出本机。")
 }
 
-func (a *app) aiKeyField(c *ui.Context, cfg Config, preset aiPreset) {
+func (a *app) aiKeyField(c *ui.Context, t *ui.Theme, cfg Config, preset aiPreset) {
 	desc := "只保存在本机，用当前 Windows 账户加密；不要带 Bearer 前缀。"
 	if preset.ID == "custom" {
 		desc += "本机无认证服务可留空。"
 	}
-	ui.Field(c, "API Key", func() {
-		ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
+	LongField(c, t, "API Key", desc, func() ui.Element {
+		return ui.Row(c).FillWidth().Gap(Space2).AlignItems(ui.Center).Children(func() {
 			v := cfg.AIKey
-			input := ui.TextInput(c, &v).Grow(1).Placeholder("sk-...")
+			placeholder := "sk-..."
+			if preset.ID == "gemini" {
+				placeholder = "AIza..."
+			}
+			input := ui.TextInput(c, &v).Grow(1).Height(HeightControl).Radius(RadiusSM).
+				Placeholder(placeholder)
 			if !a.aiShowKey {
 				input.Password()
 			}
@@ -423,23 +428,31 @@ func (a *app) aiKeyField(c *ui.Context, cfg Config, preset aiPreset) {
 			if a.aiShowKey {
 				label = "隐藏"
 			}
-			if ui.Button(c, label).Height(26).Padding(2, 8).Clicked() {
+			if SecondaryButton(c, t, label).Clicked() {
 				a.aiShowKey = !a.aiShowKey
 				a.settingsRefresh()
 			}
 			if preset.KeyURL != "" {
-				if ui.Button(c, "去获取 Key").Height(26).Padding(2, 8).Clicked() {
+				if SecondaryButton(c, t, "去获取 Key").Clicked() {
 					c.OpenURL(preset.KeyURL)
 				}
 			}
 		})
-	}).Description(desc)
+	})
 }
 
 func (a *app) aiModelField(c *ui.Context, t *ui.Theme, cfg Config) {
 	state := a.aiModelsStatus(cfg)
+	preset := aiPresetForConfig(cfg)
 	models := aiModelsForState(cfg, state)
-	showSelect := state.phase == aiModelsReady || cfg.IsMagpie()
+	showSelect := state.phase == aiModelsReady || cfg.IsMagpie() || len(preset.ModelOptions) > 0
+	desc := "填模型 ID，不是显示名称。点「获取模型」从服务读取；有些服务不提供列表，直接手填即可。"
+	if len(preset.ModelOptions) > 0 {
+		desc = "从清单选择模型 ID；清单外的新模型可点「获取模型」拉取实时列表，或选「自定义模型…」手填。"
+	}
+	if preset.ID == "gemini" {
+		desc += " 默认 gemini-3.5-flash-lite 支持图片输入和文字输出；截图识别模式可选「AI 直接看图」或「本地优先」。"
+	}
 	current := strings.TrimSpace(cfg.AIModel)
 	notInFetched := state.phase == aiModelsReady && current != "" && !slices.Contains(state.models, current)
 	if current != "" && !slices.Contains(models, current) {
@@ -449,114 +462,118 @@ func (a *app) aiModelField(c *ui.Context, t *ui.Theme, cfg Config) {
 		models = append([]string{current}, models...)
 	}
 
-	ui.Field(c, "模型", func() {
-		ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-			if showSelect {
-				options := append(append([]string(nil), models...), "自定义模型…")
-				chosen := cfg.AIModel
-				if !slices.Contains(models, chosen) {
-					chosen = "自定义模型…"
-				}
-				ui.Select(c, &chosen, options).Grow(1).OnChange(func() {
-					if chosen == "自定义模型…" {
-						// Clearing the stored model is what makes the next frame
-						// show the text input. A local "custom" flag would be a
-						// second source of truth for the same fact.
-						a.store.Update(func(c *Config) { c.AIModel = "" })
-						a.settingsRefresh()
-						return
+	LongField(c, t, "模型", desc, func() ui.Element {
+		main := ui.Column(c).FillWidth().Gap(Space2).Children(func() {
+			ui.Row(c).FillWidth().Gap(Space2).AlignItems(ui.Center).Children(func() {
+				if showSelect {
+					options := append(append([]string(nil), models...), "自定义模型…")
+					chosen := cfg.AIModel
+					if !slices.Contains(models, chosen) {
+						chosen = "自定义模型…"
 					}
-					a.store.Update(func(c *Config) { c.AIModel = chosen })
-					a.settingsRefresh()
-				})
-			} else {
+					ui.Select(c, &chosen, options).Grow(1).
+						Height(HeightControl).Radius(RadiusSM).OnChange(func() {
+						if chosen == "自定义模型…" {
+							// Clearing the stored model is what makes the next frame
+							// show the text input. A local "custom" flag would be a
+							// second source of truth for the same fact.
+							a.store.Update(func(c *Config) { c.AIModel = "" })
+							a.settingsRefresh()
+							return
+						}
+						a.store.Update(func(c *Config) { c.AIModel = chosen })
+						a.settingsRefresh()
+					})
+				} else {
+					v := cfg.AIModel
+					ui.TextInput(c, &v).Grow(1).Height(HeightControl).Radius(RadiusSM).
+						Placeholder("输入模型 ID").OnChange(func() {
+						a.store.Update(func(c *Config) { c.AIModel = v })
+					})
+				}
+				label := "获取模型"
+				if state.phase == aiModelsLoading {
+					label = "获取中…"
+				}
+				if SecondaryButton(c, t, label).Disabled(state.phase == aiModelsLoading).Clicked() {
+					a.refreshAIModels()
+				}
+			})
+			if showSelect && !slices.Contains(models, cfg.AIModel) {
 				v := cfg.AIModel
-				ui.TextInput(c, &v).Grow(1).Placeholder("输入模型 ID").OnChange(func() {
+				ui.TextInput(c, &v).FillWidth().Height(HeightControl).Radius(RadiusSM).
+					Placeholder("输入模型 ID").OnChange(func() {
 					a.store.Update(func(c *Config) { c.AIModel = v })
 				})
 			}
-			label := "获取模型"
-			if state.phase == aiModelsLoading {
-				label = "获取中…"
+			switch state.phase {
+			case aiModelsUnsupported:
+				HelperText(c, t, "该服务不提供实时模型列表；仍可从上方清单选择，或手动填写模型 ID。")
+			case aiModelsFailed:
+				HelperText(c, t, "获取失败："+state.err).TextColor(t.Danger)
 			}
-			if ui.Button(c, label).Height(26).Padding(2, 8).
-				Disabled(state.phase == aiModelsLoading).Clicked() {
-				a.refreshAIModels()
+			if notInFetched {
+				HelperText(c, t, "当前模型不在服务返回的列表里，可以保留，也可以重新选择。")
 			}
 		})
-		if showSelect && !slices.Contains(models, cfg.AIModel) {
-			v := cfg.AIModel
-			ui.TextInput(c, &v).FillWidth().Placeholder("输入模型 ID").OnChange(func() {
-				a.store.Update(func(c *Config) { c.AIModel = v })
-			})
-		}
-		switch state.phase {
-		case aiModelsUnsupported:
-			ui.Text(c, "该服务不提供模型列表，请直接手动填写模型 ID。").
-				FontSize(12).TextColor(t.TextMuted).Wrap()
-		case aiModelsFailed:
-			ui.Text(c, "获取失败："+state.err).FontSize(12).TextColor(t.Danger).Wrap()
-		}
-		if notInFetched {
-			ui.Text(c, "当前模型不在服务返回的列表里，可以保留，也可以重新选择。").
-				FontSize(12).TextColor(t.TextMuted).Wrap()
-		}
-	}).Description("填模型 ID，不是显示名称。点「获取模型」从服务读取；有些服务不提供列表，直接手填即可。")
+		return main
+	})
 }
 
-func (a *app) aiEffortField(c *ui.Context, cfg Config) {
-	ui.Field(c, "推理强度", func() {
-		idx := 0
-		efforts := []string{EffortFast, EffortDeep}
-		for i, e := range efforts {
-			if e == cfg.AIEffort {
-				idx = i
-			}
+func (a *app) aiEffortRow(c *ui.Context, t *ui.Theme, cfg Config) {
+	idx := 0
+	efforts := []string{EffortFast, EffortDeep}
+	for i, e := range efforts {
+		if e == cfg.AIEffort {
+			idx = i
 		}
-		ui.Segmented(c, &idx, "快速 (默认 · 推荐)", "深度思考").MaxWidth(340).OnChange(func() {
+	}
+	SettingRow(c, t, "推理强度", "快速按实测档位请求；深度思考强制思维链，慢 2-10 倍但更适合难句。", func() {
+		SegmentedControl(c, &idx, "快速 (默认 · 推荐)", "深度思考").OnChange(func() {
 			v := efforts[idx]
 			a.store.Update(func(c *Config) { c.AIEffort = v })
 		})
-	}).Description("快速：按模型实测的档位发请求，1-3 秒出结果；深度思考：强制开启思维链，慢 2-10 倍但更适合难句。")
+	})
 }
 
 func (a *app) aiTestField(c *ui.Context, t *ui.Theme, cfg Config) {
 	state := a.aiProbeStatus(cfg)
-	ui.Field(c, "连通性", func() {
-		ui.Column(c).Gap(6).Children(func() {
+	at := appTheme(t)
+	LongField(c, t, "连通性", "用当前地址、Key 和模型发一条最小请求；会消耗少量额度。", func() ui.Element {
+		return ui.Row(c).FillWidth().Gap(Space2).AlignItems(ui.Center).Children(func() {
 			label := "测试连接"
 			if state.phase == aiProbeRunning {
 				label = "测试中…"
 			}
-			if ui.Button(c, label).Width(140).
-				Disabled(state.phase == aiProbeRunning).
-				Clicked() {
+			if SecondaryButton(c, t, label).Disabled(state.phase == aiProbeRunning).Clicked() {
 				a.testAIConnection()
 			}
 			switch state.phase {
 			case aiProbeSucceeded:
-				ui.Text(c, "✓ "+state.msg).FontSize(12).TextColor(t.Success).Wrap()
+				ui.Text(c, "● "+state.msg).Font(fontMono).FontFeatures("tnum").
+					FontSize(FontHelper).TextColor(at.Success)
 			case aiProbeFailed:
-				ui.Text(c, "✗ "+state.msg).FontSize(12).TextColor(t.Danger).Wrap()
+				ui.Text(c, "● "+state.msg).Font(fontMono).FontFeatures("tnum").
+					FontSize(FontHelper).TextColor(at.Danger)
 			}
 		})
-	}).Description("用当前地址、Key 和模型发一条最小请求；会消耗少量额度。")
+	})
 }
 
-func (a *app) aiDefaultModeField(c *ui.Context, cfg Config) {
-	ui.Field(c, "默认模式", func() {
-		// 跟随翻译 is the "no preference" slot: it keeps the popup on the
-		// translate engine, which is what every existing install does.
-		idx := 0
-		if cfg.AIModeIsChoice {
-			switch cfg.AIMode {
-			case "grammar":
-				idx = 1
-			case "translate", "polish":
-				idx = 2
-			}
+func (a *app) aiDefaultModeRow(c *ui.Context, t *ui.Theme, cfg Config) {
+	// 跟随翻译 is the "no preference" slot: it keeps the popup on the
+	// translate engine, which is what every existing install does.
+	idx := 0
+	if cfg.AIModeIsChoice {
+		switch cfg.AIMode {
+		case "grammar":
+			idx = 1
+		case "translate", "polish":
+			idx = 2
 		}
-		ui.Segmented(c, &idx, "跟随翻译", "长难句分析", "润色翻译").MaxWidth(400).OnChange(func() {
+	}
+	SettingRow(c, t, "默认模式", "划词后打开哪张 AI 卡片；「跟随翻译」只做机翻。", func() {
+		SegmentedControl(c, &idx, "跟随翻译", "长难句分析", "润色翻译").OnChange(func() {
 			if idx > 0 && !a.store.Get().AIEnabled {
 				// The preference would be ignored at popup time anyway;
 				// keeping it selected would claim a mode the app cannot run.
@@ -576,7 +593,7 @@ func (a *app) aiDefaultModeField(c *ui.Context, cfg Config) {
 				c.AIMode = modes[idx]
 			})
 		})
-	}).Description("划词后直接打开哪张 AI 卡片；选「跟随翻译」则只做机翻，需要时再点标签页。词条卡片在生词本里查看")
+	})
 }
 
 func (a *app) aiHelpField(c *ui.Context, t *ui.Theme, cfg Config) {
@@ -585,32 +602,40 @@ func (a *app) aiHelpField(c *ui.Context, t *ui.Theme, cfg Config) {
 	if a.aiHelpOpen {
 		label = "收起填写说明"
 	}
-	if ui.Button(c, label).Height(26).Padding(2, 10).FontSize(12).Clicked() {
+	if GhostButton(c, t, label).Clicked() {
 		a.aiHelpOpen = !a.aiHelpOpen
 		a.settingsRefresh()
 	}
 	if !a.aiHelpOpen {
 		return
 	}
-	ui.Box(c).FillWidth().Padding(12, 14).Radius(8).
-		Background(t.Surface).Border(1, t.Border).Children(func() {
-		ui.Column(c).FillWidth().Gap(8).Children(func() {
+	SurfaceCard(c, t).Children(func() {
+		ui.Column(c).FillWidth().Gap(Space2).Children(func() {
 			if preset.Magpie {
 				ui.Text(c, "本机 Magpie 需要先启动 magpie 网关（默认 127.0.0.1:3425）。没装的话，把「模型服务」换成 DeepSeek 等服务商，填上 API Key 即可。").
-					FontSize(12).TextColor(t.Text).Wrap()
+					Font(fontUI).FontSize(FontHelper).TextColor(t.Text).Wrap()
 			} else {
 				var steps []string
 				switch preset.ID {
 				case "ollama":
-					ui.Text(c, "以本机 Ollama 为例：").FontSize(12).FontWeight(600).TextColor(t.Text)
+					ui.Text(c, "以本机 Ollama 为例：").Font(fontUI).FontSize(FontSection).FontWeight(600).TextColor(t.Text)
 					steps = []string{
 						"1. 先启动 Ollama，默认地址是 127.0.0.1:11434。",
 						"2. 用 ollama list 确认模型已经下载。",
 						"3. 把模型名填到「模型」，点「测试连接」。",
 						"Ollama 不需要 API Key。",
 					}
+				case "gemini":
+					ui.Text(c, "以 Google AI Studio 的 Gemini 为例：").Font(fontUI).FontSize(FontSection).FontWeight(600).TextColor(t.Text)
+					steps = []string{
+						"1. 在 Google AI Studio 创建 API Key 并复制。",
+						"2. 模型服务选 Gemini；这里已填好官方 OpenAI 兼容地址，把 Key 粘进「API Key」。",
+						"3. 在「模型」清单选 gemini-3.5-flash-lite（默认），点「测试连接」。",
+						"该模型支持图片输入和文字输出；截图识别模式在「快捷键」页，可选「AI 直接看图」或「本地优先」。",
+						"免费额度与可用模型以 Google AI Studio 当前价格页为准，每次请求都会计入配额。",
+					}
 				case "custom":
-					ui.Text(c, "以任意 OpenAI 兼容服务为例：").FontSize(12).FontWeight(600).TextColor(t.Text)
+					ui.Text(c, "以任意 OpenAI 兼容服务为例：").Font(fontUI).FontSize(FontSection).FontWeight(600).TextColor(t.Text)
 					steps = []string{
 						"1. 在服务商文档里找到 API 地址，通常以 /v1 结尾。",
 						"2. 把地址填到「API 地址」，把 Key 粘到「API Key」；本机无认证服务可留空。",
@@ -618,7 +643,7 @@ func (a *app) aiHelpField(c *ui.Context, t *ui.Theme, cfg Config) {
 						"看到「正常」就能用了。每次精翻会消耗账号额度。",
 					}
 				default:
-					ui.Text(c, "以 "+preset.Name+" 为例：").FontSize(12).FontWeight(600).TextColor(t.Text)
+					ui.Text(c, "以 "+preset.Name+" 为例：").Font(fontUI).FontSize(FontSection).FontWeight(600).TextColor(t.Text)
 					steps = []string{
 						"1. 打开服务商控制台，创建 API Key 并复制。Key 通常只显示一次。",
 						"2. 回到这里，模型服务选 " + preset.Name + "，地址已经填好；把 Key 粘进「API Key」。",
@@ -627,11 +652,11 @@ func (a *app) aiHelpField(c *ui.Context, t *ui.Theme, cfg Config) {
 					}
 				}
 				for _, line := range steps {
-					ui.Text(c, line).FontSize(12).TextColor(t.TextMuted).Wrap()
+					HelperText(c, t, line)
 				}
 			}
 			if preset.KeyURL != "" {
-				if ui.Button(c, "打开 "+preset.Name+" 控制台").Height(26).Padding(2, 10).FontSize(11).Clicked() {
+				if SecondaryButton(c, t, "打开 "+preset.Name+" 控制台").Clicked() {
 					c.OpenURL(preset.KeyURL)
 				}
 			}
@@ -639,39 +664,31 @@ func (a *app) aiHelpField(c *ui.Context, t *ui.Theme, cfg Config) {
 	})
 }
 
-func (a *app) aiCacheField(c *ui.Context, t *ui.Theme) {
-	ui.Field(c, "临时缓存", func() {
-		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, fmt.Sprintf("当前 %d 条 · 仅在内存中，重启后清空", a.aiCacheCount())).
-				FontSize(12).TextColor(t.TextMuted)
-			if ui.Button(c, "清空临时缓存").Height(26).Padding(2, 10).FontSize(11).Clicked() {
-				a.clearAICache()
-				a.mu.Lock()
-				a.actionSaveFeedback = "临时 AI 缓存已清空"
-				a.mu.Unlock()
-				a.settingsRefresh()
-			}
-		})
-	}).Description("AI 结果会按提示词、模型、服务地址和推理强度自动失效；这里可手动清空")
+func (a *app) aiCacheRow(c *ui.Context, t *ui.Theme) {
+	SettingRow(c, t, "临时缓存", "AI 结果按提示词、模型、地址和推理强度自动失效。", func() {
+		ui.Text(c, fmt.Sprintf("当前 %d 条", a.aiCacheCount())).
+			Font(fontMono).FontFeatures("tnum").FontSize(FontHelper).
+			TextColor(t.TextMuted)
+		if DangerGhostButton(c, t, "清空临时缓存").Clicked() {
+			a.clearAICache()
+			a.mu.Lock()
+			a.actionSaveFeedback = "临时 AI 缓存已清空"
+			a.mu.Unlock()
+			a.settingsRefresh()
+		}
+	})
 }
 
 func (a *app) pageHotkey(c *ui.Context, t *ui.Theme, cfg Config) {
-	heading(c, t, "快捷键", "全局生效，任何程序中均可秒级唤起。")
+	PageTitle(c, t, "快捷键", "全局生效，任何程序中均可秒级唤起。")
 	a.initHotkeyDrafts()
 
 	conflictMsg := checkHotkeyConflict(a.pendingHotkeySelection, a.pendingHotkeyInput, a.pendingHotkeyScreenshot)
 
 	ui.Form(c, func() {
 		ui.Field(c, "推荐预设方案", func() {
-			ui.Column(c).Gap(6).Children(func() {
-				p1Bg := ui.Hex("#EFF6FF")
-				p1Fg := ui.Hex("#1D4ED8")
-				if t.Dark {
-					p1Bg = withAlpha(t.Accent, 0.16)
-					p1Fg = t.Accent
-				}
-				btnP1 := ui.Button(c, "⚡ 极速单手：Alt+D (划词) / Alt+C (截图) / Alt+Q (输入)").Height(28).Padding(2, 10).Radius(5).
-					Background(p1Bg).TextColor(p1Fg).
+			ui.Column(c).Gap(Space2).Children(func() {
+				btnP1 := PrimaryButton(c, t, "极速单手：Alt+D (划词) / Alt+C (截图) / Alt+Q (输入)").
 					Tooltip("【最推荐】左手单手盲操极速触发。注意：Alt+D 在 Chrome/Edge 中会聚焦地址栏，浏览器内建议用方案二")
 				if btnP1.Clicked() {
 					a.pendingHotkeySelection = "Alt+D"
@@ -680,8 +697,7 @@ func (a *app) pageHotkey(c *ui.Context, t *ui.Theme, cfg Config) {
 					a.applyHotkeys()
 				}
 
-				btnP2 := ui.Button(c, "🛡️ 稳健三键：Ctrl+Alt+D (划词) / Ctrl+Alt+S (截图) / Ctrl+Alt+I (输入)").Height(28).Padding(2, 10).Radius(5).
-					Background(t.SurfaceHover).
+				btnP2 := SecondaryButton(c, t, "稳健三键：Ctrl+Alt+D (划词) / Ctrl+Alt+S (截图) / Ctrl+Alt+I (输入)").
 					Tooltip("标准三键组合，防误触")
 				if btnP2.Clicked() {
 					a.pendingHotkeySelection = "Ctrl+Alt+D"
@@ -690,8 +706,7 @@ func (a *app) pageHotkey(c *ui.Context, t *ui.Theme, cfg Config) {
 					a.applyHotkeys()
 				}
 
-				btnDefault := ui.Button(c, "🔄 恢复默认：Alt+D (划词) / Alt+C (截图) / Alt+Q (输入)").Height(28).Padding(2, 10).Radius(5).
-					Background(t.SurfaceHover).
+				btnDefault := SecondaryButton(c, t, "恢复默认：Alt+D (划词) / Alt+C (截图) / Alt+Q (输入)").
 					Tooltip("恢复出厂默认快捷键设置")
 				if btnDefault.Clicked() {
 					a.resetHotkeysToDefault()
@@ -701,23 +716,21 @@ func (a *app) pageHotkey(c *ui.Context, t *ui.Theme, cfg Config) {
 
 		if conflictMsg != "" {
 			ui.Field(c, "冲突提示", func() {
-				ui.Box(c).FillWidth().Padding(8, 12).Radius(6).
-					Background(ui.RGBA(239, 68, 68, 0.08)).
-					Border(1, ui.RGBA(239, 68, 68, 0.35)).Children(func() {
-					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
-						ui.Icon(c, iconInfo).Size(14, 14).TextColor(t.Danger)
-						ui.Text(c, conflictMsg).FontSize(12).TextColor(t.Danger).Wrap().Grow(1)
+				SurfaceCard(c, t).Background(dangerSoft(t)).Border(1, dangerLine(t)).Children(func() {
+					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
+						ui.Icon(c, iconInfo).Size(IconSize, IconSize).TextColor(t.Danger)
+						HelperText(c, t, conflictMsg).TextColor(t.Danger).Grow(1)
 					})
 				})
 			})
 		}
 
 		ui.Field(c, "划词翻译快捷键", func() {
-			ui.TextInput(c, &a.pendingHotkeySelection).Width(240)
+			ui.TextInput(c, &a.pendingHotkeySelection).Width(InputWidth)
 		}).Description("选中文本后按下触发（推荐 Alt+D 或 Ctrl+Alt+D）")
 
 		ui.Field(c, "截图翻译快捷键", func() {
-			ui.TextInput(c, &a.pendingHotkeyScreenshot).Width(240)
+			ui.TextInput(c, &a.pendingHotkeyScreenshot).Width(InputWidth)
 		}).Description("唤起屏幕框选并自动离线 OCR 翻译（推荐 Alt+C 或 Ctrl+Alt+C，0热键冲突）")
 
 		ui.Field(c, "截图识别语言", func() {
@@ -729,19 +742,34 @@ func (a *app) pageHotkey(c *ui.Context, t *ui.Theme, cfg Config) {
 					idx = i
 				}
 			}
-			ui.Segmented(c, &idx, labels...).MaxWidth(340).OnChange(func() {
+			SegmentedControl(c, &idx, labels...).OnChange(func() {
 				v := langs[idx]
 				a.store.Update(func(c *Config) { c.OCRLang = v })
 			})
-		}).Description("「自动」用 Windows 语言列表里的第一个 OCR 语言。截英文用「英文」更准；所选语言未安装时会自动退回自动")
+		}).Description("「自动」用 Windows 语言列表里的第一个 OCR 语言。截英文用「英文」更准；所选语言未安装时会明确报错，不再静默退回其他语言")
+
+		ui.Field(c, "截图识别模式", func() {
+			modes := ocrModeValues()
+			labels := ocrModeLabels()
+			idx := 0
+			mode := normalizeOCRMode(cfg.OCRMode)
+			for i, m := range modes {
+				if m == mode {
+					idx = i
+				}
+			}
+			SegmentedControl(c, &idx, labels...).OnChange(func() {
+				a.store.Update(func(c *Config) { c.OCRMode = modes[idx] })
+			})
+		}).Description("本地只跑离线 OCR；AI 直接看图在截图开始时就把图发给当前模型；本地优先在识别结果可疑时再发图。浮窗里的「AI 精翻」也直接发图。模型不支持图片时只显示服务端错误，不禁用设置。")
 
 		ui.Field(c, "输入翻译快捷键", func() {
-			ui.TextInput(c, &a.pendingHotkeyInput).Width(240)
+			ui.TextInput(c, &a.pendingHotkeyInput).Width(InputWidth)
 		}).Description("弹出独立输入翻译框（推荐 Alt+Q 或 Ctrl+Alt+I）")
 
 		ui.Field(c, "生效保存", func() {
-			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-				if ui.PrimaryButton(c, "应用修改").Width(120).Height(30).Clicked() {
+			ui.Row(c).Gap(Space3).AlignItems(ui.Center).Children(func() {
+				if PrimaryButton(c, t, "应用修改").Clicked() {
 					a.applyHotkeys()
 				}
 				if a.hotkeyMsg != "" {
@@ -749,20 +777,20 @@ func (a *app) pageHotkey(c *ui.Context, t *ui.Theme, cfg Config) {
 					if a.hotkeyMsgKind.isError() {
 						msgCol = t.Danger
 					}
-					ui.Text(c, a.hotkeyMsg).FontSize(12).TextColor(msgCol).Wrap()
+					ui.Text(c, a.hotkeyMsg).FontSize(FontHelper).TextColor(msgCol).Wrap()
 				}
 			})
 		})
 
 		ui.Field(c, "格式说明", func() {
-			ui.Text(c, "支持输入任意自定义组合键（如 Alt+D、Ctrl+Shift+D 等），留空表示停用该项快捷键，点击【应用修改】立即注册生效。").FontSize(12).TextColor(t.TextMuted).Wrap()
+			ui.Text(c, "支持输入任意自定义组合键（如 Alt+D、Ctrl+Shift+D 等），留空表示停用该项快捷键，点击【应用修改】立即注册生效。").FontSize(FontHelper).TextColor(t.TextMuted).Wrap()
 		})
 	})
 }
 
 func (a *app) pageAbout(c *ui.Context, t *ui.Theme, cfg Config) {
-	heading(c, t, "关于", appTitle+" "+appVersion)
-	ui.Text(c, "轻巧极速的桌面划词翻译与词典工具：原生 UI 渲染、零卡顿、低内存常驻。").FontSize(13).TextColor(t.Text).Wrap()
+	PageTitle(c, t, "关于", appTitle+" "+appVersion)
+	ui.Text(c, "轻巧极速的桌面划词翻译与词典工具：原生 UI 渲染、零卡顿、低内存常驻。").FontSize(FontControl).TextColor(t.Text).Wrap()
 	// FillWidth, never Fill: Fill sets both axes to 100%, so in this column the
 	// divider grew to the full height of the scroll viewport and the page
 	// showed two blank screens between the rows.
@@ -774,12 +802,12 @@ func (a *app) pageAbout(c *ui.Context, t *ui.Theme, cfg Config) {
 		{"发音", "Edge TTS 流式语音，失败时回落系统 SAPI"},
 		{"OCR 引擎", "Indra OCR 本地推理，缺模型时回落 Windows.Media.Ocr"},
 		{"AI 精翻", "Magpie 或任意 OpenAI 兼容服务"},
-		{"外壳", "mygo v0.8.3 原生 UI（Go，无 cgo）"},
+		{"外壳", "mygo v0.9.0 原生 UI（Go，无 cgo）"},
 	}
 	for _, r := range rows {
-		ui.Row(c).FillWidth().Gap(12).AlignItems(ui.Start).Children(func() {
-			ui.Text(c, r[0]).FontSize(12).TextColor(t.TextMuted).Width(80)
-			ui.Text(c, r[1]).FontSize(12).TextColor(t.Text).Grow(1).Wrap()
+		ui.Row(c).FillWidth().Gap(Space3).AlignItems(ui.Start).Children(func() {
+			ui.Text(c, r[0]).FontSize(FontHelper).TextColor(t.TextMuted).Width(80)
+			ui.Text(c, r[1]).FontSize(FontHelper).TextColor(t.Text).Grow(1).Wrap()
 		})
 	}
 	ui.Divider(c).FillWidth()
@@ -793,12 +821,12 @@ func (a *app) pageAbout(c *ui.Context, t *ui.Theme, cfg Config) {
 		}).Description("默认只记录字符数；开启后会写入选中的原文与 OCR 结果，便于排查取词问题。")
 
 		ui.Field(c, "日志文件", func() {
-			if ui.Button(c, "打开日志目录").Height(26).Width(140).Padding(2, 10).FontSize(11).Clicked() {
+			if SecondaryButton(c, t, "打开日志目录").Clicked() {
 				if err := mygo.Shell.OpenExternal(filepath.Dir(settingsLogPath())); err != nil {
 					a.actionSavedMsg = "打开日志目录失败: " + err.Error()
 				}
 			}
-			ui.Text(c, settingsLogPath()).FontSize(11).TextColor(t.TextMuted).Grow(1).Wrap()
+			ui.Text(c, settingsLogPath()).FontSize(FontHelper).TextColor(t.TextMuted).Grow(1).Wrap()
 		}).Description("启动时若日志超过 2 MB，会轮转为 .1 并保留一份；崩溃时的运行时输出也写在这里。")
 
 		// The update check only reads a public release feed. Installing a new
@@ -810,14 +838,14 @@ func (a *app) pageAbout(c *ui.Context, t *ui.Theme, cfg Config) {
 			if checking {
 				label = "检查中…"
 			}
-			if ui.Button(c, label).Height(26).Width(140).Padding(2, 10).FontSize(11).Clicked() && !checking {
+			if SecondaryButton(c, t, label).Clicked() && !checking {
 				a.checkUpdatesAsync()
 			}
 			if msg != "" {
-				ui.Text(c, msg).FontSize(12).TextColor(t.TextMuted).Grow(1).Wrap()
+				ui.Text(c, msg).FontSize(FontHelper).TextColor(t.TextMuted).Grow(1).Wrap()
 			}
 			if newer && url != "" {
-				if ui.Button(c, "打开下载页").Height(26).Width(140).Padding(2, 10).FontSize(11).Clicked() {
+				if SecondaryButton(c, t, "打开下载页").Clicked() {
 					if err := mygo.Shell.OpenExternal(url); err != nil {
 						a.actionSavedMsg = "打开下载页失败: " + err.Error()
 					}
@@ -827,5 +855,5 @@ func (a *app) pageAbout(c *ui.Context, t *ui.Theme, cfg Config) {
 	})
 
 	ui.Divider(c).FillWidth()
-	ui.Text(c, "配置文件：用户数据目录下的 config.json；生词本与设置互不影响，可单独备份。").FontSize(12).TextColor(t.TextMuted).Wrap()
+	ui.Text(c, "配置文件：用户数据目录下的 config.json；生词本与设置互不影响，可单独备份。").FontSize(FontHelper).TextColor(t.TextMuted).Wrap()
 }

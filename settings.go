@@ -70,11 +70,59 @@ func (a *app) settingsRefresh() {
 	}
 }
 
+type settingsNavEntry struct {
+	id    string
+	label string
+	icon  *ui.SVG
+}
+
+var settingsNavItems = []settingsNavEntry{
+	{"general", "通用", iconGear},
+	{"selection", "划词", iconTranslate},
+	{"actions", "AI 指令", iconSparkles},
+	{"vocabulary", "生词本", iconBookmark},
+	{"translate", "翻译", iconSwap},
+	{"dict", "词典与发音", iconDict},
+	{"ai", "AI 精翻", iconPolish},
+	{"hotkey", "快捷键", iconKeyboard},
+	{"about", "关于", iconInfo},
+}
+
+// settingsNavItem 是 32px 的导航行：选中态用浅底 + 左侧 3px Accent 竖条，
+// 不再用框架的实心蓝块。
+func (a *app) settingsNavItem(c *ui.Context, t *ui.Theme, at AppTheme, item settingsNavEntry) {
+	active := a.page == item.id
+	b := ui.ButtonBase(c).Height(HeightControl).Radius(RadiusSM).
+		Role(ui.RoleTreeItem).Focusable().FillWidth().
+		Padding(0, Space2).Gap(Space2).AlignItems(ui.Center)
+	if active {
+		b.Background(at.SurfaceSubtle)
+	} else if b.Hovered() {
+		b.Background(at.SurfaceHover)
+	}
+	bar := ui.Transparent
+	ink := at.TextSec
+	if active {
+		bar, ink = at.Accent, at.Text
+	}
+	b.Children(func() {
+		ui.Box(c).Width(3).Height(IconSize).Radius(RadiusXS).Background(bar)
+		ui.Icon(c, item.icon).Size(IconSize, IconSize).TextColor(ink)
+		ui.Text(c, item.label).Font(fontUI).FontSize(FontControl).
+			FontWeight(500).TextColor(ink).SingleLine()
+	})
+	if b.Clicked() && !active {
+		a.page = item.id
+		a.settingsRefresh()
+	}
+}
+
 // settingsView renders the settings window: a sidebar of pages and a form.
 func (a *app) settingsView(c *ui.Context) {
 	cfg := a.store.Get()
 	applyTheme(c, cfg.ThemeMode, c.Theme().Dark)
 	t := c.Theme()
+	at := appTheme(t)
 
 	if a.page == "" {
 		a.page = "general"
@@ -89,41 +137,35 @@ func (a *app) settingsView(c *ui.Context) {
 	// then measures against an unbounded height, and the page can neither
 	// scroll nor fit a small window: the content is simply cut off.
 	ui.Row(c).FillWidth().FillHeight().Children(func() {
-		ui.Column(c).Width(168).FillHeight().Padding(10, 8).Gap(2).
-			Background(t.Surface).BorderWidth(0, 1, 0, 0).BorderColor(t.Border).Children(func() {
-			ui.Text(c, appTitle).FontSize(14).FontWeight(600).Padding(6, 8, 6, 8).TextColor(t.Accent)
-			ui.Sidebar(c, &a.page, func() {
-				ui.SidebarItem(c, "general", nil, "通用")
-				ui.SidebarItem(c, "selection", nil, "划词")
-				ui.SidebarItem(c, "actions", nil, "AI 指令")
-				ui.SidebarItem(c, "vocabulary", nil, "生词本")
-				ui.SidebarItem(c, "translate", nil, "翻译")
-				ui.SidebarItem(c, "dict", nil, "词典与发音")
-				ui.SidebarItem(c, "ai", nil, "AI 精翻")
-				ui.SidebarItem(c, "hotkey", nil, "快捷键")
-				ui.SidebarItem(c, "about", nil, "关于")
-			})
+		// 自定义导航：框架 ui.Sidebar 的选中态是实心 accent 块，无法改成
+		// 「浅底 + 左侧竖条」。用 ButtonBase + RoleTreeItem 保留焦点与辅助技术。
+		ui.Column(c).Width(NavWidth).FillHeight().Padding(Space3).Gap(Space1).
+			Background(at.Canvas).Children(func() {
+			ui.Text(c, appTitle).Font(fontUI).FontSize(FontControl).FontWeight(600).
+				Padding(Space2, Space2).TextColor(at.Text)
+			for _, item := range settingsNavItems {
+				a.settingsNavItem(c, t, at, item)
+			}
 		})
 
 		ui.Scroll(c).TrackScroll(&a.settingsScroll).Grow(1).FillHeight().
-			Padding(24, 28, 24, 28).ScrollbarInsets(0, 0, 8).Children(func() {
+			Padding(Space6, Space8, Space6, Space8).ScrollbarInsets(0, 0, Space2).Children(func() {
 			// One measured column instead of controls stretched across the
 			// whole window: a form reads as a form, not as a spreadsheet.
-			ui.Column(c).FillWidth().Gap(18).Children(func() {
+			ui.Column(c).FillWidth().MaxWidth(ContentMaxWidth).Gap(Space6).Children(func() {
 				// A failed save used to be only a log line: the switch moved,
 				// the window looked saved, and the setting vanished on restart.
 				// Keep the error visible until a retry actually succeeds.
 				if saveErr := a.store.LastSaveError(); saveErr != nil {
-					ui.Box(c).FillWidth().Padding(10, 12).Radius(8).
-						Background(ui.RGBA(239, 68, 68, 0.08)).
-						Border(1, ui.RGBA(239, 68, 68, 0.35)).Children(func() {
-						ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
-							ui.Icon(c, iconInfo).Size(14, 14).TextColor(t.Danger)
-							ui.Text(c, "设置未保存：磁盘写入失败。"+saveErr.Error()).FontSize(12).TextColor(t.Danger).Wrap().Grow(1)
-							if ui.Button(c, "重试").Height(24).Padding(2, 10).FontSize(11).Clicked() {
+					SurfaceCard(c, t).Background(dangerSoft(t)).Border(1, dangerLine(t)).Children(func() {
+						ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
+							ui.Icon(c, iconInfo).Size(IconSize, IconSize).TextColor(t.Danger)
+							HelperText(c, t, "设置未保存：磁盘写入失败。"+saveErr.Error()).
+								TextColor(t.Danger).Grow(1)
+							if SecondaryButton(c, t, "重试").Clicked() {
 								a.retryConfigSave()
 							}
-							if ui.Button(c, "查看日志").Height(24).Padding(2, 10).FontSize(11).Clicked() {
+							if SecondaryButton(c, t, "查看日志").Clicked() {
 								a.copyToClipboard(settingsLogPath())
 								a.mu.Lock()
 								a.actionSavedMsg = "日志路径已复制到剪贴板"

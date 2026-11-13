@@ -65,6 +65,10 @@ type app struct {
 	engine   string
 	detected string
 	errText  string
+	// echoNote explains a translation attempt whose engine echoed the source:
+	// an answer, not a failure. It names the engine that kept the text and, when
+	// another engine supplied the reading, the one that did.
+	echoNote string
 	notice   string
 	busy     bool
 	elapsed  time.Duration
@@ -244,6 +248,7 @@ type app struct {
 	// settings window scratch state
 	aiProbe                 aiProbeState
 	aiModels                aiModelsState
+	aiModelsBySource        map[string]aiModelsState
 	aiShowKey               bool
 	aiHelpOpen              bool
 	aiRefining              bool
@@ -278,6 +283,7 @@ type snapshot struct {
 	engine                string
 	detected              string
 	errText               string
+	echoNote              string
 	notice                string
 	busy                  bool
 	elapsed               time.Duration
@@ -372,7 +378,7 @@ func (a *app) snap() snapshot {
 	}
 	return snapshot{
 		mode: a.mode, source: a.source, target: a.target, engine: a.engine,
-		detected: a.detected, errText: a.errText, notice: a.notice, busy: a.busy, elapsed: a.elapsed,
+		detected: a.detected, errText: a.errText, echoNote: a.echoNote, notice: a.notice, busy: a.busy, elapsed: a.elapsed,
 		dict: a.dict, gdict: a.gdict, aiText: a.aiText, aiBusy: a.aiBusy,
 		inputText: a.inputText, inputTargetMode: a.inputTargetMode, isWord: isWord(a.source), pinned: a.pinned, showNotes: a.showNotes, notes: a.notes, notesBusy: a.notesBusy, onlyTrunk: a.onlyTrunk, grammarResult: a.grammarResult, grammarResultPrefill: a.grammarResultPrefill, aiRefining: a.aiRefining, aiRefineErr: a.aiRefineErr,
 		activeActionID: a.activeActionID, dictResult: a.dictResult, writingResult: a.writingResult, actionSavedMsg: actionSavedMsg, savedDictTerm: a.savedDictTerm, copiedMsg: copiedMsg, showSlashes: a.showSlashes, filterRole: a.filterRole, grammarHoverKnowledge: a.grammarHoverKnowledge, notesSaved: a.notesSaved, grammarSaved: a.grammarSaved, writingSaved: a.writingSaved,
@@ -514,6 +520,7 @@ func (a *app) switchMode(m popupMode) {
 	a.translateGen++
 	a.notice = notice
 	a.errText = ""
+	a.echoNote = ""
 	if strings.TrimSpace(text) == "" {
 		// An empty source means there is no new request to replace the old
 		// card. Leaving the old answer on screen under a different tab makes
@@ -603,6 +610,7 @@ func (a *app) openPopupAction(m popupMode, text string) {
 	a.sourceExpanded = false
 	a.target = ""
 	a.errText = ""
+	a.echoNote = ""
 	a.aiText = ""
 	a.dict = nil
 	a.gdict = nil

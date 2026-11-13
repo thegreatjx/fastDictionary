@@ -100,6 +100,7 @@ func (a *app) translateTextWithReflow(text string, keepParagraphs bool) {
 	a.stopAIPassLocked()
 	a.stopNotesLocked()
 	a.source, a.target, a.errText = text, "", ""
+	a.echoNote = ""
 	a.sourceExpanded = false
 	a.notesExpanded = false
 	a.notesSaved = false
@@ -128,7 +129,7 @@ func (a *app) translateTextWithReflow(text string, keepParagraphs bool) {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
 
-		from := detectLocal(text)
+		from := sourceLangFor(text)
 		to := cfg.TargetLang
 		if from == cfg.TargetLang || sameLang(from, to) {
 			to = cfg.SecondLang // reading your own language: translate out
@@ -169,6 +170,33 @@ func (a *app) translateTextWithReflow(text string, keepParagraphs bool) {
 		a.elapsed = elapsed
 		if r.Err != nil {
 			a.errText = r.Err.Error()
+		} else if r.Untranslated {
+			// The engine answered, it just had nothing to change: 微软 and 腾讯
+			// keep a capitalised name as it is ("Azure" stays "Azure") even
+			// when the word has an ordinary meaning ("azure" is 蔚蓝). A pinned
+			// engine is honoured, but showing nothing is worse than showing
+			// another engine's reading with its name attached.
+			alt, usedAlt := raceResult{}, false
+			if cfg.EngineMode != "race" {
+				alt, usedAlt = pickEchoAnswer(r, TranslateRace(ctx, text, from, to, "race"))
+			}
+			if usedAlt {
+				if keepParagraphs {
+					a.target = reflowTranslation(alt.Text)
+				} else {
+					a.target = flattenTranslation(alt.Text)
+				}
+				a.engine, a.detected = alt.Engine, alt.Detected
+				if word {
+					a.echoNote = r.Engine + "把「" + text + "」当作专有名词保留了原文，下面是" + alt.Engine + "的译文。"
+				} else {
+					a.echoNote = r.Engine + "没有给出译文，下面是" + alt.Engine + "的译文。"
+				}
+			} else {
+				a.echoNote = r.Engine + "没有给出译文，返回的内容与原文相同：多半是专有名词或简称，也可能这组语言它不翻译。切到其它引擎可以拿到意译。"
+				a.engine, a.detected = r.Engine, r.Detected
+			}
+			a.dict, a.gdict = yd, gd
 		} else {
 			if keepParagraphs {
 				a.target = reflowTranslation(r.Text)
@@ -475,7 +503,7 @@ func (a *app) saveWritingToVocab(res *ImproveWritingResult) {
 // the model will later overwrite with its own translation.
 func (a *app) prefillActionTranslation(gen requestToken, text, targetLang string) {
 	cfg := a.store.Get()
-	from := detectLocal(text)
+	from := sourceLangFor(text)
 	to := targetLang
 	if from == to || sameLang(from, to) {
 		to = cfg.SecondLang
@@ -485,7 +513,10 @@ func (a *app) prefillActionTranslation(gen requestToken, text, targetLang string
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
 		r := TranslateRace(ctx, text, from, to, cfg.EngineMode)
-		if r.Err != nil || strings.TrimSpace(r.Text) == "" {
+		// An echo (the engine had nothing to change) is not a translation:
+		// prefilling it would put the English sentence in the translation slot
+		// of the analysis card.
+		if r.Err != nil || r.Untranslated || strings.TrimSpace(r.Text) == "" {
 			return
 		}
 		a.mu.Lock()
@@ -940,13 +971,14 @@ func (a *app) refineWithAI() {
 			time.Sleep(350 * time.Millisecond)
 			out, err = StreamAI(ctx, cfg.AIConn(cfg.AIModel), sys, source, effort, nil)
 		}
-		if err != nil && cfg.AIVisionAllowed() && isScreenshotMode && ocrPath != "" && ctx.Err() == nil {
+		if err != nil && isScreenshotMode && ocrPath != "" && ctx.Err() == nil {
 			// OCR text is the cheap first attempt. If the model cannot answer
-			// from it, give it the original pixels as well: the model can read
-			// the screenshot and correct the OCR mistakes that caused the
-			// failure. This costs more tokens, so it is deliberately last.
-			if dataURL, imageErr := imageFileDataURL(ocrPath); imageErr == nil {
-				log.Printf("fastDictionary: text AI refine failed, retrying with screenshot: %v", err)
+			// from it, give it the compressed screenshot as well: the model can
+			// read pixels and correct the OCR mistakes that caused the failure.
+			// Model capability is not gated here: an incompatible service
+			// answers with its own error and the user keeps full model choice.
+			if dataURL, imageErr := compressedImageFileDataURL(ocrPath); imageErr == nil {
+				log.Printf("fastDictionary: text AI refine failed, retrying with compressed screenshot: %v", err)
 				out, err = StreamAIWithImage(ctx, cfg.AIConn(cfg.AIModel),
 					screenshotRefineSystemPrompt(targetLang), screenshotRefineUserPrompt(source),
 					dataURL, effort, nil)
@@ -1029,6 +1061,8 @@ func friendlyAIError(err error) string {
 			return "地址或模型不存在，请检查 API 地址和模型 ID。"
 		case aiFailureRateLimit:
 			return "请求过于频繁或额度用完，请稍后再试。"
+		case aiFailureBadRequest:
+			return "服务拒绝了请求：当前模型可能不支持图片输入，或请求格式不兼容；请检查模型 ID 和服务商文档。"
 		case aiFailureServer:
 			return "服务商暂时故障，请稍后重试。"
 		case aiFailureTimeout:

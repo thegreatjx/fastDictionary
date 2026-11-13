@@ -84,7 +84,7 @@ func TestScreenshotEditingAndRecognitionState(t *testing.T) {
 	a.mode, a.isScreenshotMode = modeTranslate, true
 	a.ocrBusy, a.pinned = true, true
 	tt := ui.NewTester(a.popupView, 460, 420)
-	for _, want := range []string{"正在本地识别文字", "取消"} {
+	for _, want := range []string{"正在识别文字", "取消"} {
 		if !tt.HasText(want) {
 			t.Errorf("OCR progress misses %q: %q", want, tt.Texts())
 		}
@@ -97,10 +97,13 @@ func TestScreenshotEditingAndRecognitionState(t *testing.T) {
 		t.Fatal("editing screenshot result should allocate a usable editor")
 	}
 	tt = ui.NewTester(a.popupView, 460, 460)
-	for _, want := range []string{"识别原文 · 可直接修正", "翻译修正后的原文", "重试"} {
+	for _, want := range []string{"识别原文 · 可直接修正", "翻译修正后的原文", "重试", "AI 精翻"} {
 		if !tt.HasText(want) {
 			t.Errorf("OCR editing misses %q: %q", want, tt.Texts())
 		}
+	}
+	if tt.HasText("AI 看图") {
+		t.Errorf("OCR editing still shows a separate AI 看图 action: %q", tt.Texts())
 	}
 	a.ocrError = "本地识别不可用，请检查 Windows 设置。"
 	tt = ui.NewTester(a.popupView, 460, 460)

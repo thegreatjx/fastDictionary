@@ -103,6 +103,18 @@ func (a *app) popupView(c *ui.Context) {
 					})
 				}
 
+				// The engine echoed the source back. It answered, so this is not
+				// the red failure box: a 重试 would return the same text.
+				if s.echoNote != "" {
+					ui.Box(c).FillWidth().Padding(8, 10).Radius(6).
+						Background(noticeBg(t)).Border(1, noticeBorder(t)).Children(func() {
+						ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(6).Children(func() {
+							ui.Icon(c, iconInfo).Size(13, 13).TextColor(noticeText(t))
+							ui.Text(c, s.echoNote).FontSize(12).TextColor(noticeText(t)).Wrap().Grow(1)
+						})
+					})
+				}
+
 				// A quiet confirmation that a copy actually landed with positive success feedback.
 				if s.copiedMsg != "" {
 					ui.Box(c).FillWidth().Padding(6, 10).Radius(6).

@@ -143,45 +143,9 @@ func (a *app) renderScreenshotPairActions(c *ui.Context, t *ui.Theme, cfg Config
 				PlaySpeechLang(spText, spLang, false)
 			}
 		}
-		if s.source != "" && !s.isWord {
-			tip := "AI 精翻（先读 OCR 文字，失败时用截图校正）"
-			if s.aiRefining {
-				tip = "AI 精翻中…"
-			} else if s.engine == "AI 精翻" {
-				tip = "已是 AI 精翻 · 点击重新生成"
-			}
-			btn := ui.Button(c, "").Tooltip(tip).Size(28, 28).Padding(0, 0).Radius(6).Center()
-			btn.Children(func() {
-				col := t.TextMuted
-				if s.engine == "AI 精翻" {
-					col = t.Accent
-				}
-				if s.aiRefining {
-					ui.Spinner(c).Size(15, 15)
-				} else {
-					ui.Icon(c, iconSparkles).Size(15, 15).TextColor(col)
-				}
-			})
-			if btn.Clicked() && !s.aiRefining {
-				a.refineWithAI()
-			}
-			if s.aiRefineErr != "" {
-				ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, "精翻失败："+s.aiRefineErr).FontSize(10).TextColor(t.Danger).SingleLine()
-					if ui.Button(c, "重试").Height(20).Padding(0, 6).FontSize(10).Radius(4).Clicked() {
-						a.refineWithAI()
-					}
-					if ui.Button(c, "打开 AI 设置").Height(20).Padding(0, 6).FontSize(10).Radius(4).Clicked() {
-						a.openAISettings()
-					}
-				})
-			}
-		}
+		renderAIRefineControls(c, t, a, s)
 		ui.Spacer(c).Grow(1)
-		if cfg.ShowEngineTag && s.engine != "" {
-			ui.Text(c, translationEngineCaption(s, cfg.TargetLang)).FontSize(10).
-				TextColor(t.TextMuted).SingleLine().Opacity(0.85)
-		}
+		renderEngineCaptionWithAIState(c, t, s, cfg)
 		if cfg.ShowNotes && shouldExtractNotes(s.source) {
 			if s.notesBusy && len(s.notes) == 0 {
 				ui.Row(c).Gap(4).AlignItems(ui.Center).Padding(0, 4).Children(func() {

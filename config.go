@@ -27,6 +27,13 @@ type CustomActionConfig struct {
 	OutputSchema []string `json:"output_schema"`
 }
 
+// aiProviderSettings 保存每家服务商自己的地址和模型，避免切换时把用户选择
+// 覆盖成该服务商预设的默认值。
+type aiProviderSettings struct {
+	URL   string `json:"url,omitempty"`
+	Model string `json:"model,omitempty"`
+}
+
 type Config struct {
 	// shortcuts
 	HotkeySelection  string `json:"hotkey_selection"`
@@ -38,6 +45,11 @@ type Config struct {
 	// an English screenshot with the Chinese model otherwise, which is where
 	// the wrong glyphs came from.
 	OCRLang string `json:"ocr_lang"`
+	// OCRMode chooses the screenshot pipeline: local-only OCR, direct AI
+	// vision, or local OCR followed by an AI vision retry when the result looks
+	// suspicious. It never decides whether a model is capable of reading an
+	// image; an incompatible model reports its own error after the request.
+	OCRMode string `json:"ocr_mode"`
 
 	// translation
 	// EngineMode picks how the text is translated: "race" asks 微软, 谷歌 and
@@ -78,8 +90,13 @@ type Config struct {
 	// encrypted form is AIKeyEnc; store.Update seals it on every save.
 	AIKey    string `json:"-"`
 	AIKeyEnc string `json:"ai_key_enc,omitempty"`
-	// AIVision applies to direct providers only. Magpie keeps its existing
-	// image fallback behaviour; AIVisionAllowed encodes that difference.
+	// 按服务商分别保存加密 Key。切走时不把 Key 带到别家，切回来再从这里恢复。
+	AIKeyEncByProvider map[string]string `json:"ai_key_enc_by_provider,omitempty"`
+	// 按服务商分别保存 API 地址和模型选择。切走再切回不应变成预设默认值。
+	AISettingsByProvider map[string]aiProviderSettings `json:"ai_settings_by_provider,omitempty"`
+	// AIVision is kept for older configs and as an optional capability hint.
+	// Screenshot modes send the image to the selected model regardless of this
+	// flag; incompatible models report their own error after the request.
 	AIVision bool   `json:"ai_vision"`
 	AIEffort string `json:"ai_effort"` // fast | deep
 
@@ -223,10 +240,13 @@ func (c Config) AIConn(model string) aiConn {
 }
 
 // sealAIKey turns the in-memory key into the persisted blob. An empty key
-// clears the blob, so clearing the field in settings really forgets it.
+// clears only the current provider's blob, so clearing the field in settings
+// really forgets that provider without erasing the others.
 func (c *Config) sealAIKey() error {
+	provider := normalizeAIProvider(c.AIProvider)
 	if c.AIKey == "" {
 		c.AIKeyEnc = ""
+		c.setProviderKeyEnc(provider, "")
 		return nil
 	}
 	enc, err := protectSecret(c.AIKey)
@@ -235,6 +255,72 @@ func (c *Config) sealAIKey() error {
 		return err
 	}
 	c.AIKeyEnc = enc
+	c.setProviderKeyEnc(provider, enc)
+	return nil
+}
+
+func (c *Config) setProviderKeyEnc(provider, enc string) {
+	provider = normalizeAIProvider(provider)
+	if c.AIKeyEncByProvider == nil {
+		c.AIKeyEncByProvider = make(map[string]string)
+	}
+	if enc == "" {
+		delete(c.AIKeyEncByProvider, provider)
+		return
+	}
+	c.AIKeyEncByProvider[provider] = enc
+}
+
+func (c *Config) providerKeyEnc(provider string) string {
+	if c.AIKeyEncByProvider == nil {
+		return ""
+	}
+	return c.AIKeyEncByProvider[normalizeAIProvider(provider)]
+}
+
+// restoreAIKeyFor loads one provider's encrypted key into the active fields.
+// The old ai_key_enc field is a one-way migration source; the provider map is
+// authoritative once present.
+func (c *Config) rememberAISettingsFor(provider string) {
+	provider = normalizeAIProvider(provider)
+	if c.AISettingsByProvider == nil {
+		c.AISettingsByProvider = make(map[string]aiProviderSettings)
+	}
+	if strings.TrimSpace(c.AIURL) == "" && strings.TrimSpace(c.AIModel) == "" {
+		delete(c.AISettingsByProvider, provider)
+		return
+	}
+	c.AISettingsByProvider[provider] = aiProviderSettings{
+		URL:   c.AIURL,
+		Model: c.AIModel,
+	}
+}
+
+func (c *Config) restoreAISettingsFor(provider string) (aiProviderSettings, bool) {
+	if c.AISettingsByProvider == nil {
+		return aiProviderSettings{}, false
+	}
+	settings, ok := c.AISettingsByProvider[normalizeAIProvider(provider)]
+	return settings, ok
+}
+
+func (c *Config) restoreAIKeyFor(provider string) error {
+	provider = normalizeAIProvider(provider)
+	blob := c.providerKeyEnc(provider)
+	if blob == "" {
+		c.AIKey = ""
+		c.AIKeyEnc = ""
+		return nil
+	}
+	key, err := unprotectSecret(blob)
+	if err != nil {
+		c.AIKey = ""
+		c.AIKeyEnc = ""
+		c.setProviderKeyEnc(provider, "")
+		return err
+	}
+	c.AIKey = key
+	c.AIKeyEnc = blob
 	return nil
 }
 
@@ -307,34 +393,37 @@ func normalizeInitialAIMode(cfg *Config) {
 // DefaultConfig returns the shipped defaults.
 func DefaultConfig() Config {
 	return Config{
-		HotkeySelection:    "Alt+D",
-		HotkeyInput:        "Alt+Q",
-		HotkeyScreenshot:   "Alt+C",
-		OCRLang:            "auto",
-		EngineMode:         "race",
-		TargetLang:         "zh-Hans",
-		SecondLang:         "en",
-		ShowEngineTag:      true,
-		SelectionTrigger:   "icon",
-		SelectionCapture:   "auto",
-		SelectionBlocklist: DefaultSelectionBlocklist(),
-		DictEnabled:        true,
-		AutoPronounce:      "off",
-		AudioVolume:        80,
-		AIEnabled:          true,
-		AIProvider:         "magpie",
-		AIURL:              magpieDefaultEndpoint,
-		AIModel:            magpieDefaultModel,
-		AIEffort:           EffortFast,
-		CloseOnBlur:        true,
-		AlwaysOnTop:        true,
-		PopupWidth:         500,
-		ThemeMode:          "system",
-		ShowNotes:          true,
-		NotesMigrated:      1,
-		WindowOpacity:      0.95,
-		AIMode:             "grammar",
-		CustomActions:      DefaultCustomActions(),
+		HotkeySelection:      "Alt+D",
+		HotkeyInput:          "Alt+Q",
+		HotkeyScreenshot:     "Alt+C",
+		OCRLang:              "auto",
+		OCRMode:              ocrModeLocal,
+		EngineMode:           "race",
+		TargetLang:           "zh-Hans",
+		SecondLang:           "en",
+		ShowEngineTag:        true,
+		SelectionTrigger:     "icon",
+		SelectionCapture:     "auto",
+		SelectionBlocklist:   DefaultSelectionBlocklist(),
+		DictEnabled:          true,
+		AutoPronounce:        "off",
+		AudioVolume:          80,
+		AIEnabled:            true,
+		AIProvider:           "magpie",
+		AIURL:                magpieDefaultEndpoint,
+		AIModel:              magpieDefaultModel,
+		AIKeyEncByProvider:   map[string]string{},
+		AISettingsByProvider: map[string]aiProviderSettings{},
+		AIEffort:             EffortFast,
+		CloseOnBlur:          true,
+		AlwaysOnTop:          true,
+		PopupWidth:           500,
+		ThemeMode:            "system",
+		ShowNotes:            true,
+		NotesMigrated:        1,
+		WindowOpacity:        0.95,
+		AIMode:               "grammar",
+		CustomActions:        DefaultCustomActions(),
 	}
 }
 
@@ -427,6 +516,18 @@ func newStore() *store {
 // live store without holding its lock.
 func cloneConfig(cfg Config) Config {
 	clone := cfg
+	if cfg.AIKeyEncByProvider != nil {
+		clone.AIKeyEncByProvider = make(map[string]string, len(cfg.AIKeyEncByProvider))
+		for provider, blob := range cfg.AIKeyEncByProvider {
+			clone.AIKeyEncByProvider[provider] = blob
+		}
+	}
+	if cfg.AISettingsByProvider != nil {
+		clone.AISettingsByProvider = make(map[string]aiProviderSettings, len(cfg.AISettingsByProvider))
+		for provider, settings := range cfg.AISettingsByProvider {
+			clone.AISettingsByProvider[provider] = settings
+		}
+	}
 	if cfg.SelectionBlocklist != nil {
 		clone.SelectionBlocklist = append([]string(nil), cfg.SelectionBlocklist...)
 	}
@@ -505,6 +606,7 @@ func (s *store) Update(fn func(*Config)) Config {
 
 	s.mu.Lock()
 	fn(&s.cfg)
+	s.cfg.rememberAISettingsFor(s.cfg.AIProvider)
 	var sealErr error
 	if s.path != "" {
 		// Only a persisted key needs the encrypted blob. A memory store in a
@@ -574,18 +676,24 @@ func (s *store) load() bool {
 		s.mu.Unlock()
 	}
 	normalizeAIProviderConfig(&cfg, data)
-	if cfg.AIKeyEnc != "" {
-		if key, err := unprotectSecret(cfg.AIKeyEnc); err != nil {
-			// Never log the blob: it is still a secret, just one this account
-			// cannot open. Clearing it stops a blob that can never be used
-			// from being written back on every save.
-			log.Printf("fastDictionary: AI key could not be decrypted: %v", err)
-			cfg.AIKeyEnc = ""
-		} else {
-			cfg.AIKey = key
-		}
+	provider := normalizeAIProvider(cfg.AIProvider)
+	if cfg.AISettingsByProvider == nil {
+		cfg.AISettingsByProvider = make(map[string]aiProviderSettings)
+	}
+	if _, ok := cfg.AISettingsByProvider[provider]; !ok {
+		cfg.AISettingsByProvider[provider] = aiProviderSettings{URL: cfg.AIURL, Model: cfg.AIModel}
+	}
+	if cfg.AIKeyEncByProvider == nil {
+		cfg.AIKeyEncByProvider = make(map[string]string)
+	}
+	if cfg.AIKeyEnc != "" && cfg.providerKeyEnc(provider) == "" {
+		cfg.setProviderKeyEnc(provider, cfg.AIKeyEnc)
+	}
+	if err := cfg.restoreAIKeyFor(provider); err != nil {
+		log.Printf("fastDictionary: AI key for %s could not be decrypted: %v", provider, err)
 	}
 	normalizeInitialAIMode(&cfg)
+	cfg.OCRMode = normalizeOCRMode(cfg.OCRMode)
 	// A file written while 词典精读 still existed is rewritten once, so it
 	// stops claiming a default view the popup cannot open.
 	var rawMode struct {

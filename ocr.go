@@ -158,8 +158,8 @@ func RecognizeImageFile(ctx context.Context, path string) (string, error) {
 // The tag is passed to the engine, so an English screenshot can be read by the
 // English recognizer on a Chinese Windows install; "auto" keeps the engine's
 // own choice from the user's Windows language list. A tag with no recognizer
-// installed falls back to that list rather than failing, so a stale setting
-// RecognizeImageFileIn reads text from a screenshot.
+// installed reports a clear error instead of silently falling back to another
+// language, which used to turn Japanese text into Chinese glyph noise.
 //
 // Indra runs first, because it reads stylised and small type that
 // Windows.Media.Ocr turns into noise: on the public "Plaid" OCR test image it
@@ -171,39 +171,89 @@ func RecognizeImageFile(ctx context.Context, path string) (string, error) {
 var recognizeImageFileIn = RecognizeImageFileIn
 
 func RecognizeImageFileIn(ctx context.Context, path, language string) (string, error) {
+	var best string
 	if indraAvailable() {
-		if text, err := indraRecognizeFile(ctx, path); err == nil {
-			// Repair doubled letters before anything reads the text. The
-			// recognizer sometimes writes "Sttocks", which the translator turns
-			// into a confident sentence about the wrong subject; see ocr_spell.go.
-			text = fixDoubledLettersAll(text)
-			if cleaned := CleanOcrText(text); cleaned != "" {
-				return cleaned, nil
+		img, err := decodeOCRImage(path)
+		if err != nil {
+			log.Printf("fastDictionary: decode screenshot failed (%v), falling back to Windows OCR", err)
+		} else if text, err := recognizeIndraWithRetries(ctx, img); err == nil {
+			best = text
+			if best != "" && !isSuspiciousOCRText(best) {
+				return best, nil
 			}
-			log.Printf("fastDictionary: indra found no text, falling back to Windows OCR")
+			log.Printf("fastDictionary: indra result suspicious, checking Windows OCR")
 		} else {
 			log.Printf("fastDictionary: indra failed (%v), falling back to Windows OCR", err)
 		}
 	}
-	return windowsRecognizeFileIn(ctx, path, language)
+	winText, winErr := windowsRecognizeFileIn(ctx, path, language)
+	if winErr == nil && (best == "" || scoreOCRText(winText) > scoreOCRText(best)) {
+		return winText, nil
+	}
+	if best != "" {
+		return best, nil
+	}
+	if winErr != nil {
+		return "", winErr
+	}
+	return "", fmt.Errorf("没有识别到文字")
 }
 
-// indraRecognizeFile decodes a file and hands it to the Indra engine.
-//
-// No upscaling: the recognizer resizes its own crops to the trained height, and
-// the detector works at a fixed long side, so pre-scaling only costs time and
-// loses detail.
-func indraRecognizeFile(ctx context.Context, path string) (string, error) {
+// decodeOCRImage 只解码一次截图。边缘填充、色距和背景减除都在内存里做，
+// 不再为每种重试写临时文件。
+func decodeOCRImage(path string) (image.Image, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return "", fmt.Errorf("读取截图失败：%w", err)
+		return nil, fmt.Errorf("读取截图失败：%w", err)
 	}
 	defer f.Close()
 	img, _, err := image.Decode(f)
 	if err != nil {
-		return "", fmt.Errorf("解码截图失败：%w", err)
+		return nil, fmt.Errorf("解码截图失败：%w", err)
+	}
+	return img, nil
+}
+
+// indraRecognizeFile keeps the single-pass path for tests and callers that
+// only need the original recognizer. The production entry uses adaptive
+// padding and guarded retry variants instead.
+func indraRecognizeFile(ctx context.Context, path string) (string, error) {
+	img, err := decodeOCRImage(path)
+	if err != nil {
+		return "", err
 	}
 	return indraRecognize(ctx, img)
+}
+
+func indraRecognizePrepared(ctx context.Context, img image.Image) (string, error) {
+	text, err := indraRecognize(ctx, adaptivePadForOCR(img))
+	if err != nil {
+		return "", err
+	}
+	return CleanOcrText(fixDoubledLettersAll(text)), nil
+}
+
+func recognizeIndraWithRetries(ctx context.Context, img image.Image) (string, error) {
+	best, err := indraRecognizePrepared(ctx, img)
+	if err != nil {
+		return "", err
+	}
+	if !isSuspiciousOCRText(best) || !needsColorRetry(img) {
+		return best, nil
+	}
+	for _, variant := range []image.Image{colorDistanceForOCR(img), backgroundSubtractForOCR(img)} {
+		candidate, err := indraRecognizePrepared(ctx, variant)
+		if err != nil {
+			continue
+		}
+		if scoreOCRText(candidate) > scoreOCRText(best) {
+			best = candidate
+		}
+		if !isSuspiciousOCRText(best) {
+			break
+		}
+	}
+	return best, nil
 }
 
 // windowsRecognizeFileIn is the Windows.Media.Ocr path through PowerShell.
@@ -344,6 +394,8 @@ func (a *app) stopScreenshotOCR() {
 }
 
 func (a *app) recognizeScreenshot(imgPath string) {
+	cfg := a.store.Get()
+	mode := normalizeOCRMode(cfg.OCRMode)
 	a.stopScreenshotOCR()
 	ctx, cancel := context.WithCancel(context.Background())
 	a.mu.Lock()
@@ -362,9 +414,17 @@ func (a *app) recognizeScreenshot(imgPath string) {
 	if win != nil {
 		win.Update(func() {})
 	}
+	if mode == ocrModeVision {
+		go a.recognizeScreenshotVision(ctx, cancel, generation, imgPath, "")
+		return
+	}
 	go func() {
 		defer recoverLog("ocr.go:recognizeScreenshot")
-		text, err := recognizeImageFileIn(ctx, imgPath, a.store.Get().OCRLang)
+		text, err := recognizeImageFileIn(ctx, imgPath, cfg.OCRLang)
+		if mode == ocrModeLocalFirst && (err != nil || isSuspiciousOCRText(text)) {
+			a.recognizeScreenshotVision(ctx, cancel, generation, imgPath, CleanOcrText(text))
+			return
+		}
 		a.mu.Lock()
 		if generation != a.ocrGeneration || !a.isScreenshotMode {
 			a.mu.Unlock()
@@ -458,7 +518,7 @@ func (a *app) renderScreenshotSource(c *ui.Context, t *ui.Theme, s snapshot) {
 	if classifyOCRView(s) == ocrViewRecognizing {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(12, 2).Children(func() {
 			ui.Spinner(c).Size(15, 15)
-			ui.Text(c, "正在本地识别文字…").FontSize(13).TextColor(t.TextMuted).Grow(1)
+			ui.Text(c, "正在识别文字…").FontSize(13).TextColor(t.TextMuted).Grow(1)
 			if ui.Button(c, "取消").Height(26).FontSize(11).Clicked() {
 				a.stopScreenshotOCR()
 				a.mu.Lock()
@@ -478,6 +538,11 @@ func (a *app) renderScreenshotSource(c *ui.Context, t *ui.Theme, s snapshot) {
 					}
 					if ui.Button(c, "重新截图").Height(28).FontSize(12).Clicked() {
 						a.TriggerScreenshotOCR()
+					}
+					if s.aiRefining {
+						ui.Text(c, "AI 精翻处理中…").FontSize(11).TextColor(t.TextMuted)
+					} else if ui.Button(c, "AI 精翻").Height(28).FontSize(12).Tooltip("把截图发给 AI 核对原文并翻译，避免 OCR 错字").Clicked() {
+						a.visionRefine()
 					}
 				})
 			})
@@ -503,6 +568,11 @@ func (a *app) renderScreenshotSource(c *ui.Context, t *ui.Theme, s snapshot) {
 			}
 			if ui.Button(c, "重新截图").Height(28).FontSize(11).Clicked() {
 				a.TriggerScreenshotOCR()
+			}
+			if s.aiRefining {
+				ui.Text(c, "AI 精翻处理中…").FontSize(11).TextColor(t.TextMuted)
+			} else if ui.Button(c, "AI 精翻").Height(28).FontSize(11).Tooltip("把截图发给 AI 核对原文并翻译，避免 OCR 错字").Clicked() {
+				a.visionRefine()
 			}
 		})
 	}

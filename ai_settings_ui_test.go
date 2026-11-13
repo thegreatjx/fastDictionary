@@ -66,3 +66,25 @@ func TestSettingsAIHelpPanelUsesSelectedService(t *testing.T) {
 		t.Errorf("Ollama help is missing: %v", ttOllama.Texts())
 	}
 }
+
+func TestSettingsAIPageShowsGeminiModelGuidance(t *testing.T) {
+	a := newTestApp()
+	a.page = "ai"
+	a.aiHelpOpen = true
+	a.store.Update(func(c *Config) {
+		p, _ := aiPresetByID("gemini")
+		applyAIPreset(c, p)
+	})
+
+	tt := ui.NewTester(a.settingsView, 880, 640)
+	for _, want := range []string{
+		"Gemini（Google AI Studio）",
+		"从清单选择模型 ID",
+		"以 Google AI Studio 的 Gemini 为例",
+		"该模型支持图片输入和文字输出",
+	} {
+		if !tt.HasText(want) {
+			t.Errorf("Gemini 设置页缺少 %q: %v", want, tt.Texts())
+		}
+	}
+}

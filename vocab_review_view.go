@@ -82,7 +82,7 @@ func (a *app) pageVocabReview(c *ui.Context, t *ui.Theme) {
 		return
 	}
 
-	heading(c, t, "生词复习", "先回忆，再显示答案。三个按钮决定这个词下次出现的时间。")
+	PageTitle(c, t, "生词复习", "先回忆，再显示答案。三个按钮决定这个词下次出现的时间。")
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
 		ui.Progress(c, float64(a.vocabReviewIdx)/float64(total)).Grow(1)
 		ui.Textf(c, "剩余 %d / %d", total-a.vocabReviewIdx, total).FontSize(12).TextColor(t.TextMuted)
@@ -158,7 +158,7 @@ func (a *app) pageVocabReview(c *ui.Context, t *ui.Theme) {
 }
 
 func (a *app) reviewSummary(c *ui.Context, t *ui.Theme) {
-	heading(c, t, "复习完成", fmt.Sprintf("本轮复习了 %d 个词。到期的词会重新回到这里。", a.vocabReviewDone))
+	PageTitle(c, t, "复习完成", fmt.Sprintf("本轮复习了 %d 个词。到期的词会重新回到这里。", a.vocabReviewDone))
 	ui.Box(c).FillWidth().Padding(32, 24).Radius(10).Background(t.Surface).Border(1, t.Border).Children(func() {
 		ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
 			if a.vocabReviewDone == 0 && len(a.vocabReviewIDs) == 0 {

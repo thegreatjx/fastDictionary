@@ -208,7 +208,7 @@ func resolveSpeechLang(ctx context.Context, text, lang string) string {
 	if tag := strings.TrimSpace(lang); tag != "" {
 		return tag
 	}
-	if tag := detectLocal(text); tag != "" {
+	if tag := sourceLangFor(text); tag != "" {
 		return tag
 	}
 	if looksEnglish(text) {

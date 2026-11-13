@@ -1,0 +1,106 @@
+[
+  {
+    "name": "dark_banner_fast",
+    "path": "dark_banner_fast.png",
+    "category": "dark_banner_ui",
+    "lang": "en",
+    "expected": "Fast and efficient",
+    "font_fallback": false
+  },
+  {
+    "name": "dark_ui_settings",
+    "path": "dark_ui_settings.png",
+    "category": "dark_banner_ui",
+    "lang": "en",
+    "expected": "Settings and translation preferences",
+    "font_fallback": false
+  },
+  {
+    "name": "hover_word_tiny",
+    "path": "hover_word_tiny.png",
+    "category": "hover_word_tiny",
+    "lang": "en",
+    "expected": "Fast and efficient",
+    "font_fallback": false
+  },
+  {
+    "name": "artistic_shadow",
+    "path": "artistic_shadow.png",
+    "category": "artistic_and_styled",
+    "lang": "en",
+    "expected": "January 6-29",
+    "font_fallback": false
+  },
+  {
+    "name": "low_contrast_gray",
+    "path": "low_contrast_gray.png",
+    "category": "low_contrast",
+    "lang": "en",
+    "expected": "Fast and efficient",
+    "font_fallback": false
+  },
+  {
+    "name": "equal_luma_color",
+    "path": "equal_luma_color.png",
+    "category": "low_contrast",
+    "lang": "en",
+    "expected": "Fast and efficient",
+    "font_fallback": false
+  },
+  {
+    "name": "two_color_banner",
+    "path": "two_color_banner.png",
+    "category": "two_color_bg",
+    "lang": "en",
+    "expected": "Fast and efficient",
+    "font_fallback": false
+  },
+  {
+    "name": "ja_ui_light",
+    "path": "ja_ui_light.png",
+    "category": "multilingual_mixed",
+    "lang": "ja",
+    "expected": "設定を開いて翻訳言語を選択します。",
+    "font_fallback": false
+  },
+  {
+    "name": "ja_ui_dark",
+    "path": "ja_ui_dark.png",
+    "category": "dark_banner_ui",
+    "lang": "ja",
+    "expected": "翻訳結果をコピーしました。",
+    "font_fallback": false
+  },
+  {
+    "name": "ja_small",
+    "path": "ja_small.png",
+    "category": "hover_word_tiny",
+    "lang": "ja",
+    "expected": "これは日本語のテストです。",
+    "font_fallback": false
+  },
+  {
+    "name": "ja_mixed",
+    "path": "ja_mixed.png",
+    "category": "multilingual_mixed",
+    "lang": "ja",
+    "expected": "Translate 日本語 text into English",
+    "font_fallback": false
+  },
+  {
+    "name": "ja_vertical",
+    "path": "ja_vertical.png",
+    "category": "vertical_ja",
+    "lang": "ja",
+    "expected": "縦書きの日本語を認識します",
+    "font_fallback": false
+  },
+  {
+    "name": "negative_non_text",
+    "path": "negative_non_text.png",
+    "category": "negative_non_text",
+    "lang": "none",
+    "expected": "",
+    "font_fallback": false
+  }
+]

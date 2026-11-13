@@ -46,6 +46,7 @@ func TestFriendlyAIError(t *testing.T) {
 	}{
 		{context.DeadlineExceeded, "网络超时，请稍后重试。"},
 		{&aiFailure{kind: aiFailureRateLimit}, "请求过于频繁或额度用完，请稍后再试。"},
+		{&aiFailure{kind: aiFailureBadRequest}, "服务拒绝了请求：当前模型可能不支持图片输入，或请求格式不兼容；请检查模型 ID 和服务商文档。"},
 		{&aiFailure{kind: aiFailureAuth}, "API Key 无效或已过期，请在 设置 → AI 精翻 里重新填写。"},
 		{&aiFailure{kind: aiFailureNetwork, msg: "x"}, "无法连接 AI 服务，请检查地址、网络或代理。"},
 		{&aiFailure{kind: aiFailureMagpieDown}, "连不上本机 Magpie，请在设置里换一个服务商，或先启动 Magpie。"},

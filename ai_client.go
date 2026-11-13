@@ -126,13 +126,10 @@ func StreamAI(ctx context.Context, conn aiConn, system, user, effort string, onD
 	}, effort, onDelta)
 }
 
-// StreamAIWithImage sends the OCR text plus the screenshot. The caller decides
-// whether the service can read images; this function refuses instead of
-// sending a request the user already knows will fail.
+// StreamAIWithImage sends the OCR text plus the screenshot. The client does
+// not guess whether a user-selected model can read images: an incompatible
+// service reports its own error, which keeps the model ID fully user-owned.
 func StreamAIWithImage(ctx context.Context, conn aiConn, system, user, imageDataURL, effort string, onDelta func(string)) (string, error) {
-	if !conn.Vision {
-		return "", &aiFailure{kind: aiFailureBadRequest, msg: "当前服务没有开启图片输入，请先在设置中打开，或换一个支持看图的模型。"}
-	}
 	if imageDataURL == "" {
 		return "", &aiFailure{kind: aiFailureBadRequest, msg: "截图内容为空，无法发送给模型。"}
 	}

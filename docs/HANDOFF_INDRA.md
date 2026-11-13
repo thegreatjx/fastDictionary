@@ -26,7 +26,7 @@
 
 ## 环境事实（已验证）
 
-- 项目：`D:\AI_workspace\translate\fastDictionary`，module `fastDictionary`，Go 1.27.3，mygo v0.8.3
+- 项目：`D:\AI_workspace\translate\fastDictionary`，module `fastDictionary`，Go 1.27.3，mygo v0.9.0
 - **`github.com/ebitengine/purego v0.11.1` 已在 go.sum**（间接依赖）
 - **`purego.Dlopen` 不支持 Windows**（`dlfcn.go` 的 build tag 只有 darwin/freebsd/linux/netbsd）
   → 必须用 `syscall.NewLazyDLL("kernel32.dll")` 的 `LoadLibraryW` + `GetProcAddress`

@@ -78,12 +78,26 @@ Indra            : January 6-29
 - 手写体仍会错：`Forever` 认成 `Toneuer`。这是所有 OCR 的难点。
 - 密集表格会出现字符重复：`Fridaays`、`Sttocks`、`Nasddaq`。检测框偏大导致。
 - `script.onnx` 首次加载约 1.4 秒，之后毫秒级。
+- 深底浅字、灰底灰字、等亮度彩色字和贴边裁剪会把首字切成独立框。
+
+## 本地 P0 预处理
+
+`ocr_preprocess.go` 只处理截图与整页文档不同的地方：
+
+1. `adaptivePadForOCR` 用边缘像素向外延展，避免固定白边制造人工黑白交界线；
+2. `RecognizeImageFileIn` 在结果可疑且像素条件命中时，才尝试 `colorDistanceForOCR`
+   或 `backgroundSubtractForOCR`，并用 `scoreOCRText` 选更完整的候选；
+3. 不做分位数对比度拉伸。受控样本里，拉伸会让灰底灰字更碎，还会把
+   `efficient` 读成 `effficient`；
+4. `resources/ocr.ps1` 先查 `AvailableRecognizerLanguages`。指定的 OCR 语言包
+   不存在时直接报错，不再静默回退到用户语言列表。
 
 ## 回落
 
-模型或 DLL 缺失时，`RecognizeImageFileIn` 自动回落到 `windowsRecognizeFileIn`
-（原来的 PowerShell + Windows.Media.Ocr 路径）。不报错、不崩溃，只是质量退回旧水平。
-这条路径有测试保证（`TestIndraFallsBackWhenUnavailable`）。
+模型或 DLL 缺失、Indra 结果为空或可疑时，`RecognizeImageFileIn` 回落到
+`windowsRecognizeFileIn`（PowerShell + Windows.Media.Ocr）。语言包缺失会明确报错；
+其他情况下优先返回评分更高的候选。Indra 不可用的回落有测试保证
+（`TestIndraFallsBackWhenUnavailable`）。
 
 ## 复现基准
 
@@ -93,6 +107,11 @@ Indra            : January 6-29
 plaid_c150.jpg  plaid_bw200.jpg  stock_gs200.jpg  numbers_gs150.jpg
 crop_line.png   crop_block.png   crop_wide.png
 run4.py  timing.py  crop_time.py  rapid.py
+CASES.md  generate_cases.py  cases.json
 ```
 
-Python 环境需装 `indra-ocr`、`rapidocr`、`onnxruntime`。
+`CASES.md` 定义深底 UI、贴边小字、艺术字、日文横排/竖排、低对比、双色底和
+无字负样本；`generate_cases.py` 生成 PNG 与清单，图片不提交到仓库。
+指标见 `CASES.md`：ExactMatchRate、CER/WER、P50/P95、可疑触发率、用户改字率。
+
+Python 环境需装 `Pillow`；跑旧脚本还需 `indra-ocr`、`rapidocr`、`onnxruntime`。

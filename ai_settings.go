@@ -152,11 +152,11 @@ func (a *app) aiProbeStatus(cfg Config) aiProbeState {
 	return state
 }
 
-// loadAIModels fetches on settings open for Magpie only. A direct provider is
-// fetched when the user asks: opening a settings page should not spend a
-// request against an account the user has not finished configuring.
+// loadAIModels 在设置页打开和服务商切换后加载完整模型列表。Magpie 是本机
+// 网关，随时可拉；直连服务只在配置就绪时拉，避免未完成配置就花请求。
 func (a *app) loadAIModels() {
-	if cfg := a.store.Get(); !cfg.IsMagpie() {
+	cfg := a.store.Get()
+	if !cfg.IsMagpie() && cfg.AISetupProblem() != "" {
 		return
 	}
 	a.fetchAIModels(false)
@@ -171,18 +171,36 @@ func (a *app) fetchAIModels(force bool) {
 	source := aiEndpointSource(cfg)
 
 	a.mu.Lock()
-	if a.aiModels.phase == aiModelsLoading && a.aiModels.source == source {
+	if a.aiModelsBySource == nil {
+		a.aiModelsBySource = make(map[string]aiModelsState)
+	}
+	cached := a.aiModelsBySource[source]
+	if cached.phase == aiModelsLoading && cached.gen == a.aiModels.gen {
 		a.mu.Unlock()
 		return
 	}
-	if !force && a.aiModels.phase == aiModelsReady &&
-		a.aiModels.source == source && time.Since(a.aiModels.at) < 5*time.Minute {
-		a.mu.Unlock()
-		return
+	if !force {
+		if cached.phase == aiModelsReady && time.Since(cached.at) < 5*time.Minute {
+			a.aiModels = cached
+			a.mu.Unlock()
+			return
+		}
+		if a.aiModels.phase == aiModelsReady && a.aiModels.source == source &&
+			time.Since(a.aiModels.at) < 5*time.Minute {
+			a.aiModelsBySource[source] = a.aiModels
+			a.mu.Unlock()
+			return
+		}
+		if a.aiModels.phase == aiModelsLoading && a.aiModels.source == source {
+			a.mu.Unlock()
+			return
+		}
 	}
 	a.aiModels.gen++
 	gen := a.aiModels.gen
-	a.aiModels = aiModelsState{phase: aiModelsLoading, source: source, gen: gen}
+	loading := aiModelsState{phase: aiModelsLoading, source: source, gen: gen}
+	a.aiModels = loading
+	a.aiModelsBySource[source] = loading
 	a.mu.Unlock()
 	a.settingsRefresh()
 
@@ -192,18 +210,21 @@ func (a *app) fetchAIModels(force bool) {
 		defer cancel()
 		models, err := fetchAvailableModelsFunc(ctx, cfg.AIConn(cfg.AIModel))
 
-		a.mu.Lock()
-		if a.aiModels.gen != gen || a.aiModels.source != source {
-			a.mu.Unlock()
-			return
-		}
+		state := aiModelsState{source: source, gen: gen, at: time.Now()}
 		switch {
 		case errors.Is(err, errAIModelsUnsupported):
-			a.aiModels = aiModelsState{phase: aiModelsUnsupported, source: source, gen: gen, at: time.Now()}
+			state.phase = aiModelsUnsupported
 		case err != nil:
-			a.aiModels = aiModelsState{phase: aiModelsFailed, source: source, err: aiErrorDetail(err), gen: gen, at: time.Now()}
+			state.phase = aiModelsFailed
+			state.err = aiErrorDetail(err)
 		default:
-			a.aiModels = aiModelsState{phase: aiModelsReady, source: source, models: models, gen: gen, at: time.Now()}
+			state.phase = aiModelsReady
+			state.models = models
+		}
+		a.mu.Lock()
+		a.aiModelsBySource[source] = state
+		if a.aiModels.gen == gen && a.aiModels.source == source {
+			a.aiModels = state
 		}
 		a.mu.Unlock()
 		a.settingsRefresh()
@@ -213,25 +234,29 @@ func (a *app) fetchAIModels(force bool) {
 func (a *app) aiModelsStatus(cfg Config) aiModelsState {
 	source := aiEndpointSource(cfg)
 	a.mu.Lock()
-	state := a.aiModels
+	state := a.aiModelsBySource[source]
+	live := a.aiModels
+	if state.source == "" || (state.phase == aiModelsLoading && state.gen != live.gen) {
+		if live.source == source {
+			state = live
+		}
+	}
 	a.mu.Unlock()
-	if state.source != source {
+	if state.source != source || (state.phase == aiModelsLoading && state.gen != live.gen) {
 		return aiModelsState{}
 	}
 	return state
 }
 
-// getAIModels is the list the model selector shows. A direct provider without
-// a successful fetch gets only its current model; the Magpie fallback names
-// would be wrong there and are exactly the kind of hidden default this change
-// is removing.
+// getAIModels 返回模型选择器显示的清单。Magpie 有旧网关的兜底清单；
+// 带 ModelOptions 的服务（目前是 Gemini）不联网也能先显示官方模型清单；
+// 其他直连服务只保留当前模型，避免把别家的模型名当成默认值。
 func (a *app) getAIModels(cfg Config) []string {
 	return aiModelsForState(cfg, a.aiModelsStatus(cfg))
 }
 
-// aiModelsForState is the one place that turns a model state into the list the
-// selector shows. The settings page passes the same state it renders, so the
-// select and its note cannot disagree about whether a fetch succeeded.
+// aiModelsForState 是模型状态的唯一读取口：拉取成功优先用实时列表，
+// 否则用服务预设的离线清单。设置页传进来的状态和这里用的是同一个值。
 func aiModelsForState(cfg Config, state aiModelsState) []string {
 	if state.phase == aiModelsReady {
 		return append([]string(nil), state.models...)
@@ -239,14 +264,17 @@ func aiModelsForState(cfg Config, state aiModelsState) []string {
 	if cfg.IsMagpie() {
 		return append([]string(nil), defaultMagpieModels...)
 	}
+	if preset := aiPresetForConfig(cfg); len(preset.ModelOptions) > 0 {
+		return append([]string(nil), preset.ModelOptions...)
+	}
 	if model := strings.TrimSpace(cfg.AIModel); model != "" {
 		return []string{model}
 	}
 	return nil
 }
 
-// resetAIStatus cancels a running probe and forgets both results. It is used
-// when the service changes, where the old source is no longer meaningful.
+// resetAIStatus 只清当次探测的瞬时状态；按来源缓存的模型列表保留，切换
+// 服务商再切回来时不需要重新点「获取模型」。
 func (a *app) resetAIStatus() {
 	a.mu.Lock()
 	if a.aiProbe.cancel != nil {
