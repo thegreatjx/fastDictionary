@@ -354,6 +354,15 @@ func liftPopupY(curY, targetH, waTop, waBottom int) (int, int) {
 
 // fitHeight resizes the popup according to its current active mode,
 // and proactively lifts the window upwards if expanding downward would exceed the screen.
+// heightHeldWhileBusy 报告当前是否有可见的进行中内容，使窗口不该缩小。
+//
+// 流式回答还在长，高度估算会随增量抖动，先不缩；但生词推荐在面板收起后
+// 不可见，它的进行中状态不该把展开时的尺寸留在窗口上 —— 那样用户折叠
+// 面板会看到一整块空白。
+func heightHeldWhileBusy(s snapshot) bool {
+	return s.busy || s.aiBusy || (s.notesBusy && s.notesExpanded)
+}
+
 func (a *app) fitHeight() {
 	win := a.win
 	if win == nil {
@@ -397,7 +406,7 @@ func (a *app) fitHeight() {
 	// 估算会随增量抖动，先不缩；一旦结果落地或用户折叠面板，就按
 	// 新的内容高度回落，而不是把展开时的尺寸永久留在窗口上。
 	if _, curH := win.Size(); targetH < curH {
-		if s.busy || s.aiBusy || s.notesBusy {
+		if heightHeldWhileBusy(s) {
 			targetH = curH
 		}
 	}
