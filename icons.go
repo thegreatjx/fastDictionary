@@ -6,7 +6,8 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// Lucide 轮廓图标：统一 16×16 视口、1.5 描边、currentColor 模板着色。
+// Lucide 图标：统一 24×24 视口、1.5 描边、currentColor 模板着色；
+// 表示状态的几个（固定、选中）改用填充，和描边版共享同一条路径。
 // 资源以 go:embed 打进二进制，避免每个图标再写一份 Go 字符串常量。
 //
 //go:embed resources/icons/*.svg
