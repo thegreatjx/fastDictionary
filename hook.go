@@ -696,6 +696,11 @@ func runHookCommand() {
 }
 
 func hookLoop() {
+	// Fallback only: without it a panic that escapes the loop ends the process
+	// with nothing in the log. The loop itself must not die on one message,
+	// hence dispatchMessage's own guard below.
+	defer recoverLog("hook.go:hookLoop")
+
 	// A low-level hook callback is only delivered to a thread running a
 	// message loop, and Go moves goroutines between threads, so pin this one.
 	runtime.LockOSThread()
@@ -721,9 +726,20 @@ func hookLoop() {
 			runHookCommand()
 			continue
 		}
-		procTranslateMessage.Call(uintptr(unsafe.Pointer(&m)))
-		procDispatchMessageW.Call(uintptr(unsafe.Pointer(&m)))
+		dispatchMessage(&m)
 	}
+}
+
+// dispatchMessage hands one queued message to the window procedures that read it.
+//
+// Recovered per message, not around the loop: the hook thread is the only path a
+// selection takes into the app, so one bad message must cost one message. Letting
+// it reach the loop would end the thread and the trigger would stop working until
+// the app is restarted.
+func dispatchMessage(m *msgW) {
+	defer recoverLog("hook.go:dispatchMessage")
+	procTranslateMessage.Call(uintptr(unsafe.Pointer(m)))
+	procDispatchMessageW.Call(uintptr(unsafe.Pointer(m)))
 }
 
 // runOnMainThread starts the hook thread. The name is historical; nothing

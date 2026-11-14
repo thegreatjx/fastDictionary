@@ -27,3 +27,8 @@ jobs:
 
       - name: go test
         run: go test ./... -count=1
+
+      # The app spawns 54 goroutines over shared state. Without the detector a
+      # race only shows up as a user-reported glitch after release.
+      - name: go test -race
+        run: go test -race ./... -count=1
