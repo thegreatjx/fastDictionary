@@ -28,6 +28,15 @@ func TestTranslateLangsFallsBackToTheSecondLanguage(t *testing.T) {
 			wantTo:   "en",
 		},
 		{
+			// 用户报「划词中文不给我翻译」的那句：英文术语比汉字多，检测曾
+			// 返回空，回退被跳过，目标语言仍是中文，引擎把原文退了回来。
+			name:     "中英混排、英文术语居多时仍译到第二语言",
+			cfg:      base,
+			text:     "Claude 这个 Building Always on Agents，实际是 Personal Agent 的最基本的设计模式。",
+			wantFrom: "zh-Hans",
+			wantTo:   "en",
+		},
+		{
 			// 拉丁字母的句子不猜语种，交给引擎自己判定；目标语言照原样保留。
 			name:     "英文句子、目标中文时照常译成中文",
 			cfg:      base,

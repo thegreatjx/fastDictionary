@@ -50,6 +50,33 @@ func TestDetectLocalLeavesAmbiguousLatinToTheEngine(t *testing.T) {
 	}
 }
 
+// TestDetectLocalKeepsChineseWhenLatinTermsOutnumberIt 是「划词中文不给我翻译」的回归
+// 测试：中文句子夹英文术语时，拉丁字母会比汉字多。原判定 han > latin 不成立，
+// 源语言返回空，translateLangs 因此跳过同语言回退，目标语言仍是中文，引擎
+// 把原文退回来说「没有给出译文」。
+//
+// 反过来，英文句子里夹一两个汉字仍要交给引擎：猜错方向比不猜更糟。
+func TestDetectLocalKeepsChineseWhenLatinTermsOutnumberIt(t *testing.T) {
+	chinese := []struct{ text, why string }{
+		{"Claude 这个 Building Always on Agents，实际是 Personal Agent 的最基本的设计模式。", "英文术语多于汉字"},
+		{"之前我们在 Redis 上做过类似的 cache layer 设计，效果不错。", "同上"},
+	}
+	for _, c := range chinese {
+		if got := detectLocal(c.text); got != "zh-Hans" {
+			t.Errorf("detectLocal(%s) = %q, want \"zh-Hans\"：鉴定成空会让中文原文被当成翻译目标", c.why, got)
+		}
+	}
+
+	for _, text := range []string{
+		"The word 中文 appears here.",
+		"This is a plain English sentence.",
+	} {
+		if got := detectLocal(text); got != "" {
+			t.Errorf("detectLocal(%q) = %q, want \"\" so the engine detects it", text, got)
+		}
+	}
+}
+
 // TestLooksEnglishSeparatesEnglishFromOtherLatinScript covers the speech
 // fallback: a sentence of plain ASCII still has to be read by some voice, and
 // the stopwords are what tell an English one from a French or Dutch one.

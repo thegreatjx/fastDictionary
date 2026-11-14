@@ -84,7 +84,12 @@ func detectLocal(text string) string {
 		return "ja"
 	case hangul > 0:
 		return "ko"
-	case han > latin:
+	case han > 0 && han*3 >= latin:
+		// 中文句子夹英文术语是常态（「Claude 这个 Building Always on
+		// Agents」），拉丁字母会比汉字多。要求 han > latin 会把源语言
+		// 判成空，translateLangs 跳过同语言回退，目标语言仍是中文，
+		// 引擎就把原文退回来。三分之一的汉字就足以认成中文：反过来
+		// 英文句子里夹一两个汉字仍交给引擎，猜错方向比不猜更糟。
 		return "zh-Hans"
 	case thai > 0:
 		return "th"
