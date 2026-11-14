@@ -10,26 +10,35 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// langOptions is the languages the translator offers, in the order the picker
-// shows them: the ones a Chinese reader meets most, then the rest of the
-// common set.
+// langOptions is every language the translator offers, in the order the pickers
+// show them. 菜单只摆 langPrimary 这几门：先前把三十四种语言平铺在一个菜单里，
+// 高过一整屏，当前语言也看不见。其余收在「更多语言」二级菜单。
 //
-// The engines accept far more than this — both Microsoft and Google take any
-// BCP-47 tag they support, and a test of fourteen of them (Thai, Vietnamese,
-// Indonesian, Turkish, Arabic, Hindi, Portuguese, Italian, Dutch, Polish,
-// Ukrainian, Hebrew, Persian, Swedish) came back translated in under a second
-// each. The limit was this list, not the service: nine languages meant a user
-// reading Thai had no target to pick and no way to translate into it.
-var langOptions = []string{
-	// Most used by a Chinese reader.
-	"zh-Hans", "zh-Hant", "en", "ja", "ko",
-	// East and Southeast Asia.
-	"th", "vi", "id", "ms", "tl",
-	// Europe.
-	"fr", "de", "es", "pt", "it", "nl", "ru", "uk", "pl", "sv", "da",
-	"no", "fi", "cs", "ro", "hu", "el", "tr",
-	// Middle East and South Asia.
-	"ar", "he", "fa", "hi", "bn", "ur",
+// The engines accept far more than anything listed below — both Microsoft and
+// Google take any BCP-47 tag they support, and a test of fourteen of them
+// (Thai, Vietnamese, Indonesian, Turkish, Arabic, Hindi, Portuguese, Italian,
+// Dutch, Polish, Ukrainian, Hebrew, Persian, Swedish) came back translated in
+// under a second each. The limit is this list, not the service.
+
+// langOptions 是语言选择器的完整取值，顺序为：先 langPrimary，再按区域展开
+// langMoreGroups。它是从这两张表算出来的，不再手抄一份，否则改一处忘一处
+// 就会出现「菜单里有、设置页没有」这种不一致。
+var langOptions = func() []string {
+	out := append([]string(nil), langPrimary...)
+	for _, group := range langMoreGroups {
+		out = append(out, group...)
+	}
+	return out
+}()
+
+// langPrimary 是菜单第一层直接摆出来的语言：中文读者真正在用的那几个。
+var langPrimary = []string{"zh-Hans", "zh-Hant", "en", "ja", "ko"}
+
+// langMoreGroups 是收在「更多语言」里的部分，按区域分组，组间一条分隔线。
+var langMoreGroups = [][]string{
+	{"th", "vi", "id", "ms", "tl"},
+	{"fr", "de", "es", "pt", "it", "nl", "ru", "uk", "pl", "sv", "da", "no", "fi", "cs", "ro", "hu", "el", "tr"},
+	{"ar", "he", "fa", "hi", "bn", "ur"},
 }
 
 var langLabels = map[string]string{
@@ -60,6 +69,56 @@ func langFromLabel(label string) string {
 		}
 	}
 	return "zh-Hans"
+}
+
+// buildLangMenu fills a menu with the target-language choices: the five the
+// reader actually switches between, then one submenu holding the rest.
+//
+// 平铺三十四种语言的菜单占满整屏，当前语言在列表里也看不到；现在常用语言
+// 直接摆出来，其余按区域分组放进二级菜单，当前值在两级里都会打勾。
+func buildLangMenu(m *ui.Menu, current string, onPick func(tag string)) {
+	for _, tag := range langPrimary {
+		if m.Item(langLabels[tag]).Checked(tag == current).Chosen() {
+			onPick(tag)
+		}
+	}
+	if inLangMore(current) {
+		// 当前语言藏在二级菜单里时，父项要写出它是哪个，否则用户看不出自己在用哪门语言。
+		m.Separator()
+		m.Submenu("更多语言（"+langLabels[current]+"）", func(sub *ui.Menu) {
+			addMoreLangItems(sub, current, onPick)
+		})
+		return
+	}
+	m.Separator()
+	m.Submenu("更多语言", func(sub *ui.Menu) {
+		addMoreLangItems(sub, current, onPick)
+	})
+}
+
+func addMoreLangItems(sub *ui.Menu, current string, onPick func(tag string)) {
+	for i, group := range langMoreGroups {
+		if i > 0 {
+			sub.Separator()
+		}
+		for _, tag := range group {
+			if sub.Item(langLabels[tag]).Checked(tag == current).Chosen() {
+				onPick(tag)
+			}
+		}
+	}
+}
+
+// inLangMore reports whether tag lives in the submenu rather than the top level.
+func inLangMore(tag string) bool {
+	for _, group := range langMoreGroups {
+		for _, t := range group {
+			if t == tag {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // settingsRefresh repaints the settings window after a change that alters

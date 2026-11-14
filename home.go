@@ -82,18 +82,15 @@ func (a *app) pageHome(c *ui.Context, t *ui.Theme, cfg Config) {
 				targetLabel = "简体中文"
 			}
 			ui.MenuButton(c, "→ "+targetLabel, func(m *ui.Menu) {
-				for _, label := range langList() {
-					if m.Item(label).Checked(label == targetLabel).Chosen() {
-						code := langFromLabel(label)
-						a.store.Update(func(c *Config) { c.TargetLang = code })
-						a.mu.Lock()
-						src := a.home.source
-						a.mu.Unlock()
-						if src != "" {
-							a.homeTranslate(src)
-						}
+				buildLangMenu(m, cfg.TargetLang, func(code string) {
+					a.store.Update(func(c *Config) { c.TargetLang = code })
+					a.mu.Lock()
+					src := a.home.source
+					a.mu.Unlock()
+					if src != "" {
+						a.homeTranslate(src)
 					}
-				}
+				})
 			}).Height(HeightControl).FontSize(FontHelper).Shrink(0)
 
 			if SecondaryButton(c, t, "粘贴并翻译", iconCopy).Clicked() {

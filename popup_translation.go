@@ -25,14 +25,12 @@ func (a *app) renderPopupHeader(c *ui.Context, t *ui.Theme, cfg Config, s snapsh
 					targetLabel = "简体中文"
 				}
 				ui.MenuButton(c, targetLabel, func(m *ui.Menu) {
-					for _, label := range langList() {
-						if m.Item(label).Checked(label == targetLabel).Chosen() {
-							a.store.Update(func(c *Config) { c.TargetLang = langFromLabel(label) })
-							if s.source != "" {
-								a.translate(s.source)
-							}
+					buildLangMenu(m, cfg.TargetLang, func(code string) {
+						a.store.Update(func(c *Config) { c.TargetLang = code })
+						if s.source != "" {
+							a.translate(s.source)
 						}
-					}
+					})
 				}).Height(30).FontSize(12).Shrink(0)
 			}
 			pinIcon, pinTip := iconPin, "固定窗口（失焦不关闭）"
