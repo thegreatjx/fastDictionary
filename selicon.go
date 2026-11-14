@@ -451,14 +451,17 @@ func listProcessWindows(pid uint32) []string {
 func (a *app) hideSelIcon() {
 	a.mu.Lock()
 	win := a.sel.win
-	was := a.sel.shown
 	a.sel.shown = false
 	a.sel.gen++
 	a.mu.Unlock()
 	// Before the tip: from here on no pointer move is the chip's business.
 	disarmChipHover()
 	a.hideChipTip()
-	if win != nil && was && !win.IsDestroyed() {
+	// Hide whenever the window exists, not only when shown was true: the flag
+	// and the window can disagree (a ShowInactive that landed after an earlier
+	// Hide), and the old guard then left a chip on screen that no later hide
+	// would ever take down. Hide on a hidden window is a no-op.
+	if win != nil && !win.IsDestroyed() {
 		win.Hide()
 	}
 }

@@ -618,6 +618,8 @@ func (a *app) homeSubmit(raw string) {
 		a.home.transSaved = false
 		// 换了一段文字，在飞的精翻写回来的是上一段的译文。
 		a.home.cancelRefineLocked()
+		// 上一条「已保存 / 已复制」不再指向任何东西，横幅一并清掉。
+		a.actionSavedMsg, a.copiedMsg = "", ""
 	}
 	a.home.source = text
 	var nextRecent []string
@@ -673,6 +675,8 @@ func (a *app) homeTranslate(text string) {
 	a.home.target = ""
 	a.home.dict = nil
 	a.home.gdict = nil
+	// 新译文还没收藏过：换目标语言或重试都会走到这里。
+	a.home.transSaved = false
 	a.mu.Unlock()
 	a.settingsRefresh()
 

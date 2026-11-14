@@ -265,6 +265,8 @@
 - **测试**：`popup_streaming_test.go:13/31/48/66`。缺口：`result!=nil && aiText!=""` 组合、流式首字符 `{`、markdown.Stream 不可达分支
 
 #### U8 主窗口生命周期与置顶 · 高
+
+> 说明：本条实际描述的是**浮窗**（`a.win`）。真正的「主窗口」与查词工作台见 U18。
 - **位置**：`fastDictionary/popup.go:93-99, 155, 158-159, 176, 343-374, 456-540, 544-620`；`fastDictionary/popup_translation.go:39-57`；`fastDictionary/popup_view.go:44-48`；`fastDictionary/popup_layout.go:254-322`
 - **载体**：`win *mygo.Window`(popup.go:93)、`pinned bool`(98)、`screenshotPinned bool`(176)、`isQuitting bool`(155)、`pausedUntil time.Time`(158)、`popupX/Y/W/H int`(178-181)
 - **状态 / 迁移**：`win.Hide()` 隐藏 / `Show()+Focus()` 可见激活 / `pinned=true` 强制置顶 / `screenshotPinned=true` 截图临时置顶。`openPopupAction`(530-535) / `openPopupWithText` → `SetSize/SetPosition/SetAlwaysOnTop/Show/Focus/Update`；关闭(53-57) 与 Escape(view.go:44-48) → `stopAudio(); stopScreenshotOCR(); win.Hide()`；pin 按钮(39-52) → `a.pinned = !a.pinned`；`openPopupWithText`(600-603) `if a.screenshotPinned { a.pinned = false; a.screenshotPinned = false }` 作为兜底
@@ -353,6 +355,16 @@
 - **风险**：`grammarResultPrefill` 只由 `applyParsedAction` 消费，若解析失败未调用（810-817 仅 `aiText != ""` 时调用），标志残留为 true 并被 `saveTabLocked` 存进 tab；下次恢复后若 `grammarResult.Translation` 已被别处改动，会把过期译文合并进新结果；`tabViewState` 保存该 bool 却不保存 `aiGen`，恢复后预填与代次脱钩
 - **显式化**：`type TranslationPrefill struct{ Gen uint64; Text string; Consumed bool }` + `func (p *TranslationPrefill) Set(gen uint64, text string) / Consume(gen uint64) (string, bool)`；tab 快照保存整个 `TranslationPrefill`
 - **测试**：**无**，全缺口（预填、消费、跨 tab 残留）
+
+#### U18 主窗口与查词工作台（批次 10 新增） · 高
+- **位置**：`fastDictionary/settings.go:85-110`（导航分组）、`148-193`（侧栏与常驻胶囊）、`468-535`（`showMainWindow`/`toggleMainWindow`/`showSettings`）；`fastDictionary/home.go:71-580`（`pageHome` 与三个页签）、`584-660`（`homeClear`/`homeSubmit`/`homeSwitchTab`）、`1030+`（四个保存入口）；`fastDictionary/main.go:52-100`（`trayMenu`）、`150-160`（托盘左键）、`326-333`（单实例）、`605-625`（启动分支）；`fastDictionary/tray.go:70-80, 116-124`
+- **载体**：`mainWinVisible bool`(popup.go:105)、`cfgWin *mygo.Window`(101)、`page string`(108)、`navScroll ui.ScrollState`(292)、`home homeState`(261)、`settingsPageSeen string`(295)；`homeState` 内部另有 `tab/source/target/busy/aiBusy/aiRefining/grammarResult/writingResult/grammarSentIdx/recent` 等字段，代次为 `gen`/`aiGen`/`aiRefineGen`
+- **状态 / 迁移**：主窗口 `隐藏 / 可见 / 前台`；页面 `page`（`home`/`general`/`selection`/`translate`/`dict`/`ai`/`actions`/`vocabulary`/`hotkey`/`about`）；工作台 `空态 / 查询中 / 译文+词典 / 拆解中 / 长难句 / 批改中 / 润色`（由 `home.tab` 与 `home.busy`/`aiBusy`/结果 nil 哨兵组合）；分句 `grammarSentIdx + splitGrammarSentences`（越界夹逼）。入口：托盘左键 `toggleMainWindow`(517) → 可见则隐藏、否则 `showMainWindow("home")`；托盘菜单/划词条「更多工具」`showMainWindow(page)`；启动 `startPage := a.page`，空则 `home`(main.go:621)；再次启动 `OnSecondInstance` → `RunOnMain(showMainWindow("home"))`(326)；关闭 `OnClose` 拦截为 `mainWinVisible=false + Hide()`(506-508)，退出不受影响
+- **隐性**：同一个窗口承载「工作台首页 + 全部设置页」，`page` 的字符串值同时决定侧栏高亮与右侧内容；`homeState` 与浮窗的 `source/target/grammarResult/...` 是同名但完全独立的两套，函数也成对存在（`homeTranslate` vs `translateTextWithReflow`、`homeSaveGrammar` vs `saveGrammarToVocab`）
+- **风险**：① `home.input` 只由 UI 线程读写（TextArea 绑定 `&a.home.input`），其余 `homeState` 字段走 `a.mu`；新增读取路径时必须分清属于哪一类；② 精翻结果写 `target/engine/elapsed`，新查询必须调 `cancelRefineLocked()`，否则旧译文盖到新卡片上（批次 10 已修，`home_test.go` 覆盖取消路径）；③ 保存类入口必须先 `Add` 再按 `LastSaveError()` 报结果，早期版本先宣称成功（批次 10 已改）；④ 侧栏五组 + 底部胶囊在 700×500 下超出约 119 DIP，靠 `navScroll` 承载，改导航或胶囊高度时 `design_system_test.go` 的尺寸断言是唯一守卫；⑤ `mainWinVisible` 靠 `OnClose`/`showMainWindow`/`toggleMainWindow` 三处手工维护，没有窗口级断言可测
+- **显式化**：`type Page int`（`pageHome/pageGeneral/...`）取代 `page` 字符串；`type MainWindowState uint8`（`mainHidden/mainVisible`）；`type HomeTab uint8`（`tabTranslate/tabGrammar/tabWriting`）取代 `"translate"/"grammar"/"writing"`；`homeState` 与浮窗同名状态抽 `ResultState` 共用（source/target/engine/errText/dict/grammarResult/writingResult）
+- **测试**：`home_test.go`（就绪态文案/缺 AI 引导/三个页签不空白/清空保留页签与复查列表/反馈横幅/启动与托盘接线）、`design_system_test.go:196-235`（五组导航、920×660 不需滚动、700×500 可滚动）；缺口：真实窗口可见性、`OnSecondInstance`、精翻竞态（需网络，只有取消路径有源码契约）
+
 
 **ui 组补充**：下列字段声明于 `popup.go`、迁移在其他组文件，已由 A 组对应条目覆盖：`editingActionID`(132)、`customizingAction`(133)、`vocabSearchQuery`(134)、`vocabCategoryIdx`(142)、`vocabList`(143)、`vocabExpandedID`(147)、`selHoverTip`(136)、`selHoverIdx`(137)、`showNotes`(99)、`hotkeyDraftsInit`(231)、`pendingHotkeySelection/Input/Screenshot`(228-230)、`loadingModels`(233)、`magpieModels`(232)、`hotkeyMsg`(227)、`confirmClearVocab`(238)、`vocabConfirmDeleteID`(239)、`lastDeletedVocab`(240)、`newBlockedApp`(236)、`settingsScroll`(245)、`settingsPageSeen`(248)、`aiTest`(224)、`isQuitting`(155)、`pausedUntil`(158)、`actionSaveFeedback`(135)。ui 组建议统一为 `SettingsNavState`、`VocabSelectionState`、`HotkeyDraftState`、`AppSessionState{Quitting bool; PauseUntil time.Time}`。
 

@@ -411,7 +411,6 @@ func (a *app) fitHeight() {
 	// feedback loop, so it is the one place that knows the measured content
 	// is about to be different: let scheduleAutofit take a fresh decision.
 	a.autofitDir = 0
-	a.autofitSteps = 0
 	a.autofitLocked = false
 	a.mu.Unlock()
 

@@ -54,7 +54,6 @@ func TestAutofitResumesAfterContentChanges(t *testing.T) {
 	// fitHeight does rather than opening a real one.
 	a.mu.Lock()
 	a.autofitDir = 0
-	a.autofitSteps = 0
 	a.autofitLocked = false
 	a.mu.Unlock()
 

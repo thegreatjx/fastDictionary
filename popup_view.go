@@ -280,7 +280,6 @@ func (a *app) scheduleAutofit(scrollEl, contentEl ui.Element) {
 // Once they disagree, the correction is dropped and later ones are ignored
 // until fitHeight reports the content itself changed. a.mu must be held.
 func (a *app) autofitDecision(delta float32, ok bool) (float32, bool) {
-	a.autofitTarget = 0
 	if !ok {
 		// Already within a few DIPs: nothing to correct, and no reason to
 		// remember a direction to compare against.
@@ -293,7 +292,6 @@ func (a *app) autofitDecision(delta float32, ok bool) (float32, bool) {
 		if diff := a.measuredContentH - a.autofitLockContentH; diff > 8 || diff < -8 {
 			a.autofitLocked = false
 			a.autofitDir = 0
-			a.autofitSteps = 0
 		} else {
 			return 0, false
 		}
@@ -303,9 +301,7 @@ func (a *app) autofitDecision(delta float32, ok bool) (float32, bool) {
 		a.autofitLockContentH = a.measuredContentH
 		return 0, false
 	}
-	a.autofitTarget = delta
 	a.autofitDir = delta
-	a.autofitSteps++
 	return delta, true
 }
 

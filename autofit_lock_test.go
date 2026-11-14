@@ -10,7 +10,6 @@ func TestAutofitLockReleasesWhenContentGrows(t *testing.T) {
 	a.autofitLocked = true
 	a.autofitLockContentH = 100
 	a.autofitDir = -43
-	a.autofitSteps = 2
 	a.measuredContentH = 140
 
 	delta, ok := a.autofitDecision(40, true)
@@ -20,8 +19,8 @@ func TestAutofitLockReleasesWhenContentGrows(t *testing.T) {
 	if a.autofitLocked {
 		t.Fatal("内容已经变化，振荡锁定必须解除，否则流式回答期间窗口不再长高")
 	}
-	if a.autofitSteps != 1 {
-		t.Fatalf("解除锁定后应重新计数，autofitSteps=%d", a.autofitSteps)
+	if a.autofitDir != 40 {
+		t.Fatalf("解除锁定后应采纳新方向，autofitDir=%v", a.autofitDir)
 	}
 }
 
