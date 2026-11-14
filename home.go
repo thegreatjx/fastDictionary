@@ -53,6 +53,21 @@ type homeState struct {
 	recent []string
 }
 
+// cancelRefineLocked drops the in-flight AI refine together with the button
+// state that belongs to it. A new lookup must call this: the refine result is
+// written into target/engine/elapsed, so letting it land after the user has
+// looked up something else replaces the new translation with the old one's.
+// Caller must hold a.mu.
+func (h *homeState) cancelRefineLocked() {
+	if h.aiRefineCancel != nil {
+		h.aiRefineCancel()
+		h.aiRefineCancel = nil
+	}
+	h.aiRefineGen++
+	h.aiRefining = false
+	h.aiRefineErr = ""
+}
+
 func (a *app) pageHome(c *ui.Context, t *ui.Theme, cfg Config) {
 	at := appTheme(t)
 
@@ -137,6 +152,25 @@ func (a *app) pageHome(c *ui.Context, t *ui.Theme, cfg Config) {
 
 	if h.tab == "" {
 		h.tab = "translate"
+	}
+
+	// 保存/复制的反馈条：与浮窗共用一份文案和三秒时限。以前这些文案只写进
+	// actionSavedMsg，主窗口却从不渲染它们，保存失败也就无声无息。
+	a.mu.Lock()
+	a.noteFeedbackLocked()
+	feedback := ""
+	if a.feedbackVisibleLocked() {
+		feedback = a.actionSavedMsg
+		if feedback == "" {
+			feedback = a.copiedMsg
+		}
+	}
+	a.mu.Unlock()
+	if feedback != "" {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
+			ui.Icon(c, iconInfo).Size(FontHelper, FontHelper).TextColor(at.TextMuted)
+			ui.Text(c, feedback).Font(fontUI).FontSize(FontHelper).TextColor(at.TextSec).Wrap().Grow(1)
+		})
 	}
 
 	// 空态就绪面板：清晰告诉用户软件已启动、划词监听与快捷键就绪
@@ -383,6 +417,18 @@ func (a *app) renderHomeTranslateTab(c *ui.Context, t *ui.Theme, at AppTheme, cf
 			})
 		})
 	}
+
+	// 既没有译文也没有词条，且不在查询中：引擎返回空文本时就是这种状态。
+	// 留白会被当成「页面没加载」，所以补一句可执行的话。
+	if h.target == "" && h.dict == nil && h.gdict == nil {
+		SurfaceCard(c, t).Children(func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
+				ui.Icon(c, iconSearch).Size(IconSize, IconSize).TextColor(at.TextMuted)
+				ui.Text(c, "这次没有取到译文，换一段文字或点「翻译」再试一次。").
+					Font(fontUI).FontSize(FontHelper).TextColor(at.TextMuted).Wrap().Grow(1)
+			})
+		})
+	}
 }
 
 func (a *app) renderHomeGrammarTab(c *ui.Context, t *ui.Theme, at AppTheme, cfg Config, h homeState) {
@@ -540,12 +586,9 @@ func (a *app) homeClear() {
 	if a.home.aiCancel != nil {
 		a.home.aiCancel()
 	}
-	if a.home.aiRefineCancel != nil {
-		a.home.aiRefineCancel()
-	}
+	a.home.cancelRefineLocked()
 	a.home.gen++
 	a.home.aiGen++
-	a.home.aiRefineGen++
 	recent := a.home.recent
 	tab := a.home.tab
 	if tab == "" {
@@ -573,6 +616,8 @@ func (a *app) homeSubmit(raw string) {
 		a.home.writingSaved = false
 		a.home.wordSaved = false
 		a.home.transSaved = false
+		// 换了一段文字，在飞的精翻写回来的是上一段的译文。
+		a.home.cancelRefineLocked()
 	}
 	a.home.source = text
 	var nextRecent []string
@@ -622,6 +667,7 @@ func (a *app) homeTranslate(text string) {
 	a.mu.Lock()
 	a.home.gen++
 	gen := a.home.gen
+	a.home.cancelRefineLocked()
 	a.home.busy = true
 	a.home.errText = ""
 	a.home.target = ""
@@ -892,9 +938,29 @@ func (a *app) homeRunWriting(text string, fresh bool) {
 	}()
 }
 
+// homeSaved records the outcome of a vocabulary write: the flag that replaces
+// the button, the banner line, or — when the store could not write — the error
+// card. The three saves below used to announce success before the store had
+// answered, so a full disk still read "已保存 ✓".
+func (a *app) homeSaved(flag *bool, msg string, err error) {
+	a.mu.Lock()
+	*flag = err == nil
+	if err != nil {
+		a.home.errText = "保存失败：" + err.Error()
+	} else {
+		a.actionSavedMsg = msg
+	}
+	a.mu.Unlock()
+	a.settingsRefresh()
+}
+
 func (a *app) homeSaveWord() {
 	a.mu.Lock()
 	h := a.home
+	// Optimistic, and reverted below if the write fails: enriching a word hits
+	// the dictionary services, and leaving the button live for a second lets a
+	// double click save the entry twice.
+	a.home.wordSaved = true
 	a.mu.Unlock()
 	if h.source == "" {
 		return
@@ -913,10 +979,6 @@ func (a *app) homeSaveWord() {
 	} else if h.dict != nil && len(h.dict.Explains) > 0 {
 		explanation = strings.Join(h.dict.Explains, "；")
 	}
-	a.mu.Lock()
-	a.home.wordSaved = true
-	a.actionSavedMsg = "已保存「" + h.source + "」到生词本 ✓"
-	a.mu.Unlock()
 	a.settingsRefresh()
 
 	entry := VocabularyEntry{
@@ -927,26 +989,22 @@ func (a *app) homeSaveWord() {
 		defer recoverLog("home.go:homeSaveWord")
 		EnrichVocabularyEntry(&entry)
 		GetVocabularyStore().Add(entry)
+		a.homeSaved(&a.home.wordSaved, "已保存「"+h.source+"」到生词本 ✓",
+			GetVocabularyStore().LastSaveError())
 	}()
 }
 
 func (a *app) homeSaveTranslation() {
 	a.mu.Lock()
 	src, dst := a.home.source, a.home.target
+	a.mu.Unlock()
 	if src == "" || dst == "" {
-		a.mu.Unlock()
 		return
 	}
-	a.home.transSaved = true
-	a.actionSavedMsg = "已保存到生词本 ✓"
-	a.mu.Unlock()
-	a.settingsRefresh()
-	go func() {
-		defer recoverLog("home.go:homeSaveTranslation")
-		GetVocabularyStore().Add(VocabularyEntry{
-			Term: TruncateEllipsis(src, 80), Context: src, ContextTranslation: dst, Source: "translate", CreatedAt: time.Now(),
-		})
-	}()
+	GetVocabularyStore().Add(VocabularyEntry{
+		Term: TruncateEllipsis(src, 80), Context: src, ContextTranslation: dst, Source: "translate", CreatedAt: time.Now(),
+	})
+	a.homeSaved(&a.home.transSaved, "已保存到生词本 ✓", GetVocabularyStore().LastSaveError())
 }
 
 func (a *app) homeSaveGrammar() {
@@ -959,14 +1017,12 @@ func (a *app) homeSaveGrammar() {
 		return
 	}
 	sent, _, _ := grammarActiveSentence(src, idx)
-	a.home.grammarSaved = true
-	a.actionSavedMsg = "长难句已保存到生词本 ✓"
 	a.mu.Unlock()
-	a.settingsRefresh()
 
 	GetVocabularyStore().Add(VocabularyEntry{
 		Term: truncateFor(sent, 24), Context: sent, ContextTranslation: res.Translation, Source: "grammar", CreatedAt: time.Now(),
 	})
+	a.homeSaved(&a.home.grammarSaved, "长难句已保存到生词本 ✓", GetVocabularyStore().LastSaveError())
 }
 
 func (a *app) homeSaveWriting() {
@@ -977,12 +1033,10 @@ func (a *app) homeSaveWriting() {
 		a.mu.Unlock()
 		return
 	}
-	a.home.writingSaved = true
-	a.actionSavedMsg = "写作改进已保存到生词本 ✓"
 	a.mu.Unlock()
-	a.settingsRefresh()
 
 	GetVocabularyStore().Add(VocabularyEntry{
 		Term: truncateFor(src, 24), Definition: res.Improved, Context: src, ContextTranslation: res.Summary, Source: "writing", CreatedAt: time.Now(),
 	})
+	a.homeSaved(&a.home.writingSaved, "写作改进已保存到生词本 ✓", GetVocabularyStore().LastSaveError())
 }

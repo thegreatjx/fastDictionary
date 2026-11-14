@@ -617,7 +617,12 @@ func main() {
 		} else if openSettingsFlag {
 			a.showSettings()
 		} else if !headless && !minimizedFlag {
-			a.showMainWindow("home")
+			// --page 点名了某一页就用它，没指定时打开工作台。
+			startPage := a.page
+			if startPage == "" {
+				startPage = "home"
+			}
+			a.showMainWindow(startPage)
 		}
 
 		if shotPath != "" {

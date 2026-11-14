@@ -375,13 +375,16 @@ func (a *app) noteFeedbackLocked() {
 	if text == "" {
 		return
 	}
-	win := a.win
+	// 两个窗口共用这一份文案：浮窗底部和主窗口首页都要它，谁在前就刷谁。
+	popupWin, mainWin := a.win, a.cfgWin
 	a.feedbackTimer = time.AfterFunc(feedbackTTL, func() {
 		a.mu.Lock()
 		a.feedbackTimer = nil
 		a.mu.Unlock()
-		if win != nil && !win.IsDestroyed() {
-			win.Update(func() {})
+		for _, w := range []*mygo.Window{popupWin, mainWin} {
+			if w != nil && !w.IsDestroyed() {
+				w.Update(func() {})
+			}
 		}
 	})
 }

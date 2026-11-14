@@ -71,6 +71,33 @@ func TestHomeGrammarTabIsNeverBlank(t *testing.T) {
 	}
 }
 
+// TestHomeTranslateTabIsNeverBlank covers the same hole on the translate tab:
+// when the engines answer with nothing and there is no error to show, an empty
+// column reads as “the page did not load”.
+func TestHomeTranslateTabIsNeverBlank(t *testing.T) {
+	a := newTestApp()
+	a.home.source = "hello"
+	a.home.tab = "translate"
+
+	texts := strings.Join(renderHome(t, a), "")
+	if !strings.Contains(texts, "这次没有取到译文") {
+		t.Errorf("空译文时页签是空白的：%q", texts)
+	}
+}
+
+// TestHomeShowsSaveAndCopyFeedback pins the banner: 复制 / 收藏 write into
+// actionSavedMsg, and the workbench used to render none of it, so a failed
+// save looked exactly like a successful one.
+func TestHomeShowsSaveAndCopyFeedback(t *testing.T) {
+	a := newTestApp()
+	a.actionSavedMsg = "已保存到生词本 ✓"
+
+	texts := strings.Join(renderHome(t, a), "")
+	if !strings.Contains(texts, "已保存到生词本") {
+		t.Errorf("主窗口没有渲染保存反馈：%q", texts)
+	}
+}
+
 // TestHomeSwitchTabWithoutSourceStaysLocal pins the state machine: switching a
 // tab with nothing looked up yet must not start a request, and the tab survives
 // a clear so the user keeps the view they chose.
@@ -106,7 +133,8 @@ func TestHomeSwitchTabWithoutSourceStaysLocal(t *testing.T) {
 func TestMainWindowIsTheDefaultEntry(t *testing.T) {
 	src := readSourceFile(t, "main.go")
 	for _, want := range []string{
-		`a.showMainWindow("home")`,
+		"a.showMainWindow(startPage)",
+		`startPage = "home"`,
 		`case "--minimized", "-minimized", "--autostart":`,
 		"t.OnClick(a.toggleMainWindow)",
 		"打开主窗口（查词与翻译）",
