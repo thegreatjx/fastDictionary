@@ -150,6 +150,32 @@ func sourceLangFor(text string) string {
 	return ""
 }
 
+// translateLangs picks the source and target language for a translation.
+//
+// 目标语言等于原文语言时（中文用户把目标设成简体中文，又输入中文），机器翻译会
+// 改译到第二语言，否则卡片上“译文”就是原文本身。这条规则有三个消费者——机器
+// 翻译、长难句的机翻预填、AI 精翻——以前各写一份，精翻那一份漏了回退，于是点
+// 「AI 精翻」会把中文再译回中文，看着像“把我的译文又翻了回去”。
+func translateLangs(cfg Config, text string) (from, to string) {
+	from = sourceLangFor(text)
+	to = cfg.TargetLang
+	if to == "" {
+		to = "zh-Hans"
+	}
+	if from == to || sameLang(from, to) {
+		to = cfg.SecondLang
+		// 第二语言为空或与原文语言相同时，至少给一个能出结果的方向。
+		if to == "" || sameLang(from, to) {
+			if langPrefix(from) == "zh" {
+				to = "en"
+			} else {
+				to = "zh-Hans"
+			}
+		}
+	}
+	return from, to
+}
+
 // ---------------------------------------------------------------------------
 // Microsoft: unauthenticated translatetext endpoint (successor of the
 // api-edge.cognitive.microsofttranslator.com flow whose token endpoint

@@ -683,11 +683,7 @@ func (a *app) homeTranslate(text string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
 
-		from := sourceLangFor(text)
-		to := cfg.TargetLang
-		if from == to || sameLang(from, to) {
-			to = cfg.SecondLang
-		}
+		from, to := translateLangs(cfg, text)
 		r := TranslateRace(ctx, text, from, to, cfg.EngineMode)
 
 		var yd *YoudaoDict
@@ -744,6 +740,9 @@ func (a *app) homeRefineWithAI() {
 		a.mu.Unlock()
 		return
 	}
+	// 目标语言与原文同语言时回退到第二语言：否则模型只能把原文再译一遍，
+	// 卡片上的“译文”就变成用户自己输入的字。
+	_, refineTo := translateLangs(cfg, source)
 	if a.home.aiRefineCancel != nil {
 		a.home.aiRefineCancel()
 	}
@@ -760,7 +759,7 @@ func (a *app) homeRefineWithAI() {
 		defer recoverLog("home.go:homeRefineWithAI")
 		defer cancel()
 		started := time.Now()
-		sys := "You are a translator. Translate the text into " + langPromptName(cfg.TargetLang) +
+		sys := "You are a translator. Translate the text into " + langPromptName(refineTo) +
 			". Keep terminology accurate, keep the original's tone and structure, and output only the translation with no explanation."
 		out, err := StreamAI(ctx, cfg.AIConn(cfg.AIModel), sys, source, cfg.AIReasoningEffortFor(cfg.AIModel), nil)
 		a.mu.Lock()
@@ -773,9 +772,14 @@ func (a *app) homeRefineWithAI() {
 		if err != nil {
 			a.home.aiRefineErr = friendlyAIError(err)
 		} else if txt := strings.TrimSpace(out); txt != "" {
-			a.home.target = flattenTranslation(txt)
-			a.home.engine = "AI 精翻"
-			a.home.elapsed = time.Since(started)
+			if refineEchoedInput(source, txt) {
+				// 模型把原文原样退回来了：写入会把已有译文换成一模一样的输入。
+				a.home.aiRefineErr = "模型把原文原样返回了，换个目标语言再试"
+			} else {
+				a.home.target = flattenTranslation(txt)
+				a.home.engine = "AI 精翻"
+				a.home.elapsed = time.Since(started)
+			}
 		}
 		a.mu.Unlock()
 		a.settingsRefresh()

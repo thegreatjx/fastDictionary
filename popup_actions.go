@@ -133,12 +133,7 @@ func (a *app) translateTextWithReflow(text string, keepParagraphs bool) {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
 
-		from := sourceLangFor(text)
-		to := cfg.TargetLang
-		if from == cfg.TargetLang || sameLang(from, to) {
-			to = cfg.SecondLang // reading your own language: translate out
-		}
-
+		from, to := translateLangs(cfg, text)
 		r := TranslateRace(ctx, text, from, to, cfg.EngineMode)
 
 		word := isWord(text)
@@ -513,11 +508,13 @@ func (a *app) saveWritingToVocab(res *ImproveWritingResult) {
 // the model will later overwrite with its own translation.
 func (a *app) prefillActionTranslation(gen requestToken, text, targetLang string) {
 	cfg := a.store.Get()
-	from := sourceLangFor(text)
-	to := targetLang
-	if from == to || sameLang(from, to) {
-		to = cfg.SecondLang
+	// targetLang 是调用方指定要填入的语言；与原文同语言时仍回退到第二语言，
+	// 否则预填的「译文」就是原文本身。
+	prefillCfg := cfg
+	if targetLang != "" {
+		prefillCfg.TargetLang = targetLang
 	}
+	from, to := translateLangs(prefillCfg, text)
 	go func() {
 		defer recoverLog("popup_actions.go:prefillActionTranslation")
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
@@ -958,8 +955,11 @@ func (a *app) refineWithAI() {
 	}
 
 	a.mu.Lock()
-	source, targetLang := a.source, cfg.TargetLang
+	source := a.source
 	isScreenshotMode, ocrPath := a.isScreenshotMode, a.ocrPath
+	// 目标语言与原文同语言时（中文用户把目标设成中文又输入中文）回退到第二语言，
+	// 否则模型会把原文再译回原文，卡片上就是“译文等于输入”。
+	_, refineTo := translateLangs(cfg, source)
 	// 精翻只替换 a.target，不碰正在输出的 AI 卡片，所以用自己的代次，
 	// 不调 stopAIPassLocked（那会自增 aiGen 并掐断卡片流）。
 	// 连续点两次精翻时，第二次在这里让第一次失效。
@@ -982,7 +982,7 @@ func (a *app) refineWithAI() {
 	go func() {
 		defer recoverLog("popup_actions.go:refineWithAI")
 		defer cancel()
-		sys := "You are a translator. Translate the text into " + langPromptName(targetLang) +
+		sys := "You are a translator. Translate the text into " + langPromptName(refineTo) +
 			". Keep terminology accurate, keep the original's tone and structure, and output only the translation with no explanation."
 		started := time.Now()
 		effort := cfg.AIReasoningEffortFor(cfg.AIModel)
@@ -1004,7 +1004,7 @@ func (a *app) refineWithAI() {
 			if dataURL, imageErr := compressedImageFileDataURL(ocrPath); imageErr == nil {
 				log.Printf("fastDictionary: text AI refine failed, retrying with compressed screenshot: %v", err)
 				out, err = StreamAIWithImage(ctx, cfg.AIConn(cfg.AIModel),
-					screenshotRefineSystemPrompt(targetLang), screenshotRefineUserPrompt(source),
+					screenshotRefineSystemPrompt(refineTo), screenshotRefineUserPrompt(source),
 					dataURL, effort, nil)
 			} else {
 				log.Printf("fastDictionary: screenshot AI fallback unavailable: %v", imageErr)
@@ -1024,6 +1024,16 @@ func (a *app) refineWithAI() {
 		if err != nil {
 			a.aiRefineErr = friendlyAIError(err)
 		} else if text := strings.TrimSpace(out); text != "" {
+			if refineEchoedInput(source, text) {
+				// 模型把原文原样退回来了（目标语言等于原文，或者它拒绝翻译）：
+				// 写入会把用户已有的译文换成一模一样的输入，看起来就是“又把译文翻回去了”。
+				a.aiRefineErr = "模型把原文原样返回了，换个目标语言再试"
+				a.mu.Unlock()
+				if win != nil {
+					win.Update(func() {})
+				}
+				return
+			}
 			a.target = flattenTranslation(text)
 			a.engine = "AI 精翻"
 			a.aiRefineErr = ""
@@ -1111,6 +1121,18 @@ func friendlyAIError(err error) string {
 
 // langPromptName gives the model a language name it will recognise, rather
 // than the BCP-47 tag the rest of the app passes around.
+// refineEchoedInput reports that the model handed the input back unchanged.
+// Both refine paths check it before writing: with the target language equal to
+// the source language the model has nothing to do but repeat the input, and
+// replacing a real translation with the source is the report that started this.
+func refineEchoedInput(source, out string) bool {
+	norm := func(s string) string {
+		return strings.ToLower(strings.Join(strings.Fields(s), " "))
+	}
+	source, out = norm(source), norm(out)
+	return source != "" && source == out
+}
+
 func langPromptName(tag string) string {
 	if name := langLabels[tag]; name != "" {
 		switch {
