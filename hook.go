@@ -681,7 +681,13 @@ func runHookCommand() {
 		select {
 		case fn := <-hookCommands:
 			if fn != nil {
-				fn()
+				// Recover per command: the hook thread is the only path a
+				// selection takes into the app, so a panic here used to end
+				// the process with nothing in the log.
+				func() {
+					defer recoverLog("hook.go:runHookCommand")
+					fn()
+				}()
 			}
 		default:
 			return

@@ -278,6 +278,7 @@ func (a *app) showSelIcon(px, py int32, text string) {
 // will be, and a still pointer generates no moves, so nothing else would ever
 // start the hover wait.
 func (a *app) sampleChipPointer(gen uint64) {
+	defer recoverLog("selicon.go:sampleChipPointer")
 	for i := 0; i < 10; i++ {
 		time.Sleep(selIconSettle)
 		if a.chipHitBoxesReady() {
@@ -1109,6 +1110,9 @@ func (a *app) showPopupText(m popupMode, text string) {
 // onGlobalMouseDown hides the chip when the user clicks anywhere else. It
 // runs on a goroutine of its own.
 func (a *app) onGlobalMouseDown(px, py int32) {
+	// This runs on a goroutine started by the input hook, on every click:
+	// one panic here would end the tray process.
+	defer recoverLog("selicon.go:onGlobalMouseDown")
 	if a.selIconContains(px, py) {
 		return // a click on the chip itself: let it through
 	}
@@ -1125,6 +1129,9 @@ func (a *app) onGlobalMouseDown(px, py int32) {
 // the user has moved on to something else, so the chip goes away at the first
 // character.
 func (a *app) onGlobalKeyDown(vk uint32) {
+	// Same rule as the mouse handler: a goroutine per keystroke, so it
+	// recovers on its own.
+	defer recoverLog("selicon.go:onGlobalKeyDown")
 	// The hotkeys fastDictionary itself owns are handled elsewhere; taking the chip
 	// away for them too is harmless, and keeping the rule simple is worth
 	// more than a special case here.

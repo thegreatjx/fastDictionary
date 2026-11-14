@@ -44,17 +44,34 @@ func defaultRegisterHotkeys(sel, inp, ocr string, a *app) string {
 	// thread-safe because mygo marshals Show/Focus to the main thread itself.
 	msg := ""
 	if sel != "" {
-		if err := mygo.GlobalShortcut.Register(sel, func() { go a.openPopup(modeSelection) }); err != nil {
+		if err := mygo.GlobalShortcut.Register(sel, func() {
+			// A hotkey is queued on its own goroutine: without the guard a
+			// panic in one translation takes the tray process down.
+			go func() {
+				defer recoverLog("main.go:hotkey selection")
+				a.openPopup(modeSelection)
+			}()
+		}); err != nil {
 			msg += "划词快捷键 " + sel + " 注册失败：" + err.Error() + "；"
 		}
 	}
 	if inp != "" {
-		if err := mygo.GlobalShortcut.Register(inp, func() { go a.openPopup(modeInput) }); err != nil {
+		if err := mygo.GlobalShortcut.Register(inp, func() {
+			go func() {
+				defer recoverLog("main.go:hotkey input")
+				a.openPopup(modeInput)
+			}()
+		}); err != nil {
 			msg += "输入快捷键 " + inp + " 注册失败：" + err.Error() + "；"
 		}
 	}
 	if ocr != "" {
-		if err := mygo.GlobalShortcut.Register(ocr, func() { go a.TriggerScreenshotOCR() }); err != nil {
+		if err := mygo.GlobalShortcut.Register(ocr, func() {
+			go func() {
+				defer recoverLog("main.go:hotkey screenshot")
+				a.TriggerScreenshotOCR()
+			}()
+		}); err != nil {
 			msg += "截图快捷键 " + ocr + " 注册失败：" + err.Error() + "；"
 		}
 	}
@@ -170,6 +187,9 @@ func (a *app) buildTray() {
 // rebuildTray replaces the tray menu so its radio state matches the config.
 func (a *app) rebuildTray() {
 	mygo.RunOnMain(func() {
+		// A tray rebuild runs on the main thread: an unhandled panic here
+		// takes the whole event loop down, not just this menu.
+		defer recoverLog("main.go:rebuildTray")
 		if a.tray == nil {
 			a.buildTray()
 			return
