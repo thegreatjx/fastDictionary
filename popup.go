@@ -217,27 +217,12 @@ type app struct {
 	// exactly what made a hand-resized card feel stuck: every repaint undid
 	// the drag. The flag is cleared when a new card opens.
 	userResized bool
-	// measuredViewportH/measuredContentH record what the last frame laid
-	// out. The window resize itself cannot be observed from a test, so the
-	// measurement is kept here and asserted directly.
-	// lastAutofitWinH/ViewportH/ContentH remember the last measurement that was
-	// acted on, so a frame that still lays out at the old size does not apply
-	// the same delta again.
-	measuredViewportH    float32
-	measuredContentH     float32
-	lastAutofitWinH      int
-	lastAutofitViewportH float32
-	lastAutofitContentH  float32
-	// autofitDir is the direction of the last correction. The body is a Scroll
-	// that always fills the window, so the content height it is measured
-	// against depends on the window height the autofit just set: shrinking
-	// produces a frame that reports taller content and asks to grow again. Two
-	// passes that disagree never settle — that was the window bouncing between
-	// two heights on every repaint — so the reversal is dropped and
-	// autofitLocked keeps it from trying again until the content really moves.
-	autofitDir          float32
-	autofitLocked       bool
-	autofitLockContentH float32 // content height when the reversal locked the loop
+	// lastAutofitWinH remembers the window height of the previous frame, so a
+	// frame that still lays out at the old size is not measured again.
+	lastAutofitWinH int
+	// autofit 决定是否应用一次高度修正。旧的「按方向判震荡」规则会把用户
+	// 折叠面板这种正常操作当成抖动锁死，详见 autofit_loop.go。
+	autofit autofitLoop
 
 	// the floating selection chip
 	sel selState
@@ -622,8 +607,7 @@ func (a *app) openPopupAction(m popupMode, text string) {
 	// A new card is an auto-sized card again: a hand-resized size belongs to
 	// the card it was dragged on, not to the next lookup.
 	a.userResized = false
-	a.autofitLocked = false
-	a.autofitDir = 0
+	a.autofit.reset()
 	// Opening a new card supersedes every async result that belonged to the
 	// previous one, including the note extraction.
 	a.stopAIPassLocked()
@@ -708,8 +692,7 @@ func (a *app) openPopupWithText(m popupMode, text string) {
 	a.mu.Lock()
 	// A new card is an auto-sized card again: see openPopupAction.
 	a.userResized = false
-	a.autofitLocked = false
-	a.autofitDir = 0
+	a.autofit.reset()
 	// A normal popup is a new card too: the previous AI pass and note request
 	// must not write into it after the user has selected another text.
 	a.stopAIPassLocked()

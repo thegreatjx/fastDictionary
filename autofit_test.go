@@ -1,87 +1,49 @@
 package main
 
-import (
-	"testing"
-)
+import "testing"
 
-// TestAutofitStopsWhenTheTwoHeightsDisagree walks the sequence a real session
-// produced: shrink, then a frame that asks to grow by a similar amount, then
-// the shrink again. Before the latch, every pass applied its correction and the
-// window never stopped moving.
-func TestAutofitStopsWhenTheTwoHeightsDisagree(t *testing.T) {
-	a := newTestApp()
-	a.mu.Lock()
-	defer a.mu.Unlock()
+// TestAutofitLocksWhenWindowDoesNotMove 替换了旧的「方向反转即震荡」规则。
+//
+// 旧测试断言「收缩后要求增长的修正必须丢弃」，把用户折叠生词面板这种正常
+// 操作也当成了抖动：窗口停在展开时的高度，下方留一整块空白。真正的收敛条件
+// 是窗口有没有跟着动 —— 到上限或被最小高度夹住时窗口不动，那才该停。
+func TestAutofitLocksWhenWindowDoesNotMove(t *testing.T) {
+	var l autofitLoop
 
-	// First correction is accepted.
-	delta, ok := a.autofitDecision(-43.9, true)
-	if !ok || delta != -43.9 {
-		t.Fatalf("first correction dropped: delta=%v ok=%v", delta, ok)
+	if d, ok := l.decide(-43.9, true, 580, 700); !ok || d != -43.9 {
+		t.Fatalf("首次修正应被采纳：delta=%v ok=%v", d, ok)
 	}
-	// A later correction in the same direction is still accepted.
-	delta, ok = a.autofitDecision(-20.5, true)
-	if !ok || delta != -20.5 {
-		t.Fatalf("same-direction correction dropped: delta=%v ok=%v", delta, ok)
+	// 窗口仍是 580，说明上一次修正没有生效：锁定，别再每帧重试。
+	if _, ok := l.decide(-43.9, true, 580, 700); ok {
+		t.Fatal("窗口没动时应锁定")
 	}
-	// The opposite one is the feedback loop starting: drop it.
-	delta, ok = a.autofitDecision(20.8, true)
-	if ok || delta != 0 {
-		t.Fatalf("reversal applied: delta=%v ok=%v", delta, ok)
-	}
-	// And it stays dropped until the content changes.
-	delta, ok = a.autofitDecision(-43.9, true)
-	if ok || delta != 0 {
-		t.Fatalf("correction applied while latched: delta=%v ok=%v", delta, ok)
+	// 内容自己变了（折叠面板 / 流式增长）：解锁，方向不论。
+	if d, ok := l.decide(20.8, true, 580, 400); !ok || d != 20.8 {
+		t.Fatalf("内容变化后应解锁并采纳新方向：delta=%v ok=%v", d, ok)
 	}
 }
 
-// TestAutofitResumesAfterContentChanges makes sure the latch is not permanent:
-// fitHeight is what a new translation calls, and it has to release the latch.
-func TestAutofitResumesAfterContentChanges(t *testing.T) {
-	a := newTestApp()
-	a.popupH = 260
-
-	a.mu.Lock()
-	a.autofitDecision(-40, true)
-	a.autofitDecision(40, true)
-	locked := a.autofitLocked
-	a.mu.Unlock()
-	if !locked {
-		t.Fatal("no latch after a reversal")
+// TestAutofitResumesAfterReset：fitHeight 换了一份内容时调用 reset。
+func TestAutofitResumesAfterReset(t *testing.T) {
+	var l autofitLoop
+	l.decide(-40, true, 500, 600)
+	if _, ok := l.decide(-40, true, 500, 600); ok {
+		t.Fatal("应锁定")
 	}
 
-	// fitHeight releases it. It needs a window, so drive the release the way
-	// fitHeight does rather than opening a real one.
-	a.mu.Lock()
-	a.autofitDir = 0
-	a.autofitLocked = false
-	a.mu.Unlock()
+	l.reset()
 
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	delta, ok := a.autofitDecision(-60, true)
-	if !ok || delta != -60 {
-		t.Fatalf("latched after a content change: delta=%v ok=%v", delta, ok)
+	if d, ok := l.decide(40, true, 500, 400); !ok || d != 40 {
+		t.Fatalf("reset 后应采纳任何方向的修正：delta=%v ok=%v", d, ok)
 	}
 }
 
-// TestAutofitIgnoresFramesInsideTheDeadZone covers the small corrections the
-// caller reports as "nothing to do": they must not clear the direction that the
-// next real correction is compared against.
+// TestAutofitIgnoresFramesInsideTheDeadZone：差值在容差内的帧不该动窗口。
 func TestAutofitIgnoresFramesInsideTheDeadZone(t *testing.T) {
-	a := newTestApp()
-	a.mu.Lock()
-	defer a.mu.Unlock()
+	var l autofitLoop
+	l.decide(-43, true, 500, 600)
 
-	a.autofitDecision(-43, true)
-	if _, ok := a.autofitDecision(0, false); ok {
-		t.Fatal("dead-zone frame applied a correction")
-	}
-	if a.autofitDir != -43 {
-		t.Fatalf("dead-zone frame changed the direction: %v", a.autofitDir)
-	}
-	// A reversal is still recognised afterwards.
-	if _, ok := a.autofitDecision(30, true); ok {
-		t.Fatal("reversal applied after a dead-zone frame")
+	if _, ok := l.decide(0, false, 500, 600); ok {
+		t.Fatal("死区内的帧不该应用修正")
 	}
 }

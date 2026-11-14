@@ -241,8 +241,6 @@ func (a *app) scheduleAutofit(scrollEl, contentEl ui.Element) {
 	w, h := a.win.Size()
 
 	a.mu.Lock()
-	a.measuredViewportH = viewportH
-	a.measuredContentH = contentH
 	settled := h == a.lastAutofitWinH
 	a.lastAutofitWinH = h
 	a.mu.Unlock()
@@ -260,7 +258,9 @@ func (a *app) scheduleAutofit(scrollEl, contentEl ui.Element) {
 
 	delta, ok := autofitHeight(viewportH, contentH)
 	a.mu.Lock()
-	delta, ok = a.autofitDecision(delta, ok)
+	// 先确认上一轮的请求有没有真的改变窗口，再让本轮做决定。
+	a.autofit.confirm(h)
+	delta, ok = a.autofit.decide(delta, ok, h, contentH)
 	a.mu.Unlock()
 	if !ok {
 		return
@@ -271,38 +271,6 @@ func (a *app) scheduleAutofit(scrollEl, contentEl ui.Element) {
 
 	win := a.win
 	win.Update(func() { a.applyPopupHeight(delta) })
-}
-
-// autofitDecision drops a correction that would undo the last one. Both
-// heights come from a layout where the body Scroll fills the window, so
-// shrinking the window reports taller content and asks to grow again: the two
-// passes disagree forever and the window picks a new height on every repaint.
-// Once they disagree, the correction is dropped and later ones are ignored
-// until fitHeight reports the content itself changed. a.mu must be held.
-func (a *app) autofitDecision(delta float32, ok bool) (float32, bool) {
-	if !ok {
-		// Already within a few DIPs: nothing to correct, and no reason to
-		// remember a direction to compare against.
-		return 0, false
-	}
-	if a.autofitLocked {
-		// The lock only exists to stop the two-height bounce. A visible change
-		// in content height means the content really moved (a streaming answer
-		// grew), so the loop gets a fresh chance; otherwise it stays locked.
-		if diff := a.measuredContentH - a.autofitLockContentH; diff > 8 || diff < -8 {
-			a.autofitLocked = false
-			a.autofitDir = 0
-		} else {
-			return 0, false
-		}
-	}
-	if a.autofitDir != 0 && (delta > 0) != (a.autofitDir > 0) {
-		a.autofitLocked = true
-		a.autofitLockContentH = a.measuredContentH
-		return 0, false
-	}
-	a.autofitDir = delta
-	return delta, true
 }
 
 func renderNotesBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
