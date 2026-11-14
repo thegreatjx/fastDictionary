@@ -17,7 +17,10 @@ func trayIcon() []byte {
 	return embeddedTrayIcon
 }
 
-// toggleTrayFlyout opens or closes the native Menubar Flyout attached to the tray icon
+// toggleTrayFlyout opens or closes the native Menubar Flyout attached to the tray icon.
+//
+// 托盘左键已经改成直达主窗口（见 toggleMainWindow）；这个面板保留下来，因为
+// 主窗口的首页工作台就是同一套快捷功能，而面板自身仍有渲染测试和截图模式。
 func (a *app) toggleTrayFlyout() {
 	if a.trayFlyout != nil && !a.trayFlyout.IsDestroyed() {
 		a.trayFlyout.Close()
@@ -119,8 +122,7 @@ func (a *app) trayFlyoutView(c *ui.Context) {
 				if a.trayFlyout != nil {
 					a.trayFlyout.Close()
 				}
-				a.page = "vocabulary"
-				a.showSettings()
+				a.showMainWindow("vocabulary")
 			}
 
 			snip := SecondaryButton(c, t, "截图翻译", iconScreenshot).Grow(1).
@@ -154,7 +156,7 @@ func (a *app) trayFlyoutView(c *ui.Context) {
 		ui.Box(c).FillWidth().BorderWidth(1, 0, 0, 0).BorderColor(at.BorderSubtle).
 			Padding(Space2, 0, 0, 0).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
-				ui.Text(c, "●").FontSize(FontMicro).TextColor(at.Success).SingleLine()
+				ui.Box(c).Size(6, 6).Radius(RadiusXS).Background(at.Success).Shrink(0)
 				ui.Text(c, trayStatusText(cfg)).Font(fontUI).FontSize(FontHelper).
 					TextColor(at.TextMuted).Grow(1).SingleLine()
 				if DangerGhostButton(c, t, "退出应用").Clicked() {

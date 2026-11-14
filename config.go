@@ -756,6 +756,45 @@ func saveConfig(path string, cfg Config) error {
 	return atomicWriteFile(path, data, atomicWriteOptions{retries: 6})
 }
 
+// grammarSystemPromptV2 是长难句分析的当前默认 Prompt。
+//
+// 旧版（grammarSystemPrompt）是三段带示例的长英文说明，模型经常把副词或介词
+// 短语标成 clause 并填上 sense，卡片上于是出现「Tonight → 时间状从」这类误标；
+// 整段说明也拖慢了推理。这一版把规则收紧成三条：谓语只含纯谓语动词、只有真正
+// 的从句才能写 form=clause，并要求最小化输出。
+const grammarSystemPromptV2 = `你是一位严谨的英语语法老师。请对给定的【单个英文句子】做最小化、高精度的句法拆解，只输出严格合法的 JSON（不要 Markdown 代码块，不要多余解释）。
+
+核心语法规则（必须严格遵守）：
+1. 主干边界必须克制：
+   - type="subject"：只标主语核心词或简洁名词短语。
+   - type="predicate"：**只能是纯谓语动词短语本身**（如 "read"、"will be"、"fought"、"have to depend on"），严禁把后面的宾语、表语、介词短语、状语或句末标点包进 predicate。
+   - type="object" / "complement"：只标核心宾语或表语，不与 predicate 混在一起。
+2. 严格区分「从句 (form="clause")」与非从句修饰语：
+   - 只有真正包含“引导词/主语 + 谓语动词”的完整从句才能标 form="clause"（如定语从句、状语从句、宾语从句、主语从句、同位语从句）。
+   - **严禁**把单个副词（如 Tonight, just, suddenly, no longer, yesterday）或介词短语（如 With Elon's involvement, In the next era）标成 clause 或填 sense！它们若不造成断句困难可直接省略；确需标出时 form 只能写 "phrase"，不得写 "clause" 和 sense。
+3. 最小化输出（兼顾速度与可读性）：
+   - 简单句仅标主谓宾即可，不要强行凑难点。
+   - 仅在真正影响理解的位置（被动、倒装、省略、插入语、形式主语、长分隔定语）填 obstacle / restore / note（note 控制在 25 字以内）。
+4. text 必须是原句中【逐字连续、大小写完全一致】的子串（不带多余首尾标点），同一词出现多次时填写从 1 开始的 occurrence。
+
+输出 JSON 格式：
+{
+  "annotations": [
+    {
+      "text": "原句精确连续子串",
+      "type": "subject|predicate|object|complement|attributive|adverbial|appositive|connector",
+      "form": "clause|phrase|infinitive|gerund|present-participle|past-participle",
+      "sense": "仅当 form=clause 且 type=adverbial 时可填：time|place|cause|condition|concession|purpose|result|manner|comparison",
+      "head": "定语从句修饰的先行词（可选）",
+      "obstacle": "passive|inversion|fronting|ellipsis|subjunctive|dummy-it|postponed-subject|cleft|parenthesis|split|idiom|comparison|negation（仅难点填）",
+      "restore": "仅在倒装/省略时给还原后的简短英文（可选）",
+      "note": "不超过25字的中文点拨（可选）",
+      "occurrence": 1
+    }
+  ],
+  "translation": "自然准确的中文译文"
+}`
+
 func DefaultCustomActions() []CustomActionConfig {
 	return []CustomActionConfig{
 		{
@@ -765,7 +804,7 @@ func DefaultCustomActions() []CustomActionConfig {
 			Icon:         "grammar",
 			ProviderID:   "magpie",
 			Model:        "",
-			SystemPrompt: grammarSystemPrompt,
+			SystemPrompt: grammarSystemPromptV2,
 			Prompt:       "## Input\nSelection: {{selection}}\nParagraphs: {{paragraphs}}\nTarget language: {{targetLanguage}}",
 			OutputSchema: []string{"annotations", "translation"},
 		},
@@ -856,6 +895,12 @@ func ensureDefaultActions(cfg *Config) bool {
 			// Backfill missing critical prompt fields if empty
 			if cfg.CustomActions[idx].SystemPrompt == "" {
 				cfg.CustomActions[idx].SystemPrompt = def.SystemPrompt
+			} else if def.ID == "default-sentence-analysis" &&
+				cfg.CustomActions[idx].SystemPrompt == grammarSystemPrompt {
+				// The old default was never edited by the user: upgrade it, or the
+				// mislabelled adverbs and the slow answer stay until they reset the app.
+				cfg.CustomActions[idx].SystemPrompt = grammarSystemPromptV2
+				dropped = true
 			}
 			if cfg.CustomActions[idx].Prompt == "" {
 				cfg.CustomActions[idx].Prompt = def.Prompt

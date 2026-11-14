@@ -97,15 +97,19 @@ type app struct {
 	ocrGeneration   requestToken
 	ocrCancel       context.CancelFunc
 
-	win        *mygo.Window
-	cfgWin     *mygo.Window
-	tray       *mygo.Tray
-	trayFlyout *mygo.Window
-	page       string
-	pinned     bool
-	showNotes  bool
-	notes      []NoteItem
-	notesBusy  bool
+	win    *mygo.Window
+	cfgWin *mygo.Window
+	// mainWinVisible tracks whether the main window is really on screen. Hide
+	// and Show bypass the window's own state, and the tray toggle has to know
+	// whether the next click opens or closes it.
+	mainWinVisible bool
+	tray           *mygo.Tray
+	trayFlyout     *mygo.Window
+	page           string
+	pinned         bool
+	showNotes      bool
+	notes          []NoteItem
+	notesBusy      bool
 	// notesGen counts note extractions and every popup/translation that
 	// supersedes them. The request is slow (up to 20s), so its teardown must
 	// not write into a newer card after the user has moved on.
@@ -113,6 +117,11 @@ type app struct {
 	notesCancel   context.CancelFunc
 	onlyTrunk     bool
 	grammarResult *SentenceAnalysisResult
+	// grammarSentIdx is which sentence of a multi-sentence selection the
+	// grammar card is analysing. A paragraph is analysed one sentence at a
+	// time: the model mixes up clauses across sentences, and a single
+	// sentence answers in seconds rather than tens of seconds.
+	grammarSentIdx int
 	// grammarResultPrefill reports that grammarResult.Translation came from the
 	// machine engines rather than the model, so the card can say so while the
 	// annotations are still being generated.
@@ -203,6 +212,11 @@ type app struct {
 	popupY           int
 	popupW           int
 	popupH           int
+	// userResized means the user dragged the popup to a size of their own.
+	// The autofit would otherwise snap it back on the next frame, which is
+	// exactly what made a hand-resized card feel stuck: every repaint undid
+	// the drag. The flag is cleared when a new card opens.
+	userResized bool
 	// measuredViewportH/measuredContentH and autofitTarget record what the
 	// last frame laid out and the height the autofit asked for. The window
 	// resize itself cannot be observed from a test, so the measurement is
@@ -245,6 +259,11 @@ type app struct {
 	showChip  func(x, y int, text string)
 	showPopup func(m popupMode, text string)
 
+	// home is the 查词与翻译 workbench of the main window. It is separate
+	// from every popup field above: a lookup in the main window must not be
+	// overwritten by the selection chip firing in the background.
+	home homeState
+
 	// settings window scratch state
 	aiProbe                 aiProbeState
 	aiModels                aiModelsState
@@ -271,6 +290,10 @@ type app struct {
 	// also carries MaxY, which is how "can this page scroll at all" is
 	// asserted in the layout test.
 	settingsScroll ui.ScrollState
+	// navScroll is the sidebar's own offset. 工作台 adds a fifth group and a
+	// permanent status capsule, and the two together do not fit a 500 DIP
+	// window: without this the last entries are simply cut off.
+	navScroll ui.ScrollState
 	// settingsPageSeen is the page the scroll offset belongs to; switching
 	// pages starts the new one at the top.
 	settingsPageSeen string
@@ -300,6 +323,7 @@ type snapshot struct {
 	notesBusy             bool
 	onlyTrunk             bool
 	grammarResult         *SentenceAnalysisResult
+	grammarSentIdx        int // which sentence the card shows; see grammarActiveSentence
 	grammarResultPrefill  bool
 	aiRefining            bool
 	aiRefineErr           string
@@ -380,7 +404,7 @@ func (a *app) snap() snapshot {
 		mode: a.mode, source: a.source, target: a.target, engine: a.engine,
 		detected: a.detected, errText: a.errText, echoNote: a.echoNote, notice: a.notice, busy: a.busy, elapsed: a.elapsed,
 		dict: a.dict, gdict: a.gdict, aiText: a.aiText, aiBusy: a.aiBusy,
-		inputText: a.inputText, inputTargetMode: a.inputTargetMode, isWord: isWord(a.source), pinned: a.pinned, showNotes: a.showNotes, notes: a.notes, notesBusy: a.notesBusy, onlyTrunk: a.onlyTrunk, grammarResult: a.grammarResult, grammarResultPrefill: a.grammarResultPrefill, aiRefining: a.aiRefining, aiRefineErr: a.aiRefineErr,
+		inputText: a.inputText, inputTargetMode: a.inputTargetMode, isWord: isWord(a.source), pinned: a.pinned, showNotes: a.showNotes, notes: a.notes, notesBusy: a.notesBusy, onlyTrunk: a.onlyTrunk, grammarResult: a.grammarResult, grammarSentIdx: a.grammarSentIdx, grammarResultPrefill: a.grammarResultPrefill, aiRefining: a.aiRefining, aiRefineErr: a.aiRefineErr,
 		activeActionID: a.activeActionID, dictResult: a.dictResult, writingResult: a.writingResult, actionSavedMsg: actionSavedMsg, savedDictTerm: a.savedDictTerm, copiedMsg: copiedMsg, showSlashes: a.showSlashes, filterRole: a.filterRole, grammarHoverKnowledge: a.grammarHoverKnowledge, notesSaved: a.notesSaved, grammarSaved: a.grammarSaved, writingSaved: a.writingSaved,
 		isScreenshotMode: a.isScreenshotMode, snipBitmap: a.snipBitmap, sourceExpanded: a.sourceExpanded,
 		snipExpanded: a.snipExpanded, notesExpanded: a.notesExpanded, ocrBusy: a.ocrBusy, ocrError: a.ocrError, ocrText: a.ocrText,
@@ -556,6 +580,7 @@ func (a *app) resetPopupTransientLocked() {
 	a.filterRole = ""
 	a.grammarHoverKnowledge = ""
 	a.activeActionID = ""
+	a.grammarSentIdx = 0
 }
 
 // resetScreenshotPinLocked 把「截图翻译临时置顶」的复位规则收在一处：
@@ -595,6 +620,12 @@ func (a *app) openPopupAction(m popupMode, text string) {
 	a.popupH = initH
 
 	a.mu.Lock()
+	// A new card is an auto-sized card again: a hand-resized size belongs to
+	// the card it was dragged on, not to the next lookup.
+	a.userResized = false
+	a.autofitLocked = false
+	a.autofitDir = 0
+	a.autofitSteps = 0
 	// Opening a new card supersedes every async result that belonged to the
 	// previous one, including the note extraction.
 	a.stopAIPassLocked()
@@ -677,6 +708,11 @@ func (a *app) openPopupWithText(m popupMode, text string) {
 	a.popupH = initH
 
 	a.mu.Lock()
+	// A new card is an auto-sized card again: see openPopupAction.
+	a.userResized = false
+	a.autofitLocked = false
+	a.autofitDir = 0
+	a.autofitSteps = 0
 	// A normal popup is a new card too: the previous AI pass and note request
 	// must not write into it after the user has selected another text.
 	a.stopAIPassLocked()

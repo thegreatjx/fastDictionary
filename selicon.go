@@ -955,7 +955,24 @@ func (a *app) applySelectionMode() {
 	// against the first gesture under the new one.
 	a.gestureGate.reset()
 	wantHooks := a.store.Get().SelectionTrigger != "hotkey"
-	runOnMainThread()
+	// Both install and remove must run on the hook thread, which is the only
+	// thread with a message loop. It has to be up before the command is
+	// posted: posting to a thread that is still starting loses the command,
+	// and installing from this goroutine instead gives a hook that is
+	// installed and never fires (see installHooks).
+	if wantHooks {
+		if !waitHookThreadReady(800 * time.Millisecond) {
+			log.Printf("fastDictionary: hook thread not ready in time; selection hooks not installed")
+			return
+		}
+	} else {
+		hookMu.Lock()
+		tid := hookLoopID
+		hookMu.Unlock()
+		if tid == 0 {
+			return // no hooks were ever installed, so there is nothing to remove
+		}
+	}
 	apply := func() {
 		if wantHooks {
 			if err := installHooks(); err != nil {
@@ -966,8 +983,7 @@ func (a *app) applySelectionMode() {
 		removeHooks()
 	}
 	if err := postHookCommand(apply); err != nil {
-		log.Printf("fastDictionary: selection hook thread not ready (%v); applying on this thread", err)
-		apply()
+		log.Printf("fastDictionary: could not post selection hook command: %v", err)
 	}
 }
 
@@ -1006,8 +1022,11 @@ func (a *app) onSelectionGesture(g selectionGesture) {
 	}
 	// The cooldown runs after the guard so a paused or blocklisted app does
 	// not consume the window, and before the read so a refused gesture never
-	// touches the clipboard.
-	if ok, why := a.gestureGate.allow(time.Now(), px, py); !ok {
+	// touches the clipboard. It is only booked once the read produced text:
+	// a failed read used to burn the same-spot cooldown, so retrying it a
+	// second later was refused as a repeat of a gesture that never worked.
+	now := time.Now()
+	if ok, why := a.gestureGate.canAllow(now, px, py); !ok {
 		log.Printf("fastDictionary: gesture dropped (%s)", why)
 		return
 	}
@@ -1025,6 +1044,7 @@ func (a *app) onSelectionGesture(g selectionGesture) {
 	}
 	log.Printf("fastDictionary: selection %s (%d chars) bounds=%v",
 		a.logText(sel.Text, 30), len(sel.Text), sel.Bounds)
+	a.gestureGate.record(now, px, py)
 	a.deliverSelection(sel, px, py)
 }
 
@@ -1301,14 +1321,12 @@ func (a *app) moreFlyoutView(c *ui.Context) {
 		}
 		ui.Divider(c).FillWidth()
 		if a.chipMenuItem(c, t, iconSparkles, "管理 AI 指令", func() {
-			a.page = "actions"
-			a.showSettings()
+			a.showMainWindow("actions")
 		}) {
 			return
 		}
 		if a.chipMenuItem(c, t, iconBookmark, "生词本", func() {
-			a.page = "vocabulary"
-			a.showSettings()
+			a.showMainWindow("vocabulary")
 		}) {
 			return
 		}

@@ -169,7 +169,11 @@ func (a *app) popupView(c *ui.Context) {
 					// Dedicated Sentence Analysis Mode!
 					switch classifyAIView(s) {
 					case aiPassStructured:
-						a.renderGrammarVisualCard(c, t, s.source, s.grammarResult, s.grammarSaved, func() { a.saveGrammarToVocab(s.grammarResult) })
+						// One sentence at a time: the card shows the sentence the
+						// analysis actually describes, not the whole paragraph the
+						// user selected.
+						sent, _, _ := grammarActiveSentence(s.source, s.grammarSentIdx)
+						a.renderGrammarVisualCard(c, t, sent, s.grammarResult, s.grammarSaved, func() { a.saveGrammarToVocab(s.grammarResult) })
 					case aiPassIdle:
 						a.renderGrammarEmptyState(c, t, s)
 					default:

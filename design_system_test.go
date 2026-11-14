@@ -190,29 +190,41 @@ func TestChipPaletteCoolBlue(t *testing.T) {
 	}
 }
 
-// TestSettingsNavIsGroupedAndAligned 确认侧栏按 4 组呈现，且所有图标后的
-// 文本左缘在同一列。
+// TestSettingsNavIsGroupedAndAligned 确认侧栏按 5 组呈现，且所有图标后的
+// 文本左缘在同一列。工作台放在最前：主窗口默认打开的就是这一页。
 func TestSettingsNavIsGroupedAndAligned(t *testing.T) {
 	a := newTestApp()
 	a.page = "general"
-	tt := ui.NewTester(a.settingsView, 880, 640)
+	tt := ui.NewTester(a.settingsView, 920, 660)
 	tt.Frame()
 
-	for _, group := range []string{"常规", "划词与翻译", "AI 与学习", "其他"} {
+	for _, group := range []string{"工作台", "常规", "划词与翻译", "AI 与指令", "其他"} {
 		if !tt.HasText(group) {
 			t.Errorf("侧栏缺少分组 %q", group)
 		}
 	}
 
-	// 窗口最小高度 480 时，最后一个入口仍须完整可见。
-	small := ui.NewTester(a.settingsView, 880, 480)
-	small.Frame()
-	last, ok := small.Find("关于")
-	if !ok || last.Y+last.H > 480 {
-		t.Errorf("最小高度下侧栏最后一项被裁切：ok=%v rect=%+v", ok, last)
+	// 默认窗口（920×660）一屏放得下：不需要滚动，最末入口完整可见。
+	tall, ok := tt.Find("关于")
+	if !ok || tall.H == 0 || tall.Y+tall.H > 660 {
+		t.Errorf("默认窗口下侧栏最后一项被裁切：ok=%v rect=%+v", ok, tall)
+	}
+	if a.navScroll.MaxY > 0 {
+		t.Errorf("默认窗口下侧栏仍需要滚动（MaxY=%v）", a.navScroll.MaxY)
 	}
 
-	labels := []string{"通用", "快捷键", "划词", "翻译", "词典与发音", "AI 精翻", "AI 指令", "生词本", "关于"}
+	// 最小尺寸（700×500）时五组入口加底部胶囊装不下：多出的部分交给侧栏
+	// 滚动承载，不能像以前那样被直接裁掉。
+	small := ui.NewTester(a.settingsView, 700, 500)
+	small.Frame()
+	if !small.HasText("关于") {
+		t.Error("最小高度下侧栏丢了最后一个入口")
+	}
+	if a.navScroll.MaxY <= 0 {
+		t.Errorf("最小高度下侧栏没有可滚动余量（MaxY=%v），超出的入口无法到达", a.navScroll.MaxY)
+	}
+
+	labels := []string{"查词翻译", "生词本", "通用", "快捷键", "划词", "翻译", "词典与发音", "AI 精翻", "AI 指令", "关于"}
 	var wantX float32
 	for i, label := range labels {
 		r, ok := tt.Find(label)

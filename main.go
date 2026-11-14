@@ -78,6 +78,10 @@ func registerHotkeys(sel, inp, ocr string, a *app) string {
 func (a *app) trayMenu() *mygo.Menu {
 	cfg := a.store.Get()
 	items := []*mygo.MenuItem{
+		// 主窗口放在第一项：托盘右键是发现入口，也是主窗口关掉后唯一能把它叫回来的地方。
+		{Label: "打开主窗口（查词与翻译）", Click: func(*mygo.MenuItem, *mygo.Window) { a.showMainWindow("home") }},
+		{Label: fmt.Sprintf("生词本 (%d)", GetVocabularyStore().Count()), Click: func(*mygo.MenuItem, *mygo.Window) { a.showMainWindow("vocabulary") }},
+		mygo.Separator(),
 		{Label: "划词翻译 (" + cfg.HotkeySelection + ")", Click: func(*mygo.MenuItem, *mygo.Window) { a.openPopup(modeSelection) }},
 		{Label: "输入翻译 (" + cfg.HotkeyInput + ")", Click: func(*mygo.MenuItem, *mygo.Window) { a.openPopup(modeInput) }},
 		{Label: "截图翻译 (" + cfg.HotkeyScreenshot + ")", Click: func(*mygo.MenuItem, *mygo.Window) { a.TriggerScreenshotOCR() }},
@@ -143,13 +147,15 @@ func (a *app) quitApp() {
 func (a *app) buildTray() {
 	t, err := mygo.NewTray(mygo.TrayOptions{
 		Icon:    trayIcon(),
-		ToolTip: appTitle + " (左键快速面板 / 右键菜单)",
+		ToolTip: appTitle + " (左键打开主窗口 / 右键快捷菜单)",
 	})
 	if err != nil {
 		log.Println("fastDictionary: tray:", err)
 		return
 	}
-	t.OnClick(a.toggleTrayFlyout)
+	// 左键直接打开主窗口：快捷面板也能从主窗口进去，而关掉主窗口后
+	// 需要有一个地方能把它叫回来。
+	t.OnClick(a.toggleMainWindow)
 	t.OnRightClick(func() {
 		if a.trayFlyout != nil && !a.trayFlyout.IsDestroyed() {
 			a.trayFlyout.Close()
@@ -318,8 +324,11 @@ func main() {
 		log.Print(migration)
 	}
 	mygo.App.OnSecondInstance(func(args []string, workingDir string) {
-		// A second launch is the user asking for the app: show the popup.
-		go a.openPopup(modeInput)
+		// A second launch is the user asking for the app: bring the main
+		// window forward instead of opening yet another popup.
+		mygo.RunOnMain(func() {
+			a.showMainWindow("home")
+		})
 	})
 	// The audio path reads the playback volume through this handle.
 	activeStore = a.store
@@ -330,9 +339,13 @@ func main() {
 		})
 
 		win := mygo.NewWindow(mygo.WindowOptions{
-			Title:       appTitle,
-			Width:       int(cfg.PopupWidth),
-			Height:      340,
+			Title:  appTitle,
+			Width:  int(cfg.PopupWidth),
+			Height: 340,
+			// 下限跟 popupMinHeight 一致：正文有自己的 Scroll，把窗口拖到
+			// 只剩标题栏就什么都看不到了，也不留一条无法再拖开的缝。
+			MinWidth:    360,
+			MinHeight:   int(popupMinHeight),
 			Hidden:      true,
 			SkipTaskbar: true,
 			AlwaysOnTop: cfg.AlwaysOnTop,
@@ -393,6 +406,9 @@ func main() {
 		// dragging the frame.
 		shotSizeW, shotSizeH := 0, 0
 		openSettingsFlag := false
+		// minimizedFlag is set by --minimized and by --autostart: a login
+		// start must not throw a window in the user's face.
+		minimizedFlag := false
 		reviewDemo := false
 		chipDemo := false
 		chipTipDemo := false
@@ -403,6 +419,8 @@ func main() {
 			switch arg {
 			case "--settings", "-settings":
 				openSettingsFlag = true
+			case "--minimized", "-minimized", "--autostart":
+				minimizedFlag = true
 			case "--input", "-input":
 				a.openPopup(modeInput)
 			case "--shot":
@@ -585,23 +603,21 @@ func main() {
 		if demoOCR != "" {
 			a.beginScreenshotOCR(winRect{Left: 120, Top: 120, Right: 420, Bottom: 360}, demoOCR)
 		}
-		// A translator belongs in the tray. Opening the settings window on
-		// every launch put a 900 px form in front of whatever the user was
-		// reading before they had pressed a single shortcut. It still opens
-		// on the first run (so the app is not invisible after installing)
-		// and whenever it is asked for explicitly.
-		firstRun := !cfg.Onboarded
-		if firstRun {
+		// 普通启动直接打开主窗口的「查词与翻译」工作台：首页是一张输入框加
+		// 三个页签，不是过去那个 900px 的设置表单，打开也没有压迫感。自动启动
+		// （--autostart）和明确要求最小化时仍静默进托盘，无头测试模式不弹窗。
+		if !cfg.Onboarded {
 			a.store.Update(func(c *Config) { c.Onboarded = true })
 		}
 		headless := shotPath != "" || chipDemo || chipTipDemo || demoText != "" || demoSelection != "" || demoAction != "" || demoOCR != ""
-		if openSettingsFlag || (firstRun && !headless) {
-			a.showSettings()
-		}
 		if reviewDemo {
 			a.page = "vocabulary"
-			a.showSettings()
+			a.showMainWindow("vocabulary")
 			a.startVocabReview()
+		} else if openSettingsFlag {
+			a.showSettings()
+		} else if !headless && !minimizedFlag {
+			a.showMainWindow("home")
 		}
 
 		if shotPath != "" {

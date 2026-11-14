@@ -229,6 +229,19 @@ func applyTheme(c *ui.Context, mode string, dark bool) {
 	t.Font = fontUI
 	// 框架把 Field 的说明画成 FontSize-1；13 正好得到 12px helper。
 	t.FontSize = FontControl
+	// 拖拽浮窗时每一帧都会重画，而 SetTheme 会让整棵树失效重排：色板、圆角、
+	// 间距与字号一个字段都没变也走一遍，就是拖拽时的闪烁和卡顿。
+	if curr.Dark == t.Dark && curr.Background == t.Background && curr.Surface == t.Surface &&
+		curr.SurfaceHover == t.SurfaceHover && curr.SurfacePressed == t.SurfacePressed &&
+		curr.Border == t.Border && curr.Text == t.Text && curr.TextMuted == t.TextMuted &&
+		curr.Accent == t.Accent && curr.AccentHover == t.AccentHover &&
+		curr.AccentPressed == t.AccentPressed && curr.AccentText == t.AccentText &&
+		curr.Selection == t.Selection && curr.Focus == t.Focus && curr.Danger == t.Danger &&
+		curr.Warning == t.Warning && curr.Success == t.Success && curr.Scrollbar == t.Scrollbar &&
+		curr.Radius == t.Radius && curr.Spacing == t.Spacing && curr.Font == t.Font &&
+		curr.FontSize == t.FontSize {
+		return
+	}
 	c.SetTheme(&t)
 }
 

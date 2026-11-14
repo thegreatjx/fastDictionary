@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -67,6 +68,96 @@ type SentenceParseResult struct {
 	Outcome ParseOutcome
 	Result  *SentenceAnalysisResult
 	Cause   error
+}
+
+// grammarAbbrevs 是不该结束句子的缩写。分句靠标点切分，没有这张表时
+// "Mr. Smith" 会被切成两句。
+var grammarAbbrevs = map[string]bool{
+	"mr.": true, "mrs.": true, "ms.": true, "dr.": true, "prof.": true,
+	"sr.": true, "jr.": true, "st.": true, "vs.": true, "etc.": true,
+	"e.g.": true, "i.e.": true, "u.s.": true, "u.k.": true, "fig.": true,
+	"no.": true, "vol.": true, "inc.": true, "ltd.": true,
+}
+
+// splitGrammarSentences 把一段选中的文字拆成句子，按段落就地处理。
+//
+// 长难句卡片一次只分析一句：整段发给模型时，模型会把不同句子的成分混在一张
+// 卡片里，回答也慢得多（一句话 3-5 秒，一段话十几秒）。拆句用纯函数实现，
+// 这样边界情况（小数、缩写、引号、中文句号）可以直接测。
+func splitGrammarSentences(text string) []string {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+	var out []string
+	for _, para := range strings.Split(text, "\n") {
+		para = strings.TrimSpace(para)
+		if para == "" {
+			continue
+		}
+		runes := []rune(para)
+		start := 0
+		for i := 0; i < len(runes); i++ {
+			r := runes[i]
+			if r != '.' && r != '?' && r != '!' && r != '。' && r != '？' && r != '！' {
+				continue
+			}
+			if r == '.' && i > 0 && i+1 < len(runes) && unicode.IsDigit(runes[i-1]) && unicode.IsDigit(runes[i+1]) {
+				continue // 3.5、1.000 里的小数点不是句末
+			}
+			if r == '.' {
+				wordStart := i
+				for wordStart > start && !unicode.IsSpace(runes[wordStart-1]) {
+					wordStart--
+				}
+				if grammarAbbrevs[strings.ToLower(string(runes[wordStart:i+1]))] {
+					continue
+				}
+				// 单字母缩写（"J. K. Rowling"）后面跟空格时也算缩写。
+				if i-wordStart == 1 && unicode.IsLetter(runes[wordStart]) && i+1 < len(runes) && runes[i+1] != ' ' {
+					continue
+				}
+			}
+			end := i + 1
+			for end < len(runes) && (runes[end] == '"' || runes[end] == '\'' || runes[end] == '”' || runes[end] == '’' || runes[end] == ')' || runes[end] == '）') {
+				end++
+			}
+			// 句号后面紧跟字母，说明这不是句末（"e.g.this"、文件路径）。
+			if end < len(runes) && !unicode.IsSpace(runes[end]) && r != '。' && r != '？' && r != '！' {
+				continue
+			}
+			if seg := strings.TrimSpace(string(runes[start:end])); seg != "" {
+				out = append(out, seg)
+			}
+			start = end
+			i = end - 1
+		}
+		if rest := strings.TrimSpace(string(runes[start:])); rest != "" {
+			out = append(out, rest)
+		}
+	}
+	if len(out) == 0 {
+		return []string{text}
+	}
+	return out
+}
+
+// grammarActiveSentence 返回第 idx 句以及夹逼后的下标和总句数。
+// 下标越界时夹到首尾，调用方不必自己再检查一遍。
+func grammarActiveSentence(text string, idx int) (string, int, int) {
+	sents := splitGrammarSentences(text)
+	if len(sents) == 0 {
+		return strings.TrimSpace(text), 0, 0
+	}
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(sents) {
+		idx = len(sents) - 1
+	}
+	return sents[idx], idx, len(sents)
 }
 
 // ParseSentenceAnalysis parses the model output into a structured result
@@ -142,8 +233,12 @@ func ParseSentenceAnalysisDetailed(raw string) SentenceParseResult {
 
 // Translated badge labels matching Read-Frog zh-CN
 func clauseBadgeLabel(item SyntaxAnnotation) string {
-	if item.Sense != "" {
-		switch item.Sense {
+	form := strings.ToLower(strings.TrimSpace(item.Form))
+	// 只有真正的从句（form=clause）才允许出现「时间状从 / 定语从句」这类徽标。
+	// 以前先看 sense，模型给 Tonight、suddenly 这类副词填了 sense=time，就被
+	// 标成了时间状语从句，整句看上去满是错标。
+	if form == "clause" {
+		switch strings.ToLower(strings.TrimSpace(item.Sense)) {
 		case "time":
 			return "时间状从"
 		case "place":
@@ -163,9 +258,7 @@ func clauseBadgeLabel(item SyntaxAnnotation) string {
 		case "comparison":
 			return "比较状从"
 		}
-	}
-	if item.Form == "clause" {
-		switch item.Type {
+		switch strings.ToLower(strings.TrimSpace(item.Type)) {
 		case "subject":
 			return "主语从句"
 		case "object":
@@ -182,8 +275,10 @@ func clauseBadgeLabel(item SyntaxAnnotation) string {
 			return "从句"
 		}
 	}
-	if item.Form != "" {
-		switch item.Form {
+	// 非谓语短语至少三个词才贴标签："to go"、"running" 这类两词以内的小
+	// 片段贴上去只会把句子挤满徽标，反而看不出结构。
+	if len(strings.Fields(item.Text)) >= 3 {
+		switch form {
 		case "infinitive":
 			return "不定式"
 		case "gerund":
@@ -338,8 +433,74 @@ func nearestIn(units []trunkUnit, from, to int, forward bool) (string, bool) {
 	return best, bestPos >= 0
 }
 
+// grammarCardState is everything the grammar card reads from the app plus the
+// callbacks it fires. The card used to reach into *app for each of these,
+// which made it impossible to render a card in a test without a live app and
+// impossible to reuse the same layout for a read-only preview.
+type grammarCardState struct {
+	OnlyTrunk      bool
+	ShowSlashes    bool
+	FilterRole     string
+	HoverKnowledge string
+	Prefill        bool
+	SentIdx        int
+	SentCount      int
+	OnPrevSent     func()
+	OnNextSent     func()
+	OnToggleTrunk  func()
+	OnToggleSlash  func()
+	OnToggleRole   func(role string)
+	OnSpeak        func()
+	OnSave         func()
+}
+
 // renderGrammarVisualCard renders the interactive visual grammar tree card matching user screenshot
 func (a *app) renderGrammarVisualCard(c *ui.Context, t *ui.Theme, origText string, res *SentenceAnalysisResult, saved bool, onSave func()) {
+	// 句子切换只换下标后重跑一次当前动作：缓存按单句隔离，切回来不用再等模型。
+	a.mu.Lock()
+	src, curIdx := a.source, a.grammarSentIdx
+	a.mu.Unlock()
+	_, sentIdx, sentCount := grammarActiveSentence(src, curIdx)
+	st := grammarCardState{
+		OnlyTrunk:      a.onlyTrunk,
+		ShowSlashes:    a.showSlashes,
+		FilterRole:     a.filterRole,
+		HoverKnowledge: a.grammarHoverKnowledge,
+		Prefill:        a.grammarResultPrefill,
+		SentIdx:        sentIdx,
+		SentCount:      sentCount,
+		OnPrevSent: func() {
+			if sentIdx <= 0 {
+				return
+			}
+			a.mu.Lock()
+			a.grammarSentIdx = sentIdx - 1
+			src := a.source
+			a.mu.Unlock()
+			a.runAction("default-sentence-analysis", src)
+		},
+		OnNextSent: func() {
+			if sentIdx+1 >= sentCount {
+				return
+			}
+			a.mu.Lock()
+			a.grammarSentIdx = sentIdx + 1
+			src := a.source
+			a.mu.Unlock()
+			a.runAction("default-sentence-analysis", src)
+		},
+		OnToggleTrunk: func() { a.onlyTrunk = !a.onlyTrunk },
+		OnToggleSlash: func() { a.showSlashes = !a.showSlashes },
+		OnToggleRole:  func(role string) { a.toggleGrammarRole(role) },
+		OnSpeak:       func() { PlaySpeechLang(origText, a.speechLang(), false) },
+		OnSave:        onSave,
+	}
+	renderGrammarVisualCardEx(c, t, origText, res, saved, st)
+}
+
+// renderGrammarVisualCardEx draws the card from an explicit state, so the same
+// layout serves any caller that can supply one.
+func renderGrammarVisualCardEx(c *ui.Context, t *ui.Theme, origText string, res *SentenceAnalysisResult, saved bool, st grammarCardState) {
 	// 1. Collect obstacles and structural components
 	var obstacles []SyntaxAnnotation
 	var subjects []trunkUnit
@@ -351,7 +512,7 @@ func (a *app) renderGrammarVisualCard(c *ui.Context, t *ui.Theme, origText strin
 		if ann.Obstacle != "" || ann.Restore != "" {
 			obstacles = append(obstacles, ann)
 		}
-		if ann.Form == "clause" {
+		if strings.EqualFold(ann.Form, "clause") {
 			clauses = append(clauses, ann)
 			continue
 		}
@@ -370,28 +531,45 @@ func (a *app) renderGrammarVisualCard(c *ui.Context, t *ui.Theme, origText strin
 		Background(t.Surface).Border(1, t.Border).
 		Shadow(0, 2, 8, 0, withAlpha(appTheme(t).ShadowColor, 0.67)).Children(func() {
 		ui.Column(c).FillWidth().Gap(10).Children(func() {
-			// 1. Header: mode label and the speak button
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+			// 1. Header: mode label, sentence pager and the speak button
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
 				topBg, topBorder, topText := grammarHeaderColors(t)
 				ui.Box(c).Padding(3, 10).Radius(12).
 					Background(topBg).Border(1, topBorder).Children(func() {
-					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, "长难句拆解").FontSize(11).FontWeight(600).TextColor(topText)
-					})
+					ui.Text(c, "长难句拆解").FontSize(11).FontWeight(600).TextColor(topText).SingleLine()
 				})
+
+				// 多句时顶部出现分页器：每次只把当前这一句发给模型，避免多句混标。
+				if st.SentCount > 1 {
+					ui.Row(c).AlignItems(ui.Center).Gap(Space1).Children(func() {
+						prevBtn := ui.Button(c, "‹").Height(22).Width(22).Padding(0, 0).Radius(RadiusXS).
+							Center().Disabled(st.SentIdx <= 0).Tooltip("上一句")
+						if prevBtn.Clicked() && st.OnPrevSent != nil {
+							st.OnPrevSent()
+						}
+						ui.Text(c, fmt.Sprintf("第 %d / %d 句", st.SentIdx+1, st.SentCount)).
+							Font(fontMono).FontFeatures("tnum").FontSize(FontMicro).
+							TextColor(t.TextMuted).SingleLine()
+						nextBtn := ui.Button(c, "›").Height(22).Width(22).Padding(0, 0).Radius(RadiusXS).
+							Center().Disabled(st.SentIdx+1 >= st.SentCount).Tooltip("下一句")
+						if nextBtn.Clicked() && st.OnNextSent != nil {
+							st.OnNextSent()
+						}
+					})
+				}
 
 				ui.Spacer(c).Grow(1)
 
-				btnSpeak := renderIconButton(c, iconSpeak, "朗读整句", 28, 14, false)
-				if btnSpeak.Clicked() {
-					PlaySpeechLang(origText, a.speechLang(), false)
+				btnSpeak := renderIconButton(c, iconSpeak, "朗读本句", 28, 14, false)
+				if btnSpeak.Clicked() && st.OnSpeak != nil {
+					st.OnSpeak()
 				}
 			})
 
 			// 2. Main Sentence with Annotated Highlights (Spans & Badges)
 			ui.Box(c).FillWidth().Padding(12, 14).Radius(6).Background(t.SurfaceHover).Border(1, t.Border).Children(func() {
 				ui.Column(c).FillWidth().Gap(6).Children(func() {
-					a.renderGrammarSpans(c, t, origText, res)
+					renderGrammarSpansWithState(c, t, origText, res, st.OnlyTrunk, st.ShowSlashes, st.FilterRole)
 				})
 			})
 
@@ -412,35 +590,41 @@ func (a *app) renderGrammarVisualCard(c *ui.Context, t *ui.Theme, origText strin
 			// what the legend promises is what the sentence shows.
 			ink := grammarInkFor(t)
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(2, 0, 2, 0).Children(func() {
-				if grammarToggle(c, t, "只看主干", a.onlyTrunk, "只留主句骨架，从句和修饰短语折叠成省略号").Clicked() {
-					a.onlyTrunk = !a.onlyTrunk
+				if grammarToggle(c, t, "只看主干", st.OnlyTrunk, "只留主句骨架，从句和修饰短语折叠成省略号").Clicked() && st.OnToggleTrunk != nil {
+					st.OnToggleTrunk()
 				}
-				if grammarToggle(c, t, "断句", a.showSlashes, "在从句和意群的边界显示断句斜线").Clicked() {
-					a.showSlashes = !a.showSlashes
+				if grammarToggle(c, t, "断句", st.ShowSlashes, "在从句和意群的边界显示断句斜线").Clicked() && st.OnToggleSlash != nil {
+					st.OnToggleSlash()
 				}
 
 				ui.Spacer(c).Grow(1)
 
 				ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-					grammarLegend(c, t, ink, "subject", "主语", a.filterRole, func(role string) {
-						a.toggleGrammarRole(role)
+					grammarLegend(c, t, ink, "subject", "主语", st.FilterRole, func(role string) {
+						if st.OnToggleRole != nil {
+							st.OnToggleRole(role)
+						}
 					})
-					grammarLegend(c, t, ink, "predicate", "谓语", a.filterRole, func(role string) {
-						a.toggleGrammarRole(role)
+					grammarLegend(c, t, ink, "predicate", "谓语", st.FilterRole, func(role string) {
+						if st.OnToggleRole != nil {
+							st.OnToggleRole(role)
+						}
 					})
-					grammarLegend(c, t, ink, "object", "宾语", a.filterRole, func(role string) {
-						a.toggleGrammarRole(role)
+					grammarLegend(c, t, ink, "object", "宾语", st.FilterRole, func(role string) {
+						if st.OnToggleRole != nil {
+							st.OnToggleRole(role)
+						}
 					})
 				})
 			})
 
 			// 3.5 Live grammar knowledge card
-			if a.grammarHoverKnowledge != "" {
+			if st.HoverKnowledge != "" {
 				ui.Box(c).FillWidth().Padding(8, 12).Radius(6).
 					Background(ink.clauseTint).Border(1, t.Border).Children(func() {
 					ui.Row(c).Gap(6).AlignItems(ui.Start).Children(func() {
 						ui.Text(c, "·").FontSize(12).FontWeight(700).TextColor(ink.connector)
-						ui.Text(c, a.grammarHoverKnowledge).FontSize(12).FontWeight(500).
+						ui.Text(c, st.HoverKnowledge).FontSize(12).FontWeight(500).
 							TextColor(ink.clauseText).Wrap().Grow(1)
 					})
 				})
@@ -552,7 +736,7 @@ func (a *app) renderGrammarVisualCard(c *ui.Context, t *ui.Theme, origText strin
 					// stops it reading as the finished article when the rest of
 					// the card is still empty.
 					head := "地道精翻:"
-					if a.grammarResultPrefill {
+					if st.Prefill {
 						head = "先看译文（机翻，语法分析生成中）:"
 					}
 					ui.Text(c, head).FontSize(11).FontWeight(600).TextColor(t.TextMuted)
@@ -574,7 +758,7 @@ func (a *app) renderGrammarVisualCard(c *ui.Context, t *ui.Theme, origText strin
 					})
 					return
 				}
-				if onSave == nil {
+				if st.OnSave == nil {
 					return
 				}
 				btnSave := ui.Button(c, "").Height(26).Padding(2, 14).Radius(5).
@@ -586,7 +770,7 @@ func (a *app) renderGrammarVisualCard(c *ui.Context, t *ui.Theme, origText strin
 					})
 				})
 				if btnSave.Clicked() {
-					onSave()
+					st.OnSave()
 				}
 			})
 		})
@@ -821,56 +1005,71 @@ type grammarInk struct {
 
 // renderGrammarSpans draws the marked-up sentence.
 //
-// Every word is rendered once, in order. A word carries at most one mark, taken
-// from the most specific annotation covering it, so the sentence reads as text
-// with underlines rather than as a pile of chips. Clause openings add a small
-// label above the word that starts them.
+// This is the app's own entry point; the state it reads is passed explicitly
+// to renderGrammarSpansWithState, which is what the card itself calls.
 func (a *app) renderGrammarSpans(c *ui.Context, t *ui.Theme, origText string, res *SentenceAnalysisResult) {
+	renderGrammarSpansWithState(c, t, origText, res, a.onlyTrunk, a.showSlashes, a.filterRole)
+}
+
+// renderGrammarSpansWithState draws the marked-up sentence.
+//
+// Every word is rendered once, in order, inside a wrapping row of equal-height
+// boxes. The equal height is what makes the row wrap predictably: a badge (a
+// clause label, a star, a slash) used to make its own word taller than its
+// neighbours, the row aligned those taller words somewhere else, and the line
+// ends came out ragged — which is how "Chinese Exclusive" lost its right edge
+// and "open-" floated above its own line.
+//
+// A word carries at most one mark, taken from the most specific annotation
+// covering it, so the sentence reads as text with underlines rather than as a
+// pile of chips. The words of one span are joined by leaving no gap between
+// them, so the underlines of a phrase meet instead of showing gaps and
+// mismatched stroke ends.
+func renderGrammarSpansWithState(c *ui.Context, t *ui.Theme, origText string, res *SentenceAnalysisResult, onlyTrunk, showSlashes bool, filterRole string) {
 	tokens := buildGrammarTokens(origText, res)
 	ink := grammarInkFor(t)
+	const lineBoxH float32 = 26
 
-	ui.Row(c).FillWidth().Wrap().Gap(4).AlignItems(ui.End).Children(func() {
+	ui.Row(c).FillWidth().Wrap().Gap(0).AlignItems(ui.Center).Children(func() {
 		for i := 0; i < len(tokens); i++ {
 			item := tokens[i]
 
-			if a.onlyTrunk && !item.IsCore {
+			if onlyTrunk && !item.IsCore {
 				continue
 			}
 
-			if a.showSlashes && item.OpenClause != "" && item.IsCore {
-				ui.Text(c, "/").FontSize(14).FontWeight(700).TextColor(ink.connector)
+			if showSlashes && item.OpenClause != "" && item.IsCore {
+				ui.Box(c).Height(lineBoxH).Padding(0, 4, 0, 2).Center().Children(func() {
+					ui.Text(c, "/").FontSize(14).FontWeight(700).TextColor(ink.connector).SingleLine()
+				})
 			}
 
-			// A run of words covered by the same annotation is one span, and
-			// its mark is one line. Drawing per word left gaps and mismatched
-			// stroke ends, so "Stage 4 cancer patient" read as three separate
-			// underlines instead of one.
-			if item.Role != "" && item.SpanEnd > item.Start {
-				run := make([]GrammarToken, 0, 4)
-				j := i
-				for ; j < len(tokens); j++ {
-					next := tokens[j]
-					if next.SpanIndex != item.SpanIndex || next.Role != item.Role {
-						break
-					}
-					if a.onlyTrunk && !next.IsCore {
-						break
-					}
-					run = append(run, next)
-				}
-				if len(run) > 1 {
-					renderGrammarSpan(c, t, ink, run)
-					i = j - 1
-					continue
-				}
+			// The clause badge sits before the word that opens the clause: a small
+			// label in the clause's tint, so nesting reads as depth.
+			if item.OpenClause != "" {
+				ui.Box(c).Height(lineBoxH).Padding(0, 4, 0, 0).Center().Children(func() {
+					ui.Box(c).Padding(1, 5).Radius(3).Background(ink.clauseTint).
+						Tooltip(grammarClauseTooltip(item.OpenClause)).Children(func() {
+						ui.Text(c, item.OpenClause).FontSize(9).FontWeight(700).TextColor(ink.connector).SingleLine()
+					})
+				})
 			}
 
-			renderGrammarWord(c, t, ink, item)
+			joinedNext := false
+			if item.Role != "" && item.SpanEnd > item.Start && i+1 < len(tokens) {
+				next := tokens[i+1]
+				if next.SpanIndex == item.SpanIndex && next.Role == item.Role && (!onlyTrunk || next.IsCore) {
+					joinedNext = true
+				}
+			}
+			renderGrammarWordAligned(c, t, ink, item, lineBoxH, joinedNext, filterRole)
 		}
-		if a.onlyTrunk && len(tokens) > 0 {
+		if onlyTrunk && len(tokens) > 0 {
 			for _, tok := range tokens {
 				if !tok.IsCore {
-					ui.Text(c, "…").FontSize(14).TextColor(ink.muted)
+					ui.Box(c).Height(lineBoxH).Center().Children(func() {
+						ui.Text(c, "…").FontSize(14).TextColor(ink.muted).SingleLine()
+					})
 					break
 				}
 			}
@@ -878,64 +1077,41 @@ func (a *app) renderGrammarSpans(c *ui.Context, t *ui.Theme, origText string, re
 	})
 }
 
-// renderGrammarSpan draws several consecutive words as one marked span.
-//
-// The words keep their own spacing, but the mark is a single continuous line
-// under the whole run, which is what makes a phrase read as one unit of the
-// sentence rather than as a string of separately annotated words.
-func renderGrammarSpan(c *ui.Context, t *ui.Theme, ink grammarInk, run []GrammarToken) {
-	kind, colour, ok := markForRole(run[0].Role, ink)
-	if !ok {
-		for _, item := range run {
-			renderGrammarWord(c, t, ink, item)
-		}
-		return
-	}
-	seed := int64(run[0].SpanStart*7919 + run[0].SpanEnd*104729 + 1)
-
-	box := ui.Box(c).Padding(0, 1).Tooltip(tooltipFor(run[0]))
-	box.Draw(func(p *ui.Painter, r ui.Rect) {
-		markRect := ui.Rect{X: r.X, Y: r.Y + r.H + 1, W: r.W, H: markHeight(kind)}
-		drawMark(p, markRect, kind, colour, seed)
-	})
-	box.Children(func() {
-		ui.Row(c).Gap(4).AlignItems(ui.End).Children(func() {
-			for _, item := range run {
-				weight := 600
-				if item.Role == "predicate" {
-					weight = 700
-				}
-				ui.Text(c, item.Word+" ").FontSize(14).FontWeight(weight).TextColor(ink.body)
-			}
-		})
-	})
-}
-
-// renderGrammarWord draws one word with its role's mark.
+// renderGrammarWordAligned draws one word, its role's mark and its obstacle
+// star inside a box of lineBoxH, so every word occupies the same vertical slot
+// and the row wraps at predictable places.
 //
 // The mark is drawn, not styled: mygo has no dashed or double border, and the
 // hand-drawn wobble that makes read-frog's card legible is a polyline, not a
-// text decoration. Each word gets a Draw callback that strokes its role's mark
-// along the bottom of the word's own box.
-func renderGrammarWord(c *ui.Context, t *ui.Theme, ink grammarInk, item GrammarToken) {
-	word := item.Word
-
-	// The clause badge sits before the word that opens the clause: a small
-	// label in the clause's tint, so nesting reads as depth.
-	if item.OpenClause != "" {
-		ui.Box(c).Padding(1, 5).Radius(3).Background(ink.clauseTint).
-			Tooltip(grammarClauseTooltip(item.OpenClause)).Children(func() {
-			ui.Text(c, item.OpenClause).FontSize(9).FontWeight(700).TextColor(ink.connector)
-		})
-	}
-
+// text decoration. The mark sits at the bottom of the equal-height box rather
+// than below the glyphs, so the marks of a whole line stay level with each
+// other.
+//
+// filterRole dims every word that is not the role chosen in the legend. The
+// legend used to look interactive and change nothing.
+func renderGrammarWordAligned(c *ui.Context, t *ui.Theme, ink grammarInk, item GrammarToken, lineBoxH float32, joinedNext bool, filterRole string) {
 	kind, colour, ok := markForRole(item.Role, ink)
+	filteredOut := filterRole != "" && item.Role != filterRole
+	if filteredOut {
+		ok = false
+	}
 	if !ok {
-		if item.IsCore {
-			ui.Text(c, word+" ").FontSize(14).TextColor(ink.body)
-		} else {
-			ui.Text(c, word+" ").FontSize(14).TextColor(t.Text)
+		col := ink.body
+		if filteredOut {
+			col = ink.muted
+		} else if !item.IsCore {
+			col = t.Text
 		}
+		weight := 400
+		// The connector is drawn as coloured text rather than marked; it has no
+		// underline of its own, so it must not read as plain body text.
+		if item.Role == "connector" && !filteredOut {
+			col = ink.connector
+			weight = 600
+		}
+		ui.Box(c).Height(lineBoxH).Center().Children(func() {
+			ui.Text(c, item.Word+" ").FontSize(14).FontWeight(weight).TextColor(col).SingleLine()
+		})
 		return
 	}
 
@@ -945,28 +1121,31 @@ func renderGrammarWord(c *ui.Context, t *ui.Theme, ink grammarInk, item GrammarT
 		weight = 700
 	}
 
-	ui.Row(c).AlignItems(ui.Center).Children(func() {
-		box := ui.Box(c).Padding(0, 1).Tooltip(tooltipFor(item))
-		// The mark sits just below the glyphs, not on them. The Draw box is the
-		// element's content box, whose bottom edge is roughly the baseline, so
-		// the mark is offset down by a couple of DIPs and given enough height
-		// for the wave to swing without touching the letters.
-		box.Draw(func(p *ui.Painter, r ui.Rect) {
-			markRect := ui.Rect{X: r.X, Y: r.Y + r.H + 1, W: r.W, H: markHeight(kind)}
-			drawMark(p, markRect, kind, colour, seed)
-		})
-		box.Children(func() {
-			txt := ui.Text(c, word).FontSize(14).FontWeight(weight).TextColor(ink.body)
-			_ = txt
-		})
-		if item.Obstacle != "" {
-			ui.Text(c, "★").FontSize(9).TextColor(ink.obstacle)
-		}
-		ui.Text(c, " ").FontSize(14)
+	displayWord := item.Word
+	if joinedNext {
+		displayWord = item.Word + " "
+	}
+	box := ui.Box(c).Height(lineBoxH).Padding(0, 1).Center().Tooltip(tooltipFor(item))
+	box.Draw(func(p *ui.Painter, r ui.Rect) {
+		mh := markHeight(kind)
+		markRect := ui.Rect{X: r.X, Y: r.Y + r.H - mh, W: r.W, H: mh}
+		drawMark(p, markRect, kind, colour, seed)
 	})
+	box.Children(func() {
+		ui.Text(c, displayWord).FontSize(14).FontWeight(weight).TextColor(ink.body).SingleLine()
+	})
+	if item.Obstacle != "" {
+		ui.Box(c).Height(lineBoxH).Center().Children(func() {
+			ui.Text(c, "★").FontSize(9).TextColor(ink.obstacle).SingleLine()
+		})
+	}
+	if !joinedNext {
+		ui.Box(c).Height(lineBoxH).Center().Children(func() {
+			ui.Text(c, " ").FontSize(14).SingleLine()
+		})
+	}
 }
 
-// markForRole maps a grammar role onto its line style and colour.
 func markForRole(role string, ink grammarInk) (markKind, ui.Color, bool) {
 	switch role {
 	case "subject":

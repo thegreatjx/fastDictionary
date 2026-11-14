@@ -58,11 +58,19 @@ var (
 	dragging      bool
 	dragStart     winPoint
 	dragEnd       winPoint
-	hookTarget    uintptr // window that was foreground when the drag started
+	// hookTarget is the window the gesture happened in: the window under the
+	// pointer for a drag or a double click, the foreground window for a
+	// keyboard selection.
+	hookTarget uintptr
 	// click tracking, for the double click that selects a word
 	lastClickTime uint32
 	lastClickPos  winPoint
 	clickCount    int
+	// dblClickPending remembers that the press now in progress was the second
+	// (or third) of a double click, so the release can fire the gesture. The
+	// click must not fire on the press: the applications select the word on
+	// the release, and only then does the pointer say which window it is in.
+	dblClickPending bool
 	// pressTime is when the button went down, in the hook's own millisecond
 	// clock (MSLLHOOKSTRUCT.Time). It is what the duration floor judges.
 	pressTime uint32
@@ -113,7 +121,9 @@ const (
 
 	// doubleClickSlack recognises the second press near the first; the
 	// time window itself comes from the system (doubleClickThreshold).
-	doubleClickSlack = 4
+	// 6 rather than 4: on a scaled display the two presses drift a pixel or
+	// two, and a tighter slack dropped legitimate double clicks.
+	doubleClickSlack = 6
 
 	vkLeft  = 0x25
 	vkUp    = 0x26
@@ -178,7 +188,6 @@ func lowLevelMouseProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 		// still a caret drag.
 		pressAt = time.Now()
 		pressLastKey = lastKeyAt
-		hookTarget = foregroundWindow()
 		press = true
 		// A second press near the previous one, soon after it, is a double
 		// click: the applications select the word under the pointer for it,
@@ -192,14 +201,11 @@ func lowLevelMouseProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 		}
 		lastClickTime = info.Time
 		lastClickPos = pt
-		if clickCount == 2 && !isOwnProcess(hookTarget) {
-			clickFire = true
-			kind = gestureDoubleClick
-			lastKey = pressLastKey
-			pressedAt = pressAt
-			cx, cy = pt.X, pt.Y
-			target = hookTarget
-		}
+		// The click becomes a gesture at the release, not here: a topmost
+		// fastDictionary window (a pinned card, the settings page) is the
+		// foreground window even while the user double-clicks a word
+		// underneath it, and judging by it dropped those selections.
+		dblClickPending = clickCount == 2 || clickCount == 3
 	case wmMouseMove:
 		if dragging {
 			dragEnd = pt
@@ -208,10 +214,27 @@ func lowLevelMouseProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 		moved = true
 	case wmLButtonUp:
 		atomic.AddUint64(&hookUps, 1)
+		wasDbl := dblClickPending
+		dblClickPending = false
 		if dragging {
 			dragging = false
 			held := time.Duration(info.Time-pressTime) * time.Millisecond
-			if ok, why := dragIsSelection(dragStart, dragEnd, held); !ok {
+			if wasDbl && absInt(int(pt.X-dragStart.X)) <= doubleClickSlack &&
+				absInt(int(pt.Y-dragStart.Y)) <= doubleClickSlack {
+				// The second press barely moved before coming up: a double
+				// click, whose selection the application has just made. The
+				// owner is the window under the release point.
+				if hwnd := windowAt(pt.X, pt.Y); !isOwnProcess(hwnd) {
+					clickFire = true
+					kind = gestureDoubleClick
+					lastKey = pressLastKey
+					pressedAt = pressAt
+					cx, cy = pt.X, pt.Y
+					target = hwnd
+				} else {
+					atomic.AddUint64(&hookDragsOwn, 1)
+				}
+			} else if ok, why := dragIsSelection(dragStart, dragEnd, held); !ok {
 				// Counted, not logged: a log line written from this callback
 				// is slow enough to get the hook removed by Windows.
 				atomic.AddUint64(&hookRejectedDrags, 1)
@@ -241,6 +264,8 @@ func lowLevelMouseProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 		}
 	case wmRButtonDown, wmMButtonDown:
 		dragging = false
+		dblClickPending = false
+		resetClickTrackingLocked()
 	}
 	hookMu.Unlock()
 
@@ -249,14 +274,13 @@ func lowLevelMouseProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 		go OnMouseDown(x, y)
 	}
 
-	// Same rule as the press: the callback goes to its own goroutine, so the
-	// hook returns at once and the desktop keeps its input latency. The
-	// atomic gate matters as much: pointer moves arrive by the thousand per
-	// second, and a goroutine per move for a bar that is not on screen is
-	// pure waste.
+	// Same rule as the press, with one more step: the move is handed to a
+	// single coalescing worker rather than a goroutine per event. Pointer
+	// moves arrive by the thousand per second, and starting one goroutine
+	// per move for a bar that is on screen flooded the scheduler and made
+	// the whole desktop stutter.
 	if moved && OnMouseMove != nil && atomic.LoadUint32(&chipHoverArmed) != 0 {
-		x, y := moveX, moveY
-		go OnMouseMove(x, y)
+		dispatchMouseMove(moveX, moveY)
 	}
 
 	// Everything slow happens in the goroutine, never here. A low-level hook
@@ -320,6 +344,10 @@ func lowLevelKeyProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 				now := time.Now()
 				hookMu.Lock()
 				lastKeyAt = now
+				// Typing ends any Shift+arrow selection: the up event of the
+				// arrow would otherwise still report the text the user has
+				// already navigated away from.
+				keyboardSelecting = false
 				hookMu.Unlock()
 				if OnKeyDown != nil {
 					vk := info.VkCode
@@ -451,6 +479,42 @@ var chipHoverArmed uint32
 // armChipHover lets pointer moves reach OnMouseMove.
 func armChipHover() { atomic.StoreUint32(&chipHoverArmed, 1) }
 
+// moveWake carries at most one pending wake-up for the pointer-move worker;
+// latestMove keeps the coordinates of the newest event. Together they turn a
+// stream of moves into "the pointer is here now", which is all a hover needs.
+var (
+	moveWake   = make(chan struct{}, 1)
+	moveWorker sync.Once
+	latestMove atomic.Uint64 // high 32 bits: X, low 32 bits: Y
+)
+
+// dispatchMouseMove hands the newest pointer position to one long-lived
+// worker goroutine. The hook callback must stay cheap, and one goroutine per
+// move made the scheduler the bottleneck whenever a selection chip was on
+// screen.
+func dispatchMouseMove(x, y int32) {
+	moveWorker.Do(func() {
+		go func() {
+			for range moveWake {
+				// Recover per move, not around the whole loop: a panic in the
+				// hover handler must cost one event, not every later one.
+				func() {
+					defer recoverLog("hook.go:moveWorker")
+					v := latestMove.Load()
+					if fn := OnMouseMove; fn != nil && atomic.LoadUint32(&chipHoverArmed) != 0 {
+						fn(int32(uint32(v>>32)), int32(uint32(v)))
+					}
+				}()
+			}
+		}()
+	})
+	latestMove.Store(uint64(uint32(x))<<32 | uint64(uint32(y)))
+	select {
+	case moveWake <- struct{}{}:
+	default: // a wake-up is already pending; it will read the newest position
+	}
+}
+
 // disarmChipHover stops pointer moves from reaching OnMouseMove.
 func disarmChipHover() {
 	atomic.StoreUint32(&chipHoverArmed, 0)
@@ -464,6 +528,7 @@ func resetClickTrackingLocked() {
 	lastClickTime = 0
 	lastClickPos = winPoint{}
 	clickCount = 0
+	dblClickPending = false
 }
 
 // removeHooks uninstalls both hooks. Unhooking is thread-agnostic in win32,
@@ -499,6 +564,12 @@ var (
 	hookThreadOnce sync.Once
 	hookLoopID     uintptr // thread id, for PostThreadMessage
 
+	// hookReadyCh is closed by hookLoop as soon as the thread has recorded its
+	// id and is about to pump messages. Posting a command before that point
+	// addresses a thread that does not exist yet, so the work is lost.
+	hookReadyCh   = make(chan struct{})
+	hookReadyOnce sync.Once
+
 	// doubleClickMSLive caches GetDoubleClickTime, the system's own
 	// double-click threshold, read once from installHooks.
 	doubleClickMSLive uint32
@@ -518,6 +589,21 @@ func startHookThread() {
 	hookThreadOnce.Do(func() {
 		go hookLoop()
 	})
+}
+
+// waitHookThreadReady starts the hook thread if needed and waits until its
+// message loop is up. It returns false when the thread did not get there in
+// time, which is the caller's cue to skip the command rather than to install
+// the hooks itself: installing from a goroutine with no message loop gives a
+// hook that is installed and never fires.
+func waitHookThreadReady(timeout time.Duration) bool {
+	startHookThread()
+	select {
+	case <-hookReadyCh:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
 }
 
 // hookEventCount is read by diagnostics from a normal goroutine; the hook
@@ -612,6 +698,7 @@ func hookLoop() {
 	hookMu.Lock()
 	hookLoopID = currentThreadID()
 	hookMu.Unlock()
+	hookReadyOnce.Do(func() { close(hookReadyCh) })
 
 	if err := installHooks(); err != nil {
 		log.Printf("fastDictionary: selection hooks unavailable: %v", err)

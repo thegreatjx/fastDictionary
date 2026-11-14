@@ -27,18 +27,18 @@ const (
 	// minSelectionDrag is how far the pointer must travel between press and
 	// release for the gesture to count as a drag at all. It used to be 10px,
 	// which is inside the range of a scrollbar thumb, a window title bar and
-	// a window edge, so dragging any of those raised the chip. A selection
-	// is aimed at the end of a run of text, which in practice travels
-	// further than this.
-	minSelectionDrag = 20
+	// a window edge, so dragging any of those raised the chip. 14 keeps that
+	// protection and still catches a short word: at 125–150% scaling a three
+	// letter word is only 12–16px wide, and 20 dropped those drags.
+	minSelectionDrag = 14
 
 	// minSelectionDragDuration rejects a drag that is over almost as soon as
 	// it starts. Flicking a scrollbar and grabbing-then-releasing a window
 	// edge produce exactly the pointer travel of a selection, but they are
-	// done in a fraction of the time: a real selection is deliberate, the
-	// user stops to aim. Measured against real selections, this rejects the
-	// flicks and keeps everything the user meant.
-	minSelectionDragDuration = 80 * time.Millisecond
+	// done in a fraction of the time. 45ms is the floor now: double-clicking
+	// a word and dragging a word are both fast, and 80ms dropped the quick
+	// ones without keeping anything the 45ms floor loses.
+	minSelectionDragDuration = 45 * time.Millisecond
 
 	// shortSelectionRunes is the length at or below which a read is treated
 	// as an accident: a stray click that left the caret on one character, or
@@ -234,7 +234,23 @@ type gestureGate struct {
 // chip, and records it when it may. The recorded gesture is the one that was
 // accepted, not the one that was refused, so a refusal never extends the
 // cooldown.
+//
+// canAllow and record split the same rule in two. A caller that only learns
+// whether the gesture is worth acting on, and records it once the text really
+// was captured, uses the pair: recording before the capture burned the
+// same-spot cooldown on a gesture that never produced a card.
 func (g *gestureGate) allow(now time.Time, x, y int32) (bool, string) {
+	ok, why := g.canAllow(now, x, y)
+	if !ok {
+		return false, why
+	}
+	g.record(now, x, y)
+	return true, ""
+}
+
+// canAllow is allow without the bookkeeping: the same cooldown and same-spot
+// rules, judged against the last recorded gesture, leaving the gate untouched.
+func (g *gestureGate) canAllow(now time.Time, x, y int32) (bool, string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.fired {
@@ -247,10 +263,16 @@ func (g *gestureGate) allow(now time.Time, x, y int32) (bool, string) {
 			return false, "same spot"
 		}
 	}
+	return true, ""
+}
+
+// record marks a gesture as taken, which starts the cooldown.
+func (g *gestureGate) record(now time.Time, x, y int32) {
+	g.mu.Lock()
 	g.fired = true
 	g.at = now
 	g.x, g.y = x, y
-	return true, ""
+	g.mu.Unlock()
 }
 
 // reset forgets the last gesture, so a pause or a mode change does not leave

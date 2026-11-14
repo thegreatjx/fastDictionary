@@ -128,7 +128,10 @@ func popupContentHeight(s snapshot, w float32) float32 {
 	case modeGrammar:
 		h = 420
 		if s.source != "" {
-			h += float32(wrappedLines(s.source, w-48, 14)) * 16
+			// 只算当前这一句：卡片只渲染它，按整段估高会留下一整块空白。
+			// 行高从 16 调到 18，与渲染时 26 DIP 等高行内盒的实际行距对齐。
+			sent, _, _ := grammarActiveSentence(s.source, s.grammarSentIdx)
+			h += float32(wrappedLines(sent, w-48, 14)) * 18
 		}
 		if cardReadyForMode(s) && s.grammarResult.Translation != "" {
 			h += float32(wrappedLines(s.grammarResult.Translation, w-48, 14)) * 16
@@ -262,6 +265,14 @@ func (a *app) applyPopupHeight(delta float32) {
 	if win == nil {
 		return
 	}
+	// A window the user sized keeps that size: the autofit corrects an
+	// estimate, and there is no estimate to correct any more.
+	a.mu.Lock()
+	resized := a.userResized
+	a.mu.Unlock()
+	if resized {
+		return
+	}
 	curW, curH := win.Size()
 	// The user can drag the window, so the cached position goes stale: resizing
 	// from it would snap the window back to where it was opened. Read where it
@@ -294,8 +305,13 @@ func (a *app) applyPopupHeight(delta float32) {
 		return
 	}
 
+	a.mu.Lock()
 	a.popupY = newY
 	a.popupH = h
+	// Record the width too: scheduleAutofit compares the window against these
+	// fields to tell its own resizes from the user's.
+	a.popupW = curW
+	a.mu.Unlock()
 	// One call for both: SetSize and SetPosition each move the window on their
 	// own, so pairing them makes the window appear at the new size before it
 	// has moved — two repaints where the user sees one.
@@ -343,6 +359,15 @@ func (a *app) fitHeight() {
 	if win == nil {
 		return
 	}
+	// The user sized this window by hand: refresh the content and leave the
+	// bounds alone, or the next page change undoes the drag.
+	a.mu.Lock()
+	resized := a.userResized
+	a.mu.Unlock()
+	if resized {
+		win.Update(func() {})
+		return
+	}
 	cfg := a.store.Get()
 	s := a.snap()
 
@@ -378,11 +403,10 @@ func (a *app) fitHeight() {
 	}
 	newY, targetH := liftPopupY(curY, targetH, waTop, waBottom)
 
+	a.mu.Lock()
 	a.popupY = newY
 	a.popupH = targetH
 	a.popupW = int(w)
-
-	a.mu.Lock()
 	// fitHeight is called when the content changes, not by the autofit
 	// feedback loop, so it is the one place that knows the measured content
 	// is about to be different: let scheduleAutofit take a fresh decision.

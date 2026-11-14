@@ -83,19 +83,23 @@ type settingsNavGroup struct {
 
 // 导航按用户心智分组。分组只影响侧栏，页面路由仍由 id 决定。
 var settingsNavGroups = []settingsNavGroup{
+	// 工作台放最上面：主窗口默认打开的就是这一页，关掉浮窗后也能直接回来。
+	{"工作台", []settingsNavEntry{
+		{"home", "查词翻译", iconTranslate},
+		{"vocabulary", "生词本", iconBookmark},
+	}},
 	{"常规", []settingsNavEntry{
 		{"general", "通用", iconGear},
 		{"hotkey", "快捷键", iconKeyboard},
 	}},
 	{"划词与翻译", []settingsNavEntry{
-		{"selection", "划词", iconTranslate},
+		{"selection", "划词", iconSearch},
 		{"translate", "翻译", iconSwap},
 		{"dict", "词典与发音", iconDict},
 	}},
-	{"AI 与学习", []settingsNavEntry{
+	{"AI 与指令", []settingsNavEntry{
 		{"ai", "AI 精翻", iconPolish},
 		{"actions", "AI 指令", iconSparkles},
-		{"vocabulary", "生词本", iconBookmark},
 	}},
 	{"其他", []settingsNavEntry{
 		{"about", "关于", iconInfo},
@@ -120,11 +124,18 @@ func (a *app) settingsNavItem(c *ui.Context, t *ui.Theme, at AppTheme, item sett
 	if active {
 		iconCol, textCol, weight = at.Accent, at.Text, 600
 	}
+	// 生词本后面直接带数量：侧栏是唯一能看到「存了多少」的地方。
+	label := item.label
+	if item.id == "vocabulary" {
+		if n := GetVocabularyStore().Count(); n > 0 {
+			label = fmt.Sprintf("生词本 (%d)", n)
+		}
+	}
 	b.Children(func() {
 		ui.Box(c).Width(IconSize).Height(IconSize).Shrink(0).Center().Children(func() {
 			ui.Icon(c, item.icon).Size(IconSize, IconSize).TextColor(iconCol)
 		})
-		ui.Text(c, item.label).Font(fontUI).FontSize(FontControl).
+		ui.Text(c, label).Font(fontUI).FontSize(FontControl).
 			FontWeight(weight).TextColor(textCol).SingleLine()
 	})
 	if b.Clicked() && !active {
@@ -157,14 +168,57 @@ func (a *app) settingsView(c *ui.Context) {
 		// 「浅底 + 左侧竖条」。用 ButtonBase + RoleTreeItem 保留焦点与辅助技术。
 		ui.Column(c).Width(NavWidth).FillHeight().Padding(Space3).Gap(Space1).
 			Background(at.Canvas).Children(func() {
-			ui.Text(c, appTitle).Font(fontUI).FontSize(FontControl).FontWeight(600).
-				Padding(Space1, Space2).TextColor(at.Text)
-			for _, group := range settingsNavGroups {
-				ui.Text(c, group.title).Font(fontUI).FontSize(FontMicro).FontWeight(500).
-					Padding(Space1, Space2).TextColor(at.TextMuted).SingleLine()
-				for _, item := range group.items {
-					a.settingsNavItem(c, t, at, item)
-				}
+			// 主窗口标识：右上角的状态胶囊是常驻的，标题行只是把身份说清楚。
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Padding(Space1, Space2).Children(func() {
+				ui.Box(c).Size(24, 24).Radius(RadiusSM).Background(at.AccentSoft).Center().Shrink(0).Children(func() {
+					ui.Icon(c, iconDict).Size(14, 14).TextColor(at.Accent)
+				})
+				ui.Text(c, appTitle).Font(fontUI).FontSize(FontControl).FontWeight(600).
+					TextColor(at.Text).SingleLine()
+			})
+			// 导航组单独滚动：窗口压到最小高度时，五组入口加底部胶囊装不下，
+			// 没有这个滚动区最后几项就会被直接裁掉。标题行和胶囊保持常驻。
+			ui.Scroll(c).TrackScroll(&a.navScroll).Grow(1).FillWidth().
+				ScrollbarInsets(0, 0, Space2).Children(func() {
+				ui.Column(c).FillWidth().Gap(Space1).Children(func() {
+					for _, group := range settingsNavGroups {
+						ui.Text(c, group.title).Font(fontUI).FontSize(FontMicro).FontWeight(500).
+							Padding(Space2, Space2, Space1, Space2).TextColor(at.TextMuted).SingleLine()
+						for _, item := range group.items {
+							a.settingsNavItem(c, t, at, item)
+						}
+					}
+				})
+			})
+			// 常驻状态胶囊：不管用户停在哪一页，都能看到划词监听是否真的在跑。
+			paused := !a.selectionPausedUntil().IsZero()
+			dotCol := at.Success
+			statusText := "划词监听中"
+			if paused {
+				dotCol = at.Warning
+				statusText = "划词已暂停"
+			} else if cfg.SelectionTrigger == "hotkey" {
+				statusText = "仅快捷键划词"
+			}
+			statusBtn := ui.ButtonBase(c).FillWidth().Radius(RadiusSM).Padding(Space2, Space2).
+				Background(at.Surface).Border(1, at.BorderSubtle).Justify(ui.Start).AlignItems(ui.Center)
+			if statusBtn.Hovered() {
+				statusBtn.Background(at.SurfaceHover)
+			}
+			statusBtn.Children(func() {
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
+					ui.Box(c).Size(6, 6).Radius(RadiusXS).Background(dotCol).Shrink(0)
+					ui.Column(c).Grow(1).Children(func() {
+						ui.Text(c, statusText).Font(fontUI).FontSize(FontMicro).FontWeight(600).TextColor(at.Text).SingleLine()
+						if hk := strings.TrimSpace(cfg.HotkeySelection); hk != "" {
+							ui.Text(c, "快捷键 "+hk).Font(fontMono).FontSize(10).TextColor(at.TextMuted).SingleLine()
+						}
+					})
+				})
+			})
+			if statusBtn.Clicked() {
+				a.page = "selection"
+				a.settingsRefresh()
 			}
 		})
 
@@ -195,6 +249,8 @@ func (a *app) settingsView(c *ui.Context) {
 					})
 				}
 				switch a.page {
+				case "home":
+					a.pageHome(c, t, cfg)
 				case "general":
 					a.pageGeneral(c, t, cfg)
 				case "selection":
@@ -402,38 +458,79 @@ func (a *app) resetHotkeysToDefault() {
 // to the setting that can fix it, not to a generic settings page the user then
 // has to search.
 func (a *app) openAISettings() {
-	a.page = "ai"
-	a.showSettings()
-	a.settingsRefresh()
+	a.showMainWindow("ai")
 }
 
-// showSettings opens (or focuses) the settings window.
-func (a *app) showSettings() {
+// showMainWindow opens or focuses the one main window, on the given page.
+// The main window now carries the workbench home page as well as the
+// settings, so every entry point (tray, chip menu, startup) comes through
+// here instead of building its own page state.
+func (a *app) showMainWindow(page string) {
+	if page != "" {
+		a.page = page
+	} else if a.page == "" {
+		a.page = "home"
+	}
 	a.hotkeyDraftsInit = false
 	a.initHotkeyDrafts()
 	a.loadAIModels()
 	a.resetVocabularyViewState()
+	// The tray flyout duplicates the main window's home page; leaving it open
+	// behind the window reads as a second, stale copy.
+	if a.trayFlyout != nil && !a.trayFlyout.IsDestroyed() {
+		a.trayFlyout.Close()
+		a.trayFlyout = nil
+	}
 	if a.cfgWin != nil && !a.cfgWin.IsDestroyed() {
+		a.mainWinVisible = true
 		a.cfgWin.Show()
 		a.cfgWin.Focus()
+		a.cfgWin.Update(func() {})
 		return
 	}
 	win := mygo.NewWindow(mygo.WindowOptions{
-		Title:     appTitle + " 设置",
-		Width:     880,
-		Height:    640,
-		MinWidth:  680,
-		MinHeight: 480,
+		Title:     appTitle,
+		Width:     920,
+		Height:    660,
+		MinWidth:  700,
+		MinHeight: 500,
 		Content:   ui.View(safeView("settings", a.settingsView)),
 	})
 	win.OnClose(func(e *mygo.CloseEvent) {
 		if a.isQuitting.Load() {
 			return
 		}
+		// Closing the main window is not quitting: the selection trigger keeps
+		// working in the tray, which is what makes the window safe to close.
 		e.PreventDefault()
+		a.mainWinVisible = false
 		win.Hide()
 	})
 	a.cfgWin = win
+	a.mainWinVisible = true
 	win.Show()
 	win.Focus()
+}
+
+// toggleMainWindow is the tray's left click: show the workbench, or hide the
+// window when it is already in front.
+func (a *app) toggleMainWindow() {
+	if a.cfgWin != nil && !a.cfgWin.IsDestroyed() && a.mainWinVisible {
+		a.mainWinVisible = false
+		a.cfgWin.Hide()
+		return
+	}
+	a.showMainWindow("home")
+}
+
+// showSettings opens the main window on a settings page.
+//
+// It is kept for the callers that mean "the settings", not "the workbench":
+// the home page is what the tray and a plain start open, and landing there
+// when the user asked for settings would be wrong.
+func (a *app) showSettings() {
+	if a.page == "" || a.page == "home" {
+		a.page = "general"
+	}
+	a.showMainWindow(a.page)
 }
