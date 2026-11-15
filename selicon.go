@@ -156,8 +156,10 @@ func (a *app) clipChipWindow(hwnd uintptr, dpi int) {
 	w := int32((a.currentSelectionChipWidth()*dpi + 48) / 96)
 	h := int32((selIconHeight*dpi + 48) / 96)
 	// 11 DIP is the pill's own radius; anything smaller leaves a sliver of
-	// window outside the drawn surface.
-	clipRoundedWindow(hwnd, w, h, (11*dpi+48)/96)
+	// window outside the drawn surface. CreateRoundRectRgn wants the width and
+	// height of the corner ellipse, not a radius: passing 11 here drew a
+	// 5.5 DIP corner, which left a gap at all four corners of the pill.
+	clipRoundedWindow(hwnd, w, h, (22*dpi+48)/96)
 }
 
 var selIconOnce sync.Once
@@ -251,8 +253,13 @@ func (a *app) showSelIcon(px, py int32, text string) {
 			procSetWindowLongPtr.Call(hwnd, gwlExStyle, want)
 		}
 		a.placeChipWindow(hwnd, x, y)
-		// Re-assert after the frame change the style edit triggers.
-		a.placeChipWindow(hwnd, x, y)
+		// Re-assert only when the style edit above actually ran: that edit
+		// moves the frame, and the move has to be undone. With no edit there
+		// is nothing to undo, and the second SetWindowPos plus region rebuild
+		// was paid on every chip.
+		if want != ex {
+			a.placeChipWindow(hwnd, x, y)
+		}
 		var rr winRect
 		procGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&rr)))
 		log.Printf("fastDictionary: after placeChipWindow(%d,%d): hwnd=%#x rect=(%d,%d %dx%d)",
@@ -454,10 +461,20 @@ func (a *app) hideSelIcon() {
 	win := a.sel.win
 	a.sel.shown = false
 	a.sel.gen++
+	// Take the menu's pointer with the chip: the menu is an owned window, so
+	// hiding the chip hides it too, and a pointer left behind makes the next
+	// "更多" click close a window nobody can see.
+	more := a.moreFlyout
+	a.moreFlyout = nil
+	a.moreFlyoutShown = false
+	a.moreFlyoutRect = ui.Rect{}
 	a.mu.Unlock()
 	// Before the tip: from here on no pointer move is the chip's business.
 	disarmChipHover()
 	a.hideChipTip()
+	if more != nil && !more.IsDestroyed() {
+		more.Close()
+	}
 	// Hide whenever the window exists, not only when shown was true: the flag
 	// and the window can disagree (a ShowInactive that landed after an earlier
 	// Hide), and the old guard then left a chip on screen that no later hide
@@ -578,6 +595,17 @@ func (t *chipTipState) hitAt(x, y int, originX, originY int) (string, bool) {
 	for _, h := range t.hits {
 		r := h.rect
 		if float32(x) >= r.X && float32(x) <= r.X+r.W && float32(y) >= r.Y && float32(y) <= r.Y+r.H {
+			return h.label, true
+		}
+	}
+	// Bridge half of the row gap on each side. Sliding the pointer along the
+	// bar crosses a 2px gap between two buttons; without this the plate
+	// flickered off and on at every gap it crossed.
+	const gapBridge = float32(chipRowGap) / 2
+	for _, h := range t.hits {
+		r := h.rect
+		if float32(x) >= r.X-gapBridge && float32(x) <= r.X+r.W+gapBridge &&
+			float32(y) >= r.Y && float32(y) <= r.Y+r.H {
 			return h.label, true
 		}
 	}
@@ -1029,10 +1057,17 @@ func (a *app) onSelectionGesture(g selectionGesture) {
 	// touches the clipboard. It is only booked once the read produced text:
 	// a failed read used to burn the same-spot cooldown, so retrying it a
 	// second later was refused as a repeat of a gesture that never worked.
+	//
+	// A triple click skips the gate: it is a deliberate upgrade from the word
+	// the second click just showed to the paragraph holding it, and the
+	// gate only ever sees "the same spot again within a second". The record
+	// below still books it, so a stray repeat is refused as usual.
 	now := time.Now()
-	if ok, why := a.gestureGate.canAllow(now, px, py); !ok {
-		log.Printf("fastDictionary: gesture dropped (%s)", why)
-		return
+	if g.Kind != gestureTripleClick {
+		if ok, why := a.gestureGate.canAllow(now, px, py); !ok {
+			log.Printf("fastDictionary: gesture dropped (%s)", why)
+			return
+		}
 	}
 
 	// The user's application still has the focus here: this is the moment
@@ -1116,7 +1151,47 @@ func (a *app) onGlobalMouseDown(px, py int32) {
 	if a.selIconContains(px, py) {
 		return // a click on the chip itself: let it through
 	}
+	// A click on the "更多" menu is not a click elsewhere. Hiding the chip
+	// closes the owned menu window, and doing that on the press would kill
+	// the item the user is in the middle of choosing.
+	if a.moreFlyoutContains(px, py) {
+		return
+	}
 	a.hideSelIcon()
+}
+
+// onGlobalMouseWheel hides the chip when the wheel turns. It runs on a
+// goroutine of its own.
+//
+// Scrolling is the clearest sign the user has gone back to reading: the chip
+// sits over the next paragraph they are about to scroll to. The pointer being
+// over the menu is the one case where scrolling is aimed at what is about to
+// disappear, so that is left alone.
+func (a *app) onGlobalMouseWheel(px, py int32) {
+	defer recoverLog("selicon.go:onGlobalMouseWheel")
+	if a.moreFlyoutContains(px, py) {
+		return
+	}
+	a.hideSelIcon()
+}
+
+// moreFlyoutContains reports whether a physical point is inside the "更多"
+// menu.
+//
+// It reads the rectangle cached when the menu was created rather than the
+// window's own position: this runs on the hook's goroutine, where a mygo
+// position call would block on the main thread.
+func (a *app) moreFlyoutContains(px, py int32) bool {
+	a.mu.Lock()
+	shown, rect := a.moreFlyoutShown, a.moreFlyoutRect
+	a.mu.Unlock()
+	if !shown {
+		return false
+	}
+	dx, dy := a.chipTip.chipToDIP(px, py)
+	const slack = 2
+	return float32(dx) >= rect.X-slack && float32(dx) <= rect.X+rect.W+slack &&
+		float32(dy) >= rect.Y-slack && float32(dy) <= rect.Y+rect.H+slack
 }
 
 // onGlobalKeyDown hides the chip when the user starts typing. It runs on a
@@ -1277,16 +1352,24 @@ func (a *app) speakSelection(text string, us bool) {
 }
 
 func (a *app) toggleMoreFlyout() {
-	if a.moreFlyout != nil && !a.moreFlyout.IsDestroyed() {
-		a.moreFlyout.Close()
+	a.mu.Lock()
+	existing := a.moreFlyout
+	if existing != nil && !existing.IsDestroyed() {
 		a.moreFlyout = nil
+		a.moreFlyoutShown = false
+		a.moreFlyoutRect = ui.Rect{}
+	}
+	selWin := a.sel.win
+	a.mu.Unlock()
+	if existing != nil && !existing.IsDestroyed() {
+		existing.Close()
 		return
 	}
-	if a.sel.win == nil || a.sel.win.IsDestroyed() {
+	if selWin == nil || selWin.IsDestroyed() {
 		return
 	}
-	a.moreFlyout = mygo.NewFlyout(mygo.FlyoutOptions{
-		Parent:    a.sel.win,
+	flyout := mygo.NewFlyout(mygo.FlyoutOptions{
+		Parent:    selWin,
 		Placement: mygo.PlacementBottomEnd,
 		Width:     232,
 		// Four rows and a title. The old 272 was sized for the duplicated
@@ -1297,9 +1380,34 @@ func (a *app) toggleMoreFlyout() {
 		Shadow:    true,
 		Content:   ui.View(safeView("more", a.moreFlyoutView)),
 	})
-	a.moreFlyout.OnClosed(func() {
-		a.moreFlyout = nil
+	// Cache where the menu landed, so the hook thread can tell a click on it
+	// from a click elsewhere without asking the window (which would wait on
+	// the main thread). The window is placed as it shows, so the rectangle is
+	// read then, not here: at this point it is still hidden and unplaced.
+	flyout.OnShow(func() {
+		x, y := flyout.Position()
+		w, h := flyout.Size()
+		a.mu.Lock()
+		if a.moreFlyout == flyout {
+			a.moreFlyoutRect = ui.Rect{X: float32(x), Y: float32(y), W: float32(w), H: float32(h)}
+			a.moreFlyoutShown = true
+		}
+		a.mu.Unlock()
 	})
+	flyout.OnClosed(func() {
+		a.mu.Lock()
+		if a.moreFlyout == flyout {
+			a.moreFlyout = nil
+			a.moreFlyoutShown = false
+			a.moreFlyoutRect = ui.Rect{}
+		}
+		a.mu.Unlock()
+	})
+	a.mu.Lock()
+	a.moreFlyout = flyout
+	a.moreFlyoutShown = false
+	a.moreFlyoutRect = ui.Rect{}
+	a.mu.Unlock()
 }
 
 // moreFlyoutView holds what the chip itself does not offer. The AI actions
@@ -1331,16 +1439,21 @@ func (a *app) moreFlyoutView(c *ui.Context) {
 		}
 		ui.Divider(c).FillWidth()
 		if a.chipMenuItem(c, t, iconSparkles, "管理 AI 指令", func() {
+			a.hideSelIcon()
 			a.showMainWindow("actions")
 		}) {
 			return
 		}
 		if a.chipMenuItem(c, t, iconBookmark, "生词本", func() {
+			a.hideSelIcon()
 			a.showMainWindow("vocabulary")
 		}) {
 			return
 		}
-		if a.chipMenuItem(c, t, iconInfo, "设置", func() { a.showSettings() }) {
+		if a.chipMenuItem(c, t, iconInfo, "设置", func() {
+			a.hideSelIcon()
+			a.showSettings()
+		}) {
 			return
 		}
 	})
@@ -1370,8 +1483,14 @@ func (a *app) chipMenuItem(c *ui.Context, t *ui.Theme, icon *ui.SVG, label strin
 	if !item.Clicked() {
 		return false
 	}
-	if a.moreFlyout != nil {
-		a.moreFlyout.Close()
+	a.mu.Lock()
+	more := a.moreFlyout
+	a.moreFlyout = nil
+	a.moreFlyoutShown = false
+	a.moreFlyoutRect = ui.Rect{}
+	a.mu.Unlock()
+	if more != nil && !more.IsDestroyed() {
+		more.Close()
 	}
 	fn()
 	return true

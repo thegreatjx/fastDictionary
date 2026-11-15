@@ -246,12 +246,22 @@ func (a *app) pageCustomActions(c *ui.Context, t *ui.Theme, cfg Config) {
 	}
 }
 
-// resetVocabularyViewState clears the page-scoped confirmation and expansion
+// resetVocabularyConfirmations drops the two-step delete confirmations.
+//
+// They are armed by a click and destroy things, so leaving them armed while
+// the user is in another window is a trap. The expanded entry and the search
+// box are not destructive and survive: losing them on every window switch is
+// what made the page feel like it forgot what the user was doing.
+func (a *app) resetVocabularyConfirmations() {
+	a.vocabConfirmDeleteID = ""
+	a.confirmClearVocab = false
+}
+
+// resetVocabularyViewState clears every page-scoped confirmation and expansion
 // state. Without this a reopened settings window could still be showing the
 // "confirm clear" panel, or a row expanded for a category the user has left.
 func (a *app) resetVocabularyViewState() {
-	a.vocabConfirmDeleteID = ""
-	a.confirmClearVocab = false
+	a.resetVocabularyConfirmations()
 	a.vocabExpandedID = ""
 }
 
@@ -308,7 +318,9 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 			}
 
 			// Row 3: the actions.
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
+			// Wrap, not one long line: at the 700px minimum width the six
+			// buttons plus the undo chip ran past the right edge.
+			ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(6).Children(func() {
 				if a.lastDeletedVocab != nil {
 					btnUndo := ui.Button(c, "↩ 撤销删除「"+truncateFor(a.lastDeletedVocab.Term, 10)+"」").
 						Height(28).Padding(2, 8).Radius(5).Background(t.SurfaceHover).
@@ -325,8 +337,8 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 					}
 				}
 
-				// [📥 导入]
-				btnImport := ui.Button(c, "📥 导入").Height(28).Padding(2, 8).Radius(5).
+				// [导入]
+				btnImport := ui.Button(c, "导入").Height(28).Padding(2, 8).Radius(5).
 					Tooltip("从外部 JSON/CSV/TXT 导入生词")
 				if btnImport.Clicked() {
 					go func() {
@@ -355,8 +367,8 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 					}()
 				}
 
-				// [📊 导出 CSV]
-				btnExpCSV := ui.Button(c, "📊 导出 CSV").Height(28).Padding(2, 8).Radius(5).
+				// [导出 CSV]
+				btnExpCSV := ui.Button(c, "导出 CSV").Height(28).Padding(2, 8).Radius(5).
 					Tooltip("导出生词库为 CSV 表格（支持 Excel / Anki 直接打开）")
 				if btnExpCSV.Clicked() {
 					go func() {
@@ -387,8 +399,8 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 					}()
 				}
 
-				// [📇 导出 Anki]
-				btnExpAnki := ui.Button(c, "📇 导出 Anki").Height(28).Padding(2, 8).Radius(5).
+				// [导出 Anki]
+				btnExpAnki := ui.Button(c, "导出 Anki").Height(28).Padding(2, 8).Radius(5).
 					Tooltip("导出为 Anki 记忆卡片格式（含完整排版与高亮样式，可直接导入 Anki）")
 				if btnExpAnki.Clicked() {
 					go func() {
@@ -419,7 +431,7 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 					}()
 				}
 
-				// [✨ 补全]
+				// [补全]
 				btnEnrich := ui.Button(c, "补全").Height(28).Padding(2, 8).Radius(5).
 					Tooltip("为生词自动补全音标、CEFR 难度、例句与记忆技巧")
 				if btnEnrich.Clicked() {
@@ -443,8 +455,8 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 					}()
 				}
 
-				// [🌐 网页版]
-				btnWeb := ui.Button(c, "🌐 网页版").Height(28).Padding(2, 8).Radius(5).
+				// [网页版]
+				btnWeb := ui.Button(c, "网页版").Height(28).Padding(2, 8).Radius(5).
 					Tooltip("在默认浏览器中全屏查阅生词本")
 				if btnWeb.Clicked() {
 					if path, err := vocabStore.ExportHTML(); err == nil {
@@ -458,7 +470,7 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 				if vocabStore.Count() > 0 {
 					if a.confirmClearVocab {
 						btnYes := ui.Button(c, "确认清空").Height(28).Padding(2, 8).Radius(5).
-							Background(t.Danger).TextColor(ui.Hex("#FFFFFF")).Tooltip("删除全部生词，无法恢复")
+							Background(t.Danger).TextColor(t.AccentText).Tooltip("删除全部生词，无法恢复")
 						if btnYes.Clicked() {
 							if err := vocabStore.Clear(); err != nil {
 								a.actionSavedMsg = "清空失败: " + err.Error()
@@ -619,7 +631,7 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 
 						if a.vocabConfirmDeleteID == entry.ID {
 							btnConfirm := ui.Button(c, "确认删除").Height(22).Padding(1, 8).Radius(4).
-								Background(t.Danger).TextColor(ui.Hex("#FFFFFF")).Tooltip("确认从生词本删除此条目")
+								Background(t.Danger).TextColor(t.AccentText).Tooltip("确认从生词本删除此条目")
 							if btnConfirm.Clicked() {
 								entryCopy := entry
 								if vocabStore.Delete(entry.ID) {
@@ -702,7 +714,7 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 						tipBg, tipBorder, _, tipBody := memoryTipColors(t)
 						ui.Box(c).FillWidth().Padding(6, 10).Radius(4).Background(tipBg).Border(1, tipBorder).Children(func() {
 							ui.Row(c).FillWidth().Gap(4).AlignItems(ui.Start).Children(func() {
-								ui.Text(c, "💡").FontSize(12)
+								ui.Icon(c, iconInfo).Size(12, 12).TextColor(tipBody)
 								ui.Text(c, entry.MemoryTips).FontSize(12).TextColor(tipBody).Wrap().Grow(1)
 							})
 						})

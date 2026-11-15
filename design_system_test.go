@@ -271,6 +271,29 @@ func TestUIFilesHaveNoEmojiOrHardcodedColors(t *testing.T) {
 	}
 }
 
+// TestCleanedCardsHaveNoEmoji 钉住本轮收口的三个文件：词卡、生词本与复习页里
+// 不再用 Emoji 当图标。Emoji 的字形随系统字体走，字号和行高对不上 4px 栅格，
+// 同一个语义在别的页面已经由 icons.go 的 Lucide 图标画了。
+//
+// 只查图像字符区，不查 ui.Hex：actions.go 的 writingThemeFor 还留着一套柔性
+// 配色，整体搬进 theme.go 是另一件事。✓ 与 • 是正文标点，不在收回范围内。
+func TestCleanedCardsHaveNoEmoji(t *testing.T) {
+	files := []string{"actions.go", "settings_vocab.go", "vocab_review_view.go"}
+	for _, f := range files {
+		raw, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatalf("read %s: %v", f, err)
+		}
+		for _, r := range string(raw) {
+			pictograph := r >= 0x1F300 && r <= 0x1FAFF ||
+				r >= 0x2600 && r <= 0x27BF && r != '✓'
+			if pictograph || r == 0xFE0F {
+				t.Errorf("%s 仍含 Emoji U+%04X，改用 icons.go 的图标", f, r)
+			}
+		}
+	}
+}
+
 func TestNotesViewPhaseIsExplicit(t *testing.T) {
 	cases := []struct {
 		name string

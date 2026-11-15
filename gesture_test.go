@@ -326,7 +326,7 @@ func TestDragLongAfterTypingIsASelection(t *testing.T) {
 // guard that also swallowed the double click would remove the feature in
 // order to fix it.
 func TestDoubleClickStillWorksWhileTyping(t *testing.T) {
-	for _, kind := range []gestureKind{gestureDoubleClick, gestureKeyboard} {
+	for _, kind := range []gestureKind{gestureDoubleClick, gestureTripleClick, gestureKeyboard} {
 		t.Run(kind.String(), func(t *testing.T) {
 			a := newTestApp()
 			a.store.Update(func(c *Config) { c.SelectionTrigger = "icon" })
@@ -361,5 +361,23 @@ func TestTypingTakesTheChipAway(t *testing.T) {
 	a.onGlobalKeyDown('A')
 	if got := a.selText(); got != "量价背离" {
 		t.Errorf("typing changed the chip's text to %q", got)
+	}
+}
+
+// TestTripleClickIsNotSwallowedByTheCooldown 钉住三击的豁免：三击的第 2 击已经
+// 在同一个像素弹出过单词卡片，第 3 击（选择整段）落在同一秒、同一个位置。
+// 闸门是为了吞掉*同一个*手势的重复，不是拦下「从词升级到段」这个明确动作。
+func TestTripleClickIsNotSwallowedByTheCooldown(t *testing.T) {
+	a := newTestApp()
+	a.store.Update(func(c *Config) { c.SelectionTrigger = "icon" })
+	a.captureSelection = func() selection { return selection{Text: "serendipity is a good word"} }
+	chips := 0
+	a.showChip = func(x, y int, text string) { chips++ }
+
+	a.onSelectionGesture(selectionGesture{X: 100, Y: 200, Owner: "chrome.exe", Kind: gestureDoubleClick})
+	a.onSelectionGesture(selectionGesture{X: 100, Y: 200, Owner: "chrome.exe", Kind: gestureTripleClick})
+
+	if chips != 2 {
+		t.Fatalf("chips = %d, want 2：第 3 击被同点冷却吞掉了", chips)
 	}
 }

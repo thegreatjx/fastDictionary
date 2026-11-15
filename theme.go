@@ -617,13 +617,13 @@ func memoryTipColors(t *ui.Theme) (bg, border, title, body ui.Color) {
 	return ui.Hex("#FEFCE8"), ui.Hex("#FEF08A"), ui.Hex("#854D0E"), ui.Hex("#713F12")
 }
 
-// saveButtonColor is the amber of the "save to notebook" action, brightened in
-// dark mode so it keeps its contrast against the dark surface.
+// saveButtonColor is the amber of the "save to notebook" action.
+//
+// The old pair (#EAB308 light, #CA8A04 dark) carried white labels at 1.9:1 and
+// 2.9:1, both far below WCAG AA. One deeper amber is used in both themes so
+// t.AccentText (white) stays above 4.5:1 wherever the button appears.
 func saveButtonColor(t *ui.Theme) ui.Color {
-	if t.Dark {
-		return ui.Hex("#CA8A04")
-	}
-	return ui.Hex("#EAB308")
+	return ui.Hex("#B45309")
 }
 
 // chipTone names what one selection-chip button does. The tone picks one of

@@ -389,7 +389,7 @@ func renderDictionaryCard(c *ui.Context, t *ui.Theme, origText string, res *Dict
 		Background(t.Surface).Border(1, t.Border).
 		Shadow(0, 2, 8, 0, ui.RGBA(0, 0, 0, 0.08)).Children(func() {
 		ui.Column(c).FillWidth().Gap(10).Children(func() {
-			// 1. Term Header: [Term] [Phonetic] [🔊] [CEFR Level]
+			// 1. Term Header: [Term] [Phonetic] [speak button] [CEFR Level]
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 				ui.Text(c, termText).FontSize(18).FontWeight(700).TextColor(t.Text)
 
@@ -467,7 +467,7 @@ func renderDictionaryCard(c *ui.Context, t *ui.Theme, origText string, res *Dict
 					Background(tipBg).Border(1, tipBorder).Children(func() {
 					ui.Column(c).FillWidth().Gap(4).Children(func() {
 						ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-							ui.Text(c, "💡").FontSize(12)
+							ui.Icon(c, iconInfo).Size(12, 12).TextColor(tipTitle)
 							ui.Text(c, "记忆技巧").FontSize(11).FontWeight(700).TextColor(tipTitle)
 						})
 						tipLines := strings.Split(res.MemoryTips, "\n")
@@ -504,10 +504,10 @@ func renderDictionaryCard(c *ui.Context, t *ui.Theme, origText string, res *Dict
 					return
 				}
 				btnSave := ui.Button(c, "").Height(26).Padding(2, 12).Radius(5).
-					Background(saveButtonColor(t)).TextColor(ui.Hex("#FFFFFF")).Tooltip("把这个词条存入本地生词本")
+					Background(saveButtonColor(t)).TextColor(t.AccentText).Tooltip("把这个词条存入本地生词本")
 				btnSave.Children(func() {
 					ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-						ui.Icon(c, iconBookmark).Size(12, 12).TextColor(ui.Hex("#FFFFFF"))
+						ui.Icon(c, iconBookmark).Size(12, 12).TextColor(t.AccentText)
 						ui.Text(c, "保存到生词本").FontSize(11).FontWeight(600)
 					})
 				})
@@ -545,6 +545,11 @@ type writingTheme struct {
 // equivalent dark surfaces with brighter, readable accents.
 func writingThemeFor(t *ui.Theme) writingTheme {
 	saveBackground := saveButtonColor(t)
+	// The amber carries white in both themes; saveButtonColor is tuned for it.
+	saveText := ui.Hex("#FFFFFF")
+	if t != nil {
+		saveText = t.AccentText
+	}
 	if t != nil && t.Dark {
 		return writingTheme{
 			setting:       writingTone{background: ui.Hex("#1E293B"), border: ui.Hex("#38536F"), text: ui.Hex("#93C5FD")},
@@ -552,7 +557,7 @@ func writingThemeFor(t *ui.Theme) writingTheme {
 			success:       writingTone{background: ui.Hex("#172B21"), border: ui.Hex("#365A41"), text: ui.Hex("#86EFAC")},
 			improved:      writingTone{background: ui.Hex("#172B21"), border: ui.Hex("#365A41"), text: ui.Hex("#DCFCE7")},
 			copy:          writingTone{background: ui.Hex("#243A2C"), border: ui.Hex("#4B7256"), text: ui.Hex("#BBF7D0")},
-			save:          writingTone{background: saveBackground, border: saveBackground, text: ui.Hex("#18181B")},
+			save:          writingTone{background: saveBackground, border: saveBackground, text: saveText},
 			settingLabel:  ui.Hex("#94A3B8"),
 			removed:       ui.Hex("#FCA5A5"),
 			added:         ui.Hex("#86EFAC"),
@@ -566,7 +571,7 @@ func writingThemeFor(t *ui.Theme) writingTheme {
 		success:       writingTone{background: ui.Hex("#F0FDF4"), border: ui.Hex("#BBF7D0"), text: ui.Hex("#15803D")},
 		improved:      writingTone{background: ui.Hex("#F0FDF4"), border: ui.Hex("#86EFAC"), text: ui.Hex("#14532D")},
 		copy:          writingTone{background: ui.Hex("#F0FDF4"), border: ui.Hex("#BBF7D0"), text: ui.Hex("#166534")},
-		save:          writingTone{background: saveBackground, border: saveBackground, text: ui.Hex("#18181B")},
+		save:          writingTone{background: saveBackground, border: saveBackground, text: saveText},
 		settingLabel:  ui.Hex("#475569"),
 		removed:       ui.Hex("#B91C1C"),
 		added:         ui.Hex("#166534"),
@@ -678,7 +683,7 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 				ui.Box(c).FillWidth().Padding(8, 10).Radius(6).
 					Background(t.SurfaceHover).Children(func() {
 					ui.Row(c).Gap(6).AlignItems(ui.Start).Children(func() {
-						ui.Text(c, "💬").FontSize(12)
+						ui.Icon(c, iconInfo).Size(13, 13).TextColor(t.TextMuted)
 						ui.Column(c).Grow(1).Gap(2).Children(func() {
 							ui.Text(c, "导师总评").FontSize(11).FontWeight(600).TextColor(t.TextMuted)
 							ui.Text(c, res.Summary).FontSize(12).TextColor(t.Text).Wrap()
@@ -741,7 +746,7 @@ func renderHighlightedContext(c *ui.Context, t *ui.Theme, sentence, targetWord s
 			}
 			if matched {
 				ui.Text(c, w).FontSize(13).FontWeight(700).Underline().
-					DecorationColor(ui.Hex("#2563EB")).TextColor(ui.Hex("#2563EB"))
+					DecorationColor(t.Accent).TextColor(t.Accent)
 			} else {
 				ui.Text(c, w).FontSize(13).TextColor(t.Text)
 			}

@@ -535,6 +535,7 @@ func TestGestureKindString(t *testing.T) {
 	cases := map[gestureKind]string{
 		gestureDrag:        "drag",
 		gestureDoubleClick: "double-click",
+		gestureTripleClick: "triple-click",
 		gestureKeyboard:    "keyboard",
 	}
 	for kind, want := range cases {

@@ -20,7 +20,9 @@ package main
 import (
 	"errors"
 	"runtime"
+	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -355,55 +357,239 @@ func rangeBounds(rng uintptr) (uiaRect, bool) {
 	return r, true
 }
 
+// uiaWorker is one thread with its own COM apartment and its own
+// IUIAutomation instance, plus the private channel that feeds it.
+//
+// One worker serves every gesture: creating a COM instance costs tens of
+// milliseconds, and doing it per gesture also leaked a locked OS thread
+// whenever a provider blocked inside GetSelection and the caller gave up.
+type uiaWorker struct {
+	jobs   chan uiaJob
+	stopCh chan struct{}
+	// doneCh is closed by the worker on the way out: an exited worker can no
+	// longer answer, and the caller would otherwise sit out the whole timeout
+	// waiting for a reply that cannot come.
+	doneCh chan struct{}
+	// retired is set under uiaMu when this worker timed out and was taken out
+	// of service while still blocked inside COM.
+	retired bool
+}
+
+type uiaResult struct {
+	sel selection
+	err error
+}
+
+type uiaJob struct {
+	done chan uiaResult
+}
+
+const (
+	// uiaWorkerCooldown is how long UIA is left alone after a provider
+	// blocked past uiaTimeout. Long enough that a page which hangs every
+	// lookup does not buy one leaked thread per gesture, short enough that
+	// switching back to a normal app heals on its own.
+	uiaWorkerCooldown = 8 * time.Second
+	// uiaMaxHungWorkers caps the threads a misbehaving provider can pin.
+	// Only a provider that never returns keeps its thread; a slow one frees
+	// it as soon as the call comes back.
+	uiaMaxHungWorkers = 4
+)
+
+var (
+	uiaMu          sync.Mutex
+	uiaActive      *uiaWorker
+	uiaBusy        bool
+	uiaLastTimeout time.Time
+	uiaHungWorkers int
+)
+
+// newUIAWorker starts one worker thread and returns its handle.
+func newUIAWorker() *uiaWorker {
+	w := &uiaWorker{
+		jobs:   make(chan uiaJob),
+		stopCh: make(chan struct{}),
+		doneCh: make(chan struct{}),
+	}
+	go func() {
+		// LIFO: put the shared state back, then tell the waiters this worker
+		// is gone, and only then swallow a panic.
+		defer recoverLog("uia.go:worker")
+		defer close(w.doneCh)
+		defer func() {
+			uiaMu.Lock()
+			if uiaActive == w {
+				uiaActive = nil
+				uiaBusy = false
+			}
+			if w.retired && uiaHungWorkers > 0 {
+				uiaHungWorkers--
+			}
+			uiaMu.Unlock()
+		}()
+		_ = comApt(func() error {
+			var uia uintptr
+			ensureUIA := func() uintptr {
+				if uia != 0 {
+					return uia
+				}
+				hr, _, _ := procCoCreateInstance.Call(
+					uintptr(unsafe.Pointer(&clsidCUIAutomation)), 0, clsctxInprocServer,
+					uintptr(unsafe.Pointer(&iidIUIAutomation)), uintptr(unsafe.Pointer(&uia)))
+				if hr != 0 || uia == 0 {
+					uia = 0
+					return 0
+				}
+				return uia
+			}
+			for {
+				select {
+				case <-w.stopCh:
+					if uia != 0 {
+						comRelease(uia)
+					}
+					return nil
+				case job := <-w.jobs:
+					inst := ensureUIA()
+					if inst == 0 {
+						job.done <- uiaResult{err: ErrNoUIA}
+						continue
+					}
+					sel, err := queryUIAOnce(inst)
+					job.done <- uiaResult{sel: sel, err: err}
+				}
+			}
+		})
+	}()
+	return w
+}
+
+func queryUIAOnce(uia uintptr) (selection, error) {
+	// The element with the keyboard focus owns the selection.
+	var el uintptr
+	if hr := comCall(uia, slotUiaGetFocusedElement, uintptr(unsafe.Pointer(&el))); hr != 0 {
+		el = 0
+	}
+	if el != 0 && int32(comCall(el, slotElementCurrentProcessID)) == int32(currentProcessID()) {
+		comRelease(el) // our own popup is a UIA provider too
+		el = 0
+	}
+	if el != 0 {
+		s, err := selectionFromElement(el)
+		comRelease(el)
+		if err == nil {
+			return s, nil
+		}
+	}
+
+	// Some controls answer only about the element under the pointer.
+	// During a selection drag that is the text the user just selected.
+	pt := cursorPoint()
+	var under uintptr
+	if hr := comCall(uia, slotUiaElementFromPoint, pointArg(pt.X, pt.Y), uintptr(unsafe.Pointer(&under))); hr == 0 && under != 0 {
+		if int32(comCall(under, slotElementCurrentProcessID)) != int32(currentProcessID()) {
+			s, err := selectionFromElement(under)
+			comRelease(under)
+			if err == nil {
+				return s, nil
+			}
+		} else {
+			comRelease(under)
+		}
+	}
+	return selection{}, ErrNoUIA
+}
+
+// retireUIAWorker takes a worker out of service after it failed to answer in
+// time. It is closed through stopCh rather than by closing jobs: the caller
+// may still be the sender, and a send on a closed channel panics.
+func retireUIAWorker(w *uiaWorker) {
+	uiaMu.Lock()
+	if uiaActive == w {
+		uiaActive = nil
+		uiaBusy = false
+		uiaLastTimeout = time.Now()
+		uiaHungWorkers++
+		w.retired = true
+		close(w.stopCh)
+	}
+	uiaMu.Unlock()
+}
+
 // SelectionUIA returns what UI Automation knows about the selection in the
 // foreground application: its text, and where it is on screen when the
 // provider reports a bounding rectangle.
 func SelectionUIA() (selection, error) {
-	var found selection
-	err := comApt(func() error {
-		var uia uintptr
-		hr, _, _ := procCoCreateInstance.Call(
-			uintptr(unsafe.Pointer(&clsidCUIAutomation)), 0, clsctxInprocServer,
-			uintptr(unsafe.Pointer(&iidIUIAutomation)), uintptr(unsafe.Pointer(&uia)))
-		if hr != 0 || uia == 0 {
-			return ErrNoUIA
-		}
-		defer comRelease(uia)
-
-		// The element with the keyboard focus owns the selection.
-		var el uintptr
-		if hr := comCall(uia, slotUiaGetFocusedElement, uintptr(unsafe.Pointer(&el))); hr != 0 {
-			el = 0
-		}
-		if el != 0 && int32(comCall(el, slotElementCurrentProcessID)) == int32(currentProcessID()) {
-			comRelease(el) // our own popup is a UIA provider too
-			el = 0
-		}
-		if el != 0 {
-			s, err := selectionFromElement(el)
-			comRelease(el)
-			if err == nil {
-				found = s
-				return nil
-			}
-		}
-
-		// Some controls answer only about the element under the pointer.
-		// During a selection drag that is the text the user just selected.
-		pt := cursorPoint()
-		var under uintptr
-		if hr := comCall(uia, slotUiaElementFromPoint, pointArg(pt.X, pt.Y), uintptr(unsafe.Pointer(&under))); hr == 0 && under != 0 {
-			s, err := selectionFromElement(under)
-			comRelease(under)
-			if err == nil {
-				found = s
-				return nil
-			}
-		}
-		return ErrNoUIA
-	})
-	if err != nil {
-		return selection{}, err
+	now := time.Now()
+	uiaMu.Lock()
+	if uiaBusy {
+		// One call at a time: a second gesture while the first is still in
+		// flight would only queue behind it.
+		uiaMu.Unlock()
+		return selection{}, ErrNoUIA
 	}
-	return found, nil
+	w := uiaActive
+	if w == nil {
+		cooling := !uiaLastTimeout.IsZero() && now.Sub(uiaLastTimeout) < uiaWorkerCooldown
+		if cooling || uiaHungWorkers >= uiaMaxHungWorkers {
+			uiaMu.Unlock()
+			return selection{}, ErrNoUIA
+		}
+		w = newUIAWorker()
+		uiaActive = w
+	}
+	uiaBusy = true
+	uiaMu.Unlock()
+
+	job := uiaJob{done: make(chan uiaResult, 1)}
+
+	// Two budgets, not one: the worker may still be initialising COM on its
+	// first job, and that cost does not belong to the provider's 300ms.
+	sendTimer := time.NewTimer(uiaTimeout)
+	select {
+	case w.jobs <- job:
+		sendTimer.Stop()
+	case <-w.doneCh:
+		sendTimer.Stop()
+		return selection{}, ErrNoUIA
+	case <-sendTimer.C:
+		retireUIAWorker(w)
+		return selection{}, ErrNoUIA
+	}
+
+	waitTimer := time.NewTimer(uiaTimeout)
+	select {
+	case res := <-job.done:
+		waitTimer.Stop()
+		uiaMu.Lock()
+		if uiaActive == w {
+			uiaBusy = false
+		}
+		uiaMu.Unlock()
+		return res.sel, res.err
+	case <-w.doneCh:
+		waitTimer.Stop()
+		// The worker can exit after writing its answer.
+		select {
+		case res := <-job.done:
+			return res.sel, res.err
+		default:
+			return selection{}, ErrNoUIA
+		}
+	case <-waitTimer.C:
+		// An answer that landed at the same tick as the timeout is still an
+		// answer: retiring a healthy worker would cost a whole cooldown.
+		select {
+		case res := <-job.done:
+			uiaMu.Lock()
+			if uiaActive == w {
+				uiaBusy = false
+			}
+			uiaMu.Unlock()
+			return res.sel, res.err
+		default:
+		}
+		retireUIAWorker(w)
+		return selection{}, ErrNoUIA
+	}
 }

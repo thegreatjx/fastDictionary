@@ -115,9 +115,10 @@ type selectionGesture struct {
 // later.
 func typingSuppresses(g selectionGesture) bool {
 	if g.Kind != gestureDrag {
-		// A double click and Shift+arrow both mean "this is the word I want"
-		// without any ambiguity, so they survive the guard. Only the drag is
-		// the shape a caret placement shares with a selection.
+		// A double click, a triple click and Shift+arrow all mean "this is
+		// the text I want" without any ambiguity, so they survive the guard.
+		// Only the drag is the shape a caret placement shares with a
+		// selection.
 		return false
 	}
 	if g.LastKey.IsZero() {
@@ -155,6 +156,13 @@ const (
 	// typing guard does not apply: the user types, then selects, then looks
 	// the word up.
 	gestureKeyboard
+	// gestureTripleClick is the third click of a triple click: the
+	// application selects the paragraph. It is exempt from the same-spot
+	// cooldown, because the second click of the same triple already fired a
+	// word card a few hundred milliseconds earlier at the same pixel. The
+	// cooldown exists to absorb a repeat of the *same* gesture, not the
+	// deliberate upgrade from a word to its paragraph.
+	gestureTripleClick
 )
 
 // String makes a gestureKind readable in a log line.
@@ -162,6 +170,8 @@ func (k gestureKind) String() string {
 	switch k {
 	case gestureDoubleClick:
 		return "double-click"
+	case gestureTripleClick:
+		return "triple-click"
 	case gestureKeyboard:
 		return "keyboard"
 	default:

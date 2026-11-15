@@ -188,6 +188,13 @@ type snipSession struct {
 	hdcDark        uintptr // 1x1 black DC for AlphaBlend
 	hbmDark        uintptr
 	oldDarkBmp     uintptr
+	// The frame is composed here and blitted to the window in one go. Drawing
+	// straight onto the window DC let the dim bands and the border reach the
+	// screen while the base snapshot was still being copied, which is what
+	// made a drag flicker.
+	hdcBuf         uintptr
+	hbmBuf         uintptr
+	oldBufBmp      uintptr
 	selecting      bool
 	startX, startY int32
 	curX, curY     int32
@@ -322,13 +329,25 @@ func snipWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			return 0
 		}
 
+	case 0x0014: // WM_ERASEBKGND
+		// Nothing to erase: every pixel of this window is painted in WM_PAINT.
+		// Letting the default handler fill the background first is the flash
+		// the user sees between frames.
+		return 1
+
 	case 0x000F: // WM_PAINT
 		var ps paintStruct
 		hdc, _, _ := procBeginPaint.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
 		if hdc != 0 && s != nil {
 			const srccopy = 0x00CC0020
+			// Compose on the offscreen surface when there is one, then copy it
+			// over in a single operation.
+			target := hdc
+			if s.hdcBuf != 0 {
+				target = s.hdcBuf
+			}
 			// 1. Blit base frozen screen snapshot
-			procBitBlt.Call(hdc, 0, 0, uintptr(s.vw), uintptr(s.vh), s.hdcMem, 0, 0, srccopy)
+			procBitBlt.Call(target, 0, 0, uintptr(s.vw), uintptr(s.vh), s.hdcMem, 0, 0, srccopy)
 
 			blendDim := func(x, y, w, h int32, alpha byte) {
 				if w <= 0 || h <= 0 {
@@ -336,7 +355,7 @@ func snipWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				}
 				blendVal := uint32(0) | (uint32(alpha) << 16)
 				procAlphaBlend.Call(
-					hdc, uintptr(x), uintptr(y), uintptr(w), uintptr(h),
+					target, uintptr(x), uintptr(y), uintptr(w), uintptr(h),
 					s.hdcDark, 0, 0, 1, 1,
 					uintptr(blendVal),
 				)
@@ -357,15 +376,18 @@ func snipWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				// Draw 2px selection border (#2563EB Royal Blue, BGR: 0x00EB6325)
 				blueBrush, _, _ := procCreateSolidBrush.Call(0x00EB6325)
 				rSel := winRect{x1, y1, x2, y2}
-				procFrameRect.Call(hdc, uintptr(unsafe.Pointer(&rSel)), blueBrush)
+				procFrameRect.Call(target, uintptr(unsafe.Pointer(&rSel)), blueBrush)
 				rSelInner := winRect{x1 + 1, y1 + 1, x2 - 1, y2 - 1}
-				procFrameRect.Call(hdc, uintptr(unsafe.Pointer(&rSelInner)), blueBrush)
+				procFrameRect.Call(target, uintptr(unsafe.Pointer(&rSelInner)), blueBrush)
 				procDeleteObject.Call(blueBrush)
 			} else {
 				// Gentle dim across screen (~14% dark = alpha 35) to indicate snipping overlay active
 				blendDim(0, 0, s.vw, s.vh, 35)
 			}
 
+			if target != hdc {
+				procBitBlt.Call(hdc, 0, 0, uintptr(s.vw), uintptr(s.vh), target, 0, 0, srccopy)
+			}
 			procEndPaint.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
 			return 0
 		}
@@ -465,6 +487,26 @@ func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError f
 		defer procDeleteObject.Call(hbmDark)
 		defer procSelectObject.Call(hdcDark, oldDarkBmp)
 
+		// The offscreen frame buffer. Deferred in reverse creation order: put
+		// the old bitmap back, delete the bitmap, then the DC.
+		hdcBuf, _, _ := procCreateCompatibleDC.Call(hdcScreen)
+		hbmBuf, _, _ := procCreateCompatibleBitmap.Call(hdcScreen, uintptr(vw), uintptr(vh))
+		var oldBufBmp uintptr
+		if hdcBuf != 0 && hbmBuf != 0 {
+			oldBufBmp, _, _ = procSelectObject.Call(hdcBuf, hbmBuf)
+			defer procDeleteDC.Call(hdcBuf)
+			defer procDeleteObject.Call(hbmBuf)
+			defer procSelectObject.Call(hdcBuf, oldBufBmp)
+		} else {
+			if hbmBuf != 0 {
+				procDeleteObject.Call(hbmBuf)
+			}
+			if hdcBuf != 0 {
+				procDeleteDC.Call(hdcBuf)
+			}
+			hdcBuf, hbmBuf = 0, 0
+		}
+
 		session := &snipSession{
 			vx:         int32(vx),
 			vy:         int32(vy),
@@ -475,6 +517,9 @@ func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError f
 			oldBmp:     oldBmp,
 			hdcDark:    hdcDark,
 			hbmDark:    hbmDark,
+			hdcBuf:     hdcBuf,
+			hbmBuf:     hbmBuf,
+			oldBufBmp:  oldBufBmp,
 			oldDarkBmp: oldDarkBmp,
 			onSuccess:  onSuccess,
 			onError:    onError,
@@ -606,7 +651,12 @@ func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError f
 				}
 				return
 			}
-			if err := png.Encode(f, cropImg); err != nil {
+			// This file exists only to be read back by the OCR pass, so the
+			// cheapest lossless setting is the right one: a full-screen crop
+			// at the default level spends hundreds of milliseconds compressing
+			// data that is decoded again immediately.
+			enc := png.Encoder{CompressionLevel: png.BestSpeed}
+			if err := enc.Encode(f, cropImg); err != nil {
 				f.Close()
 				log.Printf("fastDictionary: snip encode: %v", err)
 				if s.onError != nil {

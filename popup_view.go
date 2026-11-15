@@ -67,6 +67,26 @@ func (a *app) popupView(c *ui.Context) {
 	if c.Shortcut(ui.Ctrl, ui.KeyS) {
 		a.handleQuickSave(s)
 	}
+	// Ctrl+Shift+C copies whatever this card is mainly showing, Ctrl+L reads
+	// the foreign text, Ctrl+P pins: the three things the hand reaches for
+	// while reading.
+	if c.Shortcut(ui.Ctrl|ui.Shift, ui.KeyC) {
+		if text := primaryCopyText(s); text != "" {
+			a.copyToClipboard(text)
+		}
+	}
+	if c.Shortcut(ui.Ctrl, ui.KeyL) {
+		if s.mode == modeGrammar {
+			if sent, _, _ := grammarActiveSentence(s.source, s.grammarSentIdx); sent != "" {
+				a.play(sent, false)
+			}
+		} else if text, lang, _ := primarySpeechTarget(s.source, s.target); text != "" {
+			PlaySpeechLang(text, lang, false)
+		}
+	}
+	if c.Shortcut(ui.Ctrl, ui.KeyP) {
+		a.togglePopupPin(cfg)
+	}
 
 	var contentEl, scrollEl ui.Element
 	rootEl := ui.Column(c).FillWidth().FillHeight().Padding(8, 12, 8, 12).Gap(6)
@@ -273,6 +293,24 @@ func (a *app) scheduleAutofit(scrollEl, contentEl ui.Element) {
 	win.Update(func() { a.applyPopupHeight(delta) })
 }
 
+// primaryCopyText is the text the card's main copy action would put on the
+// clipboard: the improved version in writing mode, the translation in grammar
+// mode, the translation everywhere else. Ctrl+Shift+C uses it so the shortcut
+// and the visible button cannot drift apart.
+func primaryCopyText(s snapshot) string {
+	switch s.mode {
+	case modeWriting:
+		if s.writingResult != nil && s.writingResult.Improved != "" {
+			return s.writingResult.Improved
+		}
+	case modeGrammar:
+		if s.grammarResult != nil && s.grammarResult.Translation != "" {
+			return s.grammarResult.Translation
+		}
+	}
+	return s.target
+}
+
 func renderNotesBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 	ui.Box(c).FillWidth().Padding(12, 14).Radius(8).
 		Background(t.Surface).Border(1, t.Border).
@@ -317,11 +355,19 @@ func renderNotesBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 			}
 
 			for idx := range s.notes {
-				item := &s.notes[idx]
+				// Bind a local copy and write the change back through the app's
+				// lock. The snapshot's slice is a copy, but a checkbox that
+				// writes through it would write into a value the view does not
+				// own.
+				i := idx
+				item := s.notes[idx]
+				checked := item.Checked
 				ui.Box(c).FillWidth().Padding(8, 10).Radius(6).
 					Background(t.SurfaceHover).Children(func() {
 					ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(8).Children(func() {
-						ui.Checkbox(c, &item.Checked, "")
+						ui.Checkbox(c, &checked, "").OnChange(func() {
+							a.setNoteChecked(i, item.Word, checked)
+						})
 						ui.Column(c).FillWidth().Gap(2).Children(func() {
 							ui.Text(c, item.Word).FontSize(13).FontWeight(600).TextColor(t.Text)
 							desc := item.Pos + " " + item.Meaning

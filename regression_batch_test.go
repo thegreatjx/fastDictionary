@@ -11,17 +11,25 @@ import (
 // TestUIACaptureHasTimeout guards the frozen-app case: the UIA round trip
 // must be bounded, because a misbehaving provider used to block the whole
 // capture path for seconds.
+//
+// The bound lives in uia.go now: captureUIA calls SelectionUIA directly, and
+// SelectionUIA gives the worker two uiaTimeout budgets — one to hand the job
+// over, one to wait for the answer — then retires it and falls back to a
+// simulated copy.
 func TestUIACaptureHasTimeout(t *testing.T) {
-	src, err := os.ReadFile("capture.go")
+	src, err := os.ReadFile("uia.go")
 	if err != nil {
-		t.Fatalf("read capture.go: %v", err)
+		t.Fatalf("read uia.go: %v", err)
 	}
 	body := string(src)
 	if !strings.Contains(body, "uiaTimeout") {
-		t.Fatal("capture.go has no uiaTimeout: a stuck UIA provider freezes the capture")
+		t.Fatal("uia.go has no uiaTimeout: a stuck UIA provider freezes the capture")
 	}
-	if !strings.Contains(body, "time.After(uiaTimeout)") {
-		t.Fatal("captureUIA does not bound the COM call with time.After")
+	if !strings.Contains(body, "time.NewTimer(uiaTimeout)") {
+		t.Fatal("SelectionUIA does not bound the COM call with a timer")
+	}
+	if !strings.Contains(body, "retireUIAWorker(w)") {
+		t.Fatal("a timed-out worker is not retired: every later gesture queues behind it")
 	}
 }
 

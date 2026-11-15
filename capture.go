@@ -153,7 +153,9 @@ func waitForModifiersReleased(timeout time.Duration) bool {
 		if !time.Now().Before(deadline) {
 			return false
 		}
-		time.Sleep(8 * time.Millisecond)
+		// 4ms, not 8: this polls while the user is still holding the shortcut,
+		// and the wait after the last key comes up is what the user feels.
+		time.Sleep(4 * time.Millisecond)
 	}
 }
 
@@ -238,11 +240,22 @@ func captureByCopy() string {
 
 	deadline := time.Now().Add(clipboardPollTimeout)
 	var got string
+	// Short first steps, then the old cadence. A native app answers in 3–6ms,
+	// and waiting a fixed 15ms for it was latency added to every capture. The
+	// ceiling stays at clipboardPollInterval so a slow app is not polled in a
+	// tight loop for the whole 500ms.
+	interval := 3 * time.Millisecond
 	for time.Now().Before(deadline) {
-		time.Sleep(clipboardPollInterval)
+		time.Sleep(interval)
 		if t := mygo.Clipboard.ReadText(); t != "" {
 			got = t
 			break
+		}
+		if interval < clipboardPollInterval {
+			interval += 4 * time.Millisecond
+			if interval > clipboardPollInterval {
+				interval = clipboardPollInterval
+			}
 		}
 	}
 
@@ -297,26 +310,15 @@ const uiaTimeout = 300 * time.Millisecond
 // disturbs nothing. When it comes back empty the caller decides whether a
 // synthesised copy is acceptable (see captureForGesture).
 func captureUIA() selection {
-	// The COM call runs on its own goroutine so a stuck provider cannot
-	// take the capture path down with it; the abandoned goroutine leaks one
-	// pinned thread, which is cheaper than a frozen app.
-	ch := make(chan selection, 1)
-	go func() {
-		defer recoverLog("capture.go:captureUIA")
-		s, err := SelectionUIA()
-		if err != nil {
-			s = selection{}
-		}
-		ch <- s
-	}()
-	select {
-	case s := <-ch:
-		s.Text = strings.TrimSpace(s.Text)
-		return s
-	case <-time.After(uiaTimeout):
-		log.Printf("fastDictionary: uia capture timed out after %v", uiaTimeout)
+	// SelectionUIA owns the worker thread, the COM instance and the timeout:
+	// a blocked provider is abandoned inside it, so there is no goroutine and
+	// no second deadline to start here.
+	s, err := SelectionUIA()
+	if err != nil {
 		return selection{}
 	}
+	s.Text = strings.TrimSpace(s.Text)
+	return s
 }
 
 // appsWhereDragIsNotSelection are the windows where a drag or a double

@@ -367,6 +367,23 @@ func (a *app) extractNotesForGen(gen requestToken, text string) {
 	}()
 }
 
+// setNoteChecked records one checkbox of the 猜你想存 list.
+//
+// The list reaches the view as a copy, so the view cannot write through it:
+// the write has to come back here, where a.mu guards the live slice. The word
+// is checked as well as the index, because the list can be filtered or reused
+// between the frame that drew the box and the click that lands on it.
+func (a *app) setNoteChecked(idx int, word string, checked bool) {
+	a.mu.Lock()
+	if idx >= 0 && idx < len(a.notes) && a.notes[idx].Word == word {
+		a.notes[idx].Checked = checked
+	}
+	a.mu.Unlock()
+	if a.win != nil {
+		a.win.Update(func() {})
+	}
+}
+
 // dismissNoteWord remembers that the user never wants this recommendation
 // again, both for the current card and for future popups. It is a preference,
 // so it goes through the config store rather than a transient app field.
@@ -877,21 +894,30 @@ func (a *app) runAction(actionID string, text string) {
 		// generating. Repaint at most every 40 ms; the final Update below
 		// still shows the last of the text.
 		var lastPaint time.Time
+		// Accumulate into a builder and publish a snapshot on the paint
+		// cadence. Appending to a.aiText on every chunk is O(N²) in the length
+		// of the answer, and it held the lock for the copy each time.
+		var buf strings.Builder
 		_, err := StreamAI(ctx, cfg.AIConn(model), systemPrompt, userPrompt, cfg.AIReasoningEffortFor(model), func(chunk string) {
-			a.mu.Lock()
-			if gen != a.aiGen {
-				// A newer pass reset a.aiText; appending here would splice two
-				// answers into one card.
-				a.mu.Unlock()
-				return
-			}
-			a.aiText += chunk
+			buf.WriteString(chunk)
 			due := time.Since(lastPaint) >= 40*time.Millisecond
 			if due {
 				lastPaint = time.Now()
 			}
+			if !due {
+				return
+			}
+			text := buf.String()
+			a.mu.Lock()
+			if gen != a.aiGen {
+				// A newer pass reset a.aiText; writing here would splice two
+				// answers into one card.
+				a.mu.Unlock()
+				return
+			}
+			a.aiText = text
 			a.mu.Unlock()
-			if due && win != nil {
+			if win != nil {
 				win.Update(func() {})
 			}
 		})
@@ -910,6 +936,11 @@ func (a *app) runAction(actionID string, text string) {
 			// Keep whatever arrived, but say it is incomplete: a truncated
 			// answer used to render as an empty card that looked finished.
 			a.errText = friendlyAIError(err)
+		}
+		// The last chunks arrived after the final paint: publish the complete
+		// text before parsing, or the card loses the tail of the answer.
+		if buf.Len() > 0 {
+			a.aiText = buf.String()
 		}
 		if a.aiText != "" {
 			// Only remember answers that parsed into a card: caching a

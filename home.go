@@ -337,6 +337,10 @@ func (a *app) renderHomeTranslateTab(c *ui.Context, t *ui.Theme, at AppTheme, cf
 						a.mu.Lock()
 						a.actionSavedMsg = "译文已复制到剪贴板 ✓"
 						a.mu.Unlock()
+						// The banner is drawn from the last snapshot; without this
+						// repaint the confirmation only appeared on the next stray
+						// pointer move, which read as a dead button.
+						a.settingsRefresh()
 					}
 					refineLabel := "AI 精翻"
 					if h.aiRefining {
@@ -685,6 +689,14 @@ func (a *app) homeTranslate(text string) {
 
 		from, to := translateLangs(cfg, text)
 		r := TranslateRace(ctx, text, from, to, cfg.EngineMode)
+		// A pinned engine that answers with the source has no reading to show.
+		// Ask the race for a second opinion, exactly as the popup does, so the
+		// workbench and the card do not disagree about the same word.
+		if r.Err == nil && r.Untranslated && cfg.EngineMode != "race" {
+			if alt, ok := pickEchoAnswer(r, TranslateRace(ctx, text, from, to, "race")); ok {
+				r = alt
+			}
+		}
 
 		var yd *YoudaoDict
 		var gd *DictResult

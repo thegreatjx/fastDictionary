@@ -82,6 +82,24 @@ func (a *app) pageVocabReview(c *ui.Context, t *ui.Theme) {
 		return
 	}
 
+	// 全键盘复习：Space/Enter 翻牌，1/2/3 评分，R 朗读。
+	// 复习是重复动作，鼠标要来回跑三趟，键盘流才不磨手。
+	if c.Shortcut(0, ui.KeyR) {
+		PlaySpeechLang(entry.Term, "", false)
+	}
+	if !a.vocabReviewRevealed {
+		if c.Shortcut(0, ui.KeySpace) || c.Shortcut(0, ui.KeyEnter) {
+			a.vocabReviewRevealed = true
+			a.settingsRefresh()
+		}
+	} else if c.Shortcut(0, ui.Key1) {
+		a.gradeVocabReview(reviewAgain)
+	} else if c.Shortcut(0, ui.Key2) {
+		a.gradeVocabReview(reviewHard)
+	} else if c.Shortcut(0, ui.Key3) {
+		a.gradeVocabReview(reviewGood)
+	}
+
 	PageTitle(c, t, "生词复习", "先回忆，再显示答案。三个按钮决定这个词下次出现的时间。")
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
 		ui.Progress(c, float64(a.vocabReviewIdx)/float64(total)).Grow(1)
@@ -138,7 +156,10 @@ func (a *app) pageVocabReview(c *ui.Context, t *ui.Theme) {
 				ui.Text(c, entry.ContextTranslation).FontSize(12).TextColor(t.TextMuted).Wrap()
 			}
 			if entry.MemoryTips != "" {
-				ui.Text(c, "💡 "+entry.MemoryTips).FontSize(12).TextColor(t.TextMuted).Wrap()
+				ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+					ui.Icon(c, iconInfo).Size(12, 12).TextColor(t.TextMuted)
+					ui.Text(c, entry.MemoryTips).FontSize(12).TextColor(t.TextMuted).Wrap()
+				})
 			}
 
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
@@ -148,11 +169,11 @@ func (a *app) pageVocabReview(c *ui.Context, t *ui.Theme) {
 				if ui.Button(c, "模糊").Height(30).Padding(3, 16).Radius(6).Clicked() {
 					a.gradeVocabReview(reviewHard)
 				}
-				if ui.Button(c, "记得").Height(30).Padding(3, 16).Radius(6).Background(t.Accent).TextColor(ui.Hex("#FFFFFF")).Clicked() {
+				if ui.Button(c, "记得").Height(30).Padding(3, 16).Radius(6).Background(t.Accent).TextColor(t.AccentText).Clicked() {
 					a.gradeVocabReview(reviewGood)
 				}
 			})
-			ui.Text(c, "忘记：10 分钟后 · 模糊：间隔小幅延长 · 记得：间隔翻倍").FontSize(11).TextColor(t.TextMuted)
+			ui.Text(c, "忘记 (1)：10 分钟后 · 模糊 (2)：间隔小幅延长 · 记得 (3)：间隔翻倍 · R 朗读").FontSize(11).TextColor(t.TextMuted)
 		})
 	})
 
@@ -171,7 +192,10 @@ func (a *app) reviewSummary(c *ui.Context, t *ui.Theme) {
 				ui.Text(c, "今天没有到期的生词。").FontSize(15).FontWeight(600).TextColor(t.Text)
 				ui.Text(c, "新保存的词会立即进入复习队列；已经复习过的词会按间隔回来。").FontSize(12).TextColor(t.TextMuted).Wrap()
 			} else {
-				ui.Text(c, "🎉").FontSize(26)
+				at := appTheme(t)
+				ui.Box(c).Size(40, 40).Radius(RadiusTrack).Center().Background(at.SuccessSoft).Children(func() {
+					ui.Icon(c, iconCheckSquare).Size(20, 20).TextColor(at.Success)
+				})
 				ui.Text(c, "今天的词复习完了").FontSize(16).FontWeight(600).TextColor(t.Text)
 			}
 			ui.Row(c).Gap(8).Children(func() {

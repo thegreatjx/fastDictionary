@@ -29,9 +29,10 @@ func TestGoroutinesRecoverPanics(t *testing.T) {
 	// 包级函数变量：goroutine 里写的是变量名，实际函数指向这里。每条都要
 	// 解析到同包函数并检查它的函数体，所以登记本身不会放过一个裸函数。
 	functionVars := map[string]string{
-		"OnMouseDown": "onGlobalMouseDown",
-		"OnMouseMove": "onChipPointer",
-		"OnKeyDown":   "onGlobalKeyDown",
+		"OnMouseDown":  "onGlobalMouseDown",
+		"OnMouseWheel": "onGlobalMouseWheel",
+		"OnMouseMove":  "onChipPointer",
+		"OnKeyDown":    "onGlobalKeyDown",
 	}
 
 	// 跨包调用：看不到函数体，逐条登记理由。

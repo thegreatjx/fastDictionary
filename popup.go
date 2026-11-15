@@ -143,18 +143,24 @@ type app struct {
 	// savedDictTerm is the term that went into the notebook on the last save,
 	// so the card's own button can answer 已保存 instead of offering a second
 	// click that would add the same entry twice.
-	savedDictTerm         string
-	copiedMsg             string
-	feedbackText          string
-	feedbackAt            time.Time
-	feedbackTimer         *time.Timer
-	editingActionID       string
-	customizingAction     CustomActionConfig
-	vocabSearchQuery      string
-	actionSaveFeedback    string
-	selHoverTip           string
-	selHoverIdx           int
-	moreFlyout            *mygo.Window
+	savedDictTerm      string
+	copiedMsg          string
+	feedbackText       string
+	feedbackAt         time.Time
+	feedbackTimer      *time.Timer
+	editingActionID    string
+	customizingAction  CustomActionConfig
+	vocabSearchQuery   string
+	actionSaveFeedback string
+	selHoverTip        string
+	selHoverIdx        int
+	moreFlyout         *mygo.Window
+	// moreFlyoutRect is the menu's DIP rectangle, recorded when it shows: the
+	// hook thread needs it to tell a click on the menu from a click outside,
+	// and asking the window for its position there would wait on the main
+	// thread. Guarded by mu; shown is false until the first frame places it.
+	moreFlyoutRect        ui.Rect
+	moreFlyoutShown       bool
 	showSlashes           bool
 	filterRole            string
 	grammarHoverKnowledge string
@@ -212,6 +218,12 @@ type app struct {
 	popupY           int
 	popupW           int
 	popupH           int
+	// popupAnchoredAbove records that the card was flipped above the cursor
+	// because there was no room below. Height changes then keep the bottom
+	// edge where it is: growing downwards would walk the card over the text
+	// it is explaining.
+	popupAnchoredAbove bool
+	popupAnchorBottom  int
 	// userResized means the user dragged the popup to a size of their own.
 	// The autofit would otherwise snap it back on the next frame, which is
 	// exactly what made a hand-resized card feel stuck: every repaint undid
@@ -384,11 +396,18 @@ func (a *app) snap() snapshot {
 	if !a.feedbackVisibleLocked() {
 		copiedMsg, actionSavedMsg = "", ""
 	}
+	// Deep copy the note list. The view hands &s.notes[i].Checked to a
+	// checkbox and writes through it, and a shallow copy points that write at
+	// the live slice, where dismissNoteWord is reusing the same array.
+	var notes []NoteItem
+	if len(a.notes) > 0 {
+		notes = append([]NoteItem(nil), a.notes...)
+	}
 	return snapshot{
 		mode: a.mode, source: a.source, target: a.target, engine: a.engine,
 		detected: a.detected, errText: a.errText, echoNote: a.echoNote, notice: a.notice, busy: a.busy, elapsed: a.elapsed,
 		dict: a.dict, gdict: a.gdict, aiText: a.aiText, aiBusy: a.aiBusy,
-		inputText: a.inputText, inputTargetMode: a.inputTargetMode, isWord: isWord(a.source), pinned: a.pinned, showNotes: a.showNotes, notes: a.notes, notesBusy: a.notesBusy, onlyTrunk: a.onlyTrunk, grammarResult: a.grammarResult, grammarSentIdx: a.grammarSentIdx, grammarResultPrefill: a.grammarResultPrefill, aiRefining: a.aiRefining, aiRefineErr: a.aiRefineErr,
+		inputText: a.inputText, inputTargetMode: a.inputTargetMode, isWord: isWord(a.source), pinned: a.pinned, showNotes: a.showNotes, notes: notes, notesBusy: a.notesBusy, onlyTrunk: a.onlyTrunk, grammarResult: a.grammarResult, grammarSentIdx: a.grammarSentIdx, grammarResultPrefill: a.grammarResultPrefill, aiRefining: a.aiRefining, aiRefineErr: a.aiRefineErr,
 		activeActionID: a.activeActionID, dictResult: a.dictResult, writingResult: a.writingResult, actionSavedMsg: actionSavedMsg, savedDictTerm: a.savedDictTerm, copiedMsg: copiedMsg, showSlashes: a.showSlashes, filterRole: a.filterRole, grammarHoverKnowledge: a.grammarHoverKnowledge, notesSaved: a.notesSaved, grammarSaved: a.grammarSaved, writingSaved: a.writingSaved,
 		isScreenshotMode: a.isScreenshotMode, snipBitmap: a.snipBitmap, sourceExpanded: a.sourceExpanded,
 		snipExpanded: a.snipExpanded, notesExpanded: a.notesExpanded, ocrBusy: a.ocrBusy, ocrError: a.ocrError, ocrText: a.ocrText,
@@ -597,11 +616,15 @@ func (a *app) openPopupAction(m popupMode, text string) {
 		initH = 440
 	}
 
-	x, y := a.calcPopupPosition(pt, int(w), initH)
+	x, y, anchoredAbove := a.calcPopupPlacement(pt, int(w), initH)
 	a.popupX = x
 	a.popupY = y
 	a.popupW = int(w)
 	a.popupH = initH
+	// A card flipped above the cursor is resized from its bottom edge, so the
+	// anchor is recorded here and cleared with the card.
+	a.popupAnchoredAbove = anchoredAbove
+	a.popupAnchorBottom = y + initH
 
 	a.mu.Lock()
 	// A new card is an auto-sized card again: a hand-resized size belongs to
@@ -653,8 +676,9 @@ func (a *app) openPopupAction(m popupMode, text string) {
 	a.resetScreenshotPinLocked()
 	a.mu.Unlock()
 
-	win.SetSize(int(w), initH)
-	win.SetPosition(x, y)
+	// One call for size and position: setting them separately makes the window
+	// appear at one size in the old place before it moves.
+	win.SetBounds(mygo.Rectangle{X: x, Y: y, Width: int(w), Height: initH})
 	win.SetAlwaysOnTop(cfg.AlwaysOnTop)
 	win.Show()
 	win.Focus()
@@ -683,11 +707,14 @@ func (a *app) openPopupWithText(m popupMode, text string) {
 		initH = 260
 	}
 
-	x, y := a.calcPopupPosition(pt, int(w), initH)
+	x, y, anchoredAbove := a.calcPopupPlacement(pt, int(w), initH)
 	a.popupX = x
 	a.popupY = y
 	a.popupW = int(w)
 	a.popupH = initH
+	// Same anchor rule as openPopupAction.
+	a.popupAnchoredAbove = anchoredAbove
+	a.popupAnchorBottom = y + initH
 
 	a.mu.Lock()
 	// A new card is an auto-sized card again: see openPopupAction.
@@ -731,8 +758,8 @@ func (a *app) openPopupWithText(m popupMode, text string) {
 	a.resetScreenshotPinLocked()
 	a.mu.Unlock()
 
-	win.SetSize(int(w), initH)
-	win.SetPosition(x, y)
+	// One call for size and position, as in openPopupAction.
+	win.SetBounds(mygo.Rectangle{X: x, Y: y, Width: int(w), Height: initH})
 	win.SetAlwaysOnTop(cfg.AlwaysOnTop)
 	win.Show()
 	win.Focus()

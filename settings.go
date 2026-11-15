@@ -530,10 +530,6 @@ func (a *app) showMainWindow(page string) {
 	} else if a.page == "" {
 		a.page = "home"
 	}
-	a.hotkeyDraftsInit = false
-	a.initHotkeyDrafts()
-	a.loadAIModels()
-	a.resetVocabularyViewState()
 	// The tray flyout duplicates the main window's home page; leaving it open
 	// behind the window reads as a second, stale copy.
 	if a.trayFlyout != nil && !a.trayFlyout.IsDestroyed() {
@@ -541,12 +537,25 @@ func (a *app) showMainWindow(page string) {
 		a.trayFlyout = nil
 	}
 	if a.cfgWin != nil && !a.cfgWin.IsDestroyed() {
+		// Coming back to a window that is already there is a refocus, not a
+		// fresh start: the hotkey drafts the user typed and the entry they
+		// expanded must survive it. Only the destructive two-step
+		// confirmations are dropped, and only because an armed "确认清空"
+		// left behind is a trap.
+		a.resetVocabularyConfirmations()
+		if a.page == "ai" {
+			a.loadAIModels()
+		}
 		a.mainWinVisible = true
 		a.cfgWin.Show()
 		a.cfgWin.Focus()
 		a.cfgWin.Update(func() {})
 		return
 	}
+	a.hotkeyDraftsInit = false
+	a.initHotkeyDrafts()
+	a.loadAIModels()
+	a.resetVocabularyViewState()
 	win := mygo.NewWindow(mygo.WindowOptions{
 		Title:     appTitle,
 		Width:     920,

@@ -94,6 +94,11 @@ var (
 	// OnMouseDown runs, on its own goroutine, for every left press. It lets
 	// the selection chip notice a click somewhere else and go away.
 	OnMouseDown func(x, y int32)
+	// OnMouseWheel runs, on its own goroutine, when the wheel turns while the
+	// chip is armed. Scrolling means the user has gone back to reading the
+	// page, and a bar left over the next paragraph is in the way of exactly
+	// that.
+	OnMouseWheel func(x, y int32)
 	// OnMouseMove runs, on its own goroutine, for every pointer move. The
 	// chip needs it because a window that appears under a still pointer gets
 	// no WM_MOUSEMOVE: without this the hovered button never learns it is
@@ -115,6 +120,10 @@ const (
 	wmLButtonUp   = 0x0202
 	wmRButtonDown = 0x0204
 	wmMButtonDown = 0x0207
+	// The wheel arrives at the same low-level hook as the buttons; the
+	// pointer in a wheel event is still in screen coordinates.
+	wmMouseWheel  = 0x020A
+	wmMouseHWheel = 0x020E
 
 	wmKeyDown    = 0x0100
 	wmSysKeyDown = 0x0104
@@ -170,8 +179,8 @@ func lowLevelMouseProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 	atomic.AddUint64(&hookEvents, 1)
 
 	hookMu.Lock()
-	var fire, press, clickFire, moved bool
-	var fx, fy, cx, cy, moveX, moveY int32
+	var fire, press, clickFire, moved, wheel bool
+	var fx, fy, cx, cy, moveX, moveY, wx, wy int32
 	var target uintptr
 	var kind gestureKind
 	var lastKey, pressedAt time.Time
@@ -212,6 +221,14 @@ func lowLevelMouseProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 		}
 		moveX, moveY = pt.X, pt.Y
 		moved = true
+	// The wheel only matters while the chip is up. Judged here, on the hot
+	// path, so a wheel over a page with no chip costs one atomic load and
+	// nothing else.
+	case wmMouseWheel, wmMouseHWheel:
+		if atomic.LoadUint32(&chipHoverArmed) != 0 {
+			wx, wy = pt.X, pt.Y
+			wheel = true
+		}
 	case wmLButtonUp:
 		atomic.AddUint64(&hookUps, 1)
 		wasDbl := dblClickPending
@@ -227,6 +244,9 @@ func lowLevelMouseProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 				if hwnd := windowAt(pt.X, pt.Y); !isOwnProcess(hwnd) {
 					clickFire = true
 					kind = gestureDoubleClick
+					if clickCount >= 3 {
+						kind = gestureTripleClick
+					}
 					lastKey = pressLastKey
 					pressedAt = pressAt
 					cx, cy = pt.X, pt.Y
@@ -272,6 +292,11 @@ func lowLevelMouseProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 	if press && OnMouseDown != nil {
 		x, y := pt.X, pt.Y
 		go OnMouseDown(x, y)
+	}
+
+	if wheel && OnMouseWheel != nil {
+		x, y := wx, wy
+		go OnMouseWheel(x, y)
 	}
 
 	// Same rule as the press, with one more step: the move is handed to a

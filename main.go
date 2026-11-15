@@ -395,6 +395,7 @@ func main() {
 		// their own, so the work they start never blocks the hook.
 		OnSelectionGesture = a.onSelectionGesture
 		OnMouseDown = a.onGlobalMouseDown
+		OnMouseWheel = a.onGlobalMouseWheel
 		OnMouseMove = a.onChipPointer
 		OnKeyDown = a.onGlobalKeyDown
 		if cfg.SelectionTrigger != "hotkey" {

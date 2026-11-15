@@ -10,13 +10,27 @@ import (
 // proactively lifting it upwards (翻转置于选区上方或向上抬高) when the cursor
 // is in the lower half of the screen or near the bottom, matching Read-Frog's behaviour.
 func (a *app) calcPopupPosition(pt mygo.Point, targetW, targetH int) (int, int) {
+	x, y, _ := a.calcPopupPlacement(pt, targetW, targetH)
+	return x, y
+}
+
+// calcPopupPlacement is calcPopupPosition plus the answer to "was this card
+// flipped above the cursor?". The caller records that so a later height change
+// can grow the card upwards instead of down over the text.
+func (a *app) calcPopupPlacement(pt mygo.Point, targetW, targetH int) (int, int, bool) {
 	d := mygo.Screen.DisplayNearestPoint(pt)
-	return calcPopupPositionIn(pt, targetW, targetH, d.WorkArea)
+	return calcPopupPlacementIn(pt, targetW, targetH, d.WorkArea)
 }
 
 // calcPopupPositionIn calculates the ideal position for the popup window inside a given work area.
 // It is a pure function of its inputs so its behaviour is verifiable without a screen.
 func calcPopupPositionIn(pt mygo.Point, targetW, targetH int, wa mygo.Rectangle) (int, int) {
+	x, y, _ := calcPopupPlacementIn(pt, targetW, targetH, wa)
+	return x, y
+}
+
+// calcPopupPlacementIn is calcPopupPositionIn keeping the flip decision.
+func calcPopupPlacementIn(pt mygo.Point, targetW, targetH int, wa mygo.Rectangle) (int, int, bool) {
 	waX := wa.X
 	waY := wa.Y
 	waW := wa.Width
@@ -41,9 +55,11 @@ func calcPopupPositionIn(pt mygo.Point, targetW, targetH int, wa mygo.Rectangle)
 	isLowerHalf := pt.Y > waY+int(float32(waH)*0.50)
 
 	var y int
+	anchoredAbove := false
 	if isLowerHalf || spaceBelow < targetH+margin {
 		// Flip ABOVE the cursor/selection!
 		y = pt.Y - targetH - 14
+		anchoredAbove = true
 	} else {
 		// Place BELOW the cursor/selection
 		y = pt.Y + 14
@@ -57,7 +73,7 @@ func calcPopupPositionIn(pt mygo.Point, targetW, targetH int, wa mygo.Rectangle)
 		y = waY + margin
 	}
 
-	return x, y
+	return x, y, anchoredAbove
 }
 
 // popupWidth keeps every popup entry point inside the range offered by the
@@ -278,7 +294,20 @@ func (a *app) applyPopupHeight(delta float32) {
 	// from it would snap the window back to where it was opened. Read where it
 	// actually is.
 	curX, curY := win.Position()
+	actualY := curY
+	// A card flipped above the cursor keeps its bottom edge: it explains text
+	// that sits under it, so growing downwards would walk it over that text.
+	// The anchor is dropped the moment the window is no longer where this code
+	// left it — a drag wins over the automatic rule.
+	a.mu.Lock()
+	anchoredAbove := a.popupAnchoredAbove
+	anchorBottom := a.popupAnchorBottom
+	if curY != a.popupY {
+		anchoredAbove = false
+		a.popupAnchoredAbove = false
+	}
 	a.popupX, a.popupY = curX, curY
+	a.mu.Unlock()
 	// delta is measured in layout units, but the window is a few DIPs taller
 	// than the layout root (frameless panels still carry a thin border), so
 	// the target is applied as a difference. Using it as an absolute height
@@ -300,8 +329,14 @@ func (a *app) applyPopupHeight(delta float32) {
 	target = clampPopupHeight(target, float32(waTop), float32(waBottom))
 
 	h := int(target)
-	newY, h := liftPopupY(curY, h, waTop, waBottom)
-	if h == curH && newY == curY {
+	y := curY
+	if anchoredAbove {
+		// The height is the variable here and the bottom edge is the fixed
+		// one: place the top so that the bottom lands back on the anchor.
+		y = anchorBottom - h
+	}
+	newY, h := liftPopupY(y, h, waTop, waBottom)
+	if h == curH && newY == actualY {
 		return
 	}
 
@@ -387,7 +422,17 @@ func (a *app) fitHeight() {
 	// The user can drag the window, so the cached position goes stale. Read
 	// where it actually is; resizing from the cached one would snap it back.
 	curX, curY := win.Position()
+	// Same bottom-edge rule as applyPopupHeight: a card flipped above the
+	// cursor grows upwards, and a drag releases the anchor.
+	a.mu.Lock()
+	anchoredAbove := a.popupAnchoredAbove
+	anchorBottom := a.popupAnchorBottom
+	if curY != a.popupY {
+		anchoredAbove = false
+		a.popupAnchoredAbove = false
+	}
 	a.popupX, a.popupY = curX, curY
+	a.mu.Unlock()
 	h := popupContentHeight(s, w)
 
 	// Query monitor work area for adaptive lifting
@@ -410,7 +455,11 @@ func (a *app) fitHeight() {
 			targetH = curH
 		}
 	}
-	newY, targetH := liftPopupY(curY, targetH, waTop, waBottom)
+	y := curY
+	if anchoredAbove {
+		y = anchorBottom - targetH
+	}
+	newY, targetH := liftPopupY(y, targetH, waTop, waBottom)
 
 	a.mu.Lock()
 	a.popupY = newY

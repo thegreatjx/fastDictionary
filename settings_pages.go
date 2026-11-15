@@ -687,6 +687,9 @@ func (a *app) pageHotkey(c *ui.Context, t *ui.Theme, cfg Config) {
 			ui.Box(c).FillWidth().Padding(Space4).BorderWidth(0, 0, 1, 0).
 				BorderColor(appTheme(t).BorderSubtle).Children(func() {
 				ui.Column(c).FillWidth().Gap(Space2).Children(func() {
+					// Two presets, not three: the third button restored the same
+					// Alt+D / Alt+C / Alt+Q set the first one applies, and a
+					// separate "恢复默认" already sits in 生效保存 below.
 					btnP1 := PrimaryButton(c, t, "极速单手：Alt+D (划词) / Alt+C (截图) / Alt+Q (输入)").
 						Tooltip("【最推荐】左手单手盲操极速触发。注意：Alt+D 在 Chrome/Edge 中会聚焦地址栏，浏览器内建议用方案二")
 					if btnP1.Clicked() {
@@ -702,11 +705,6 @@ func (a *app) pageHotkey(c *ui.Context, t *ui.Theme, cfg Config) {
 						a.pendingHotkeyScreenshot = "Ctrl+Alt+S"
 						a.pendingHotkeyInput = "Ctrl+Alt+I"
 						a.applyHotkeys()
-					}
-					btnDefault := SecondaryButton(c, t, "恢复默认：Alt+D (划词) / Alt+C (截图) / Alt+Q (输入)").
-						Tooltip("恢复出厂默认快捷键设置")
-					if btnDefault.Clicked() {
-						a.resetHotkeysToDefault()
 					}
 				})
 			})

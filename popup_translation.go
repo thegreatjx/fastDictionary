@@ -38,14 +38,7 @@ func (a *app) renderPopupHeader(c *ui.Context, t *ui.Theme, cfg Config, s snapsh
 				pinIcon, pinTip = iconPinned, "取消固定窗口"
 			}
 			if renderIconButton(c, pinIcon, pinTip, 30, 15, s.pinned).Clicked() {
-				a.mu.Lock()
-				a.pinned = !a.pinned
-				pinned := a.pinned
-				a.mu.Unlock()
-				if a.win != nil {
-					a.win.SetAlwaysOnTop(pinned || cfg.AlwaysOnTop)
-					a.win.Update(func() {})
-				}
+				a.togglePopupPin(cfg)
 			}
 			if renderIconButton(c, iconClose, "关闭（Esc）", 30, 14, false).Clicked() && a.win != nil {
 				stopAudio()
@@ -54,6 +47,20 @@ func (a *app) renderPopupHeader(c *ui.Context, t *ui.Theme, cfg Config, s snapsh
 			}
 		})
 	})
+}
+
+// togglePopupPin flips the pin and re-applies the window's always-on-top
+// state. Both the pin button and Ctrl+P go through here, so the two cannot
+// disagree about what a pinned card does when the config says always-on-top.
+func (a *app) togglePopupPin(cfg Config) {
+	a.mu.Lock()
+	a.pinned = !a.pinned
+	pinned := a.pinned
+	a.mu.Unlock()
+	if a.win != nil {
+		a.win.SetAlwaysOnTop(pinned || cfg.AlwaysOnTop)
+		a.win.Update(func() {})
+	}
 }
 
 var popupModeLabels = [...]string{"翻译", "长难句", "写作"}
