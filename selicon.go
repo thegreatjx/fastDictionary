@@ -62,12 +62,11 @@ const (
 	chipTipWarm = 400 * time.Millisecond
 
 	// chipShadowMargin is the transparent margin the window keeps on every
-	// side of the pill. The window clips whatever is painted at its edge, and
-	// the pill's wide shadow bleeds up to 20 DIP sideways, 14 above and 25
-	// below; without the room the bar looked cut out of the page instead of
-	// floating over it. The margin is symmetric so the pill sits at one known
-	// offset inside the window.
-	chipShadowMargin = 26
+	// side of the pill. The window clips whatever is painted at its edge, so
+	// the pill's shadows need room; the lift shadow bleeds 8 DIP sideways, 5
+	// above and 11 below. The margin only covers that: anything larger reads
+	// as a translucent plate around a bar that is supposed to float.
+	chipShadowMargin = 12
 )
 
 // chipMoreLabel names the button that opens the more menu.
@@ -261,6 +260,7 @@ func (a *app) showSelIcon(px, py int32, text string) {
 		if want != ex {
 			procSetWindowLongPtr.Call(hwnd, gwlExStyle, want)
 		}
+		clearChipFrame(hwnd)
 		a.placeChipWindow(hwnd, x, y)
 		// Re-assert only when the style edit above actually ran: that edit
 		// moves the frame, and the move has to be undone. With no edit there
@@ -346,6 +346,20 @@ func (a *app) placeChipWindow(hwnd uintptr, x, y int) {
 	const swpShowWindow = 0x0040
 	procSetWindowPos.Call(hwnd, hwndTopmost, uintptr(px), uintptr(py), uintptr(w), uintptr(h),
 		swpNoActivate|swpShowWindow)
+}
+
+// clearChipFrame removes the 1px border DWM draws around a top-level window
+// on Windows 11. The chip's window is transparent and, for the shadow's sake,
+// much larger than the pill; that border then reads as a rounded rectangle
+// around empty space instead of the floating bar. DWMWA_COLOR_NONE is the
+// documented "draw no border"; Windows 10 fails the call and needs nothing.
+func clearChipFrame(hwnd uintptr) {
+	const (
+		dwmwaBorderColor = 34
+		dwmColorNone     = 0xFFFFFFFE
+	)
+	none := uint32(dwmColorNone)
+	procDwmSetWindowAttr.Call(hwnd, dwmwaBorderColor, uintptr(unsafe.Pointer(&none)), 4)
 }
 
 // monitorDPIAt returns the DPI of the monitor holding a DIP point, falling
@@ -1265,10 +1279,11 @@ func (a *app) selIconView(c *ui.Context) {
 		Padding(chipPadV, chipPadH).Radius(11).
 		Background(chipSurface(t)).Border(1, chipBorderColor(t)).
 		// Two shadows instead of one: a tight contact shadow that seats the
-		// pill on the page, and a wide soft one that lifts it. A single
-		// 12px blur at 12% looked like a grey halo.
+		// pill on the page, and a soft one that lifts it. Both stay close to
+		// the bar — a 20px blur at this size painted a grey band as tall as
+		// the bar itself under it.
 		Shadow(0, 1, 2, 0, contact).
-		Shadow(0, 6, 20, 0, lift).
+		Shadow(0, 3, 8, 0, lift).
 		Children(func() {
 			a.chipIconButton(c, t, iconTranslate, chipTonePrimary, "划词翻译（"+cfg.HotkeySelection+"）", func() {
 				a.actOnSelection(func(text string) { a.openPopupAction(modeTranslate, text) })
