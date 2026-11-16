@@ -156,6 +156,11 @@ try {
     if ($cfgLoaded.theme_mode -ne $Theme -or $cfgLoaded.accent_theme -ne $Accent) {
         throw "配置身份不符：要求 $Theme/$Accent，实际 $($cfgLoaded.theme_mode)/$($cfgLoaded.accent_theme)"
     }
+    # 证据目录可能被分享；fixture 里没有密钥，但不要依赖这个前提。
+    foreach ($secret in @("ai_key", "ai_key_enc", "ai_key_enc_by_provider")) {
+        $prop = $cfgLoaded.PSObject.Properties[$secret]
+        if ($prop) { $prop.Value = $null }
+    }
 
     $commit = (& git rev-parse HEAD).Trim()
     $dirty = [bool]((& git status --porcelain) -join "")
