@@ -1,5 +1,65 @@
 # 更新日志
 
+## 1.4.6 — 2026-11-17（工程契约与返工根因收口 · r3 分发包）
+
+这一版不再逐条修补界面症状，而是把最近四天反复返工的边界收口成可执行
+契约：颜色角色、模型协议、验证证据和发布批次各有唯一真相与自动检查。
+用户能直接看到的变化是：长难句从句徽章不再断成“宾 / 从”两半，小字对
+比度达到 4.5:1；暗色「语法难点」说明文字不再过灰；旧版 V3 长难句指令
+迁移时，设置页的输出字段也同步升级。
+
+### 修复
+
+- **从句徽章不再断行**：内联 `RichText` 会在任意两个汉字之间断行，两个
+  字的从句标签因此被拆到两行。徽章内加入 U+2060 WORD JOINER，标签保
+  持一个整体；徽章文字按明暗分别混入正文墨色/白色，四套强调色下都通
+  过 10px 小字对比度。
+- **从句色板改为具名结构**：`grammarClausePalette` 从 `grammar.go` 移入
+  `theme.go`，返回值改为 `grammarClauseColors{wash, badgeBg, badgeText}`。
+  1.4.5 的 30% 徽章色误铺整段从句，正是调用点取错位置返回值；具名字段
+  让同类错误无法再写出来。
+- **语法难点彻底中性**：新增 `grammarDifficultyPalette`，卡面、标题、
+  胶囊、圆点、说明各归语义角色；测试禁止难点色等于 `Warning`/`Danger`。
+  11px 说明从 `TextMuted` 改为 `TextSecondary`，暗色下不再低于 4.5:1。
+- **旧 V3 指令迁移补齐输出字段**：提示词从 V3 升级到 V4 时，
+  `OutputSchema` 同步从 `segments/clauses/translation` 升级为
+  `segments/clauses/difficulties/translation`；用户自己配的 V4 提示词
+  与 schema 不受影响，迁移保持幂等。
+
+### 工程
+
+- 新增 `docs/RETROSPECTIVE_2026-11.md`：复盘 11-14 至 11-17 的 59 个提交、
+  24 个分发包与 16 个仍标 `1.1.0` 的发布，归因到设计、模型协议、构建
+  验证、操作结果四个边界的“两份真相”，而不是继续统计症状。
+- 新增 `docs/ENGINEERING_CONTRACT.md`：边界唯一真相、设计角色、协议成
+  对升级、结果后置条件、证据身份与批量发布的具体检查。
+- 新增 `.claude/skills/fastdictionary-ui-verify/SKILL.md` 与
+  `scripts/ui-evidence.ps1`：隔离 `%APPDATA%\fastDictionary-uiverify` 与
+  独立 exe，抓原生截图、控件树和 `manifest.json`（commit / exe SHA256 /
+  配置 / 主题 / 强调色），避免截到旧进程、旧配置或另一套主题。
+- 新增 `theme_contract_test.go` 与 `grammar_protocol_test.go`：四套强调色
+  × 明暗的对比度与角色契约；错序分段、伪造主句、半截从句、整段改写与
+  V2/V3/旧 `annotations` 指令迁移 fixture。
+- `AGENTS.md` 改为按已验证类别批量出包；纯文档、测试、脚本且不改变二
+  进制行为时不再重新出包，减少“每个微修复一个包”的重复成本。
+
+### 检查
+
+- `gofmt -l .` 无输出，`go vet ./...`、`go build ./...` 通过。
+- `go test ./...` 通过（853 项）。
+- 原生证据：语法卡四套强调色 × 明暗共 8 份，写作卡浅色、工作台浅色、
+  通用设置暗色薄荷各 1 份；manifest 均为 `git_commit=06e2b96`、
+  `git_dirty=false`，e2e exe SHA256 前缀 `235B7EB399E79933`。
+- 控件树确认空输入「翻译」按钮为 `disabled` 且无 `press`；长难句卡的
+  「只看主干 / 断句 / 保存到长难句本」均可见、可聚焦。
+
+### 发布
+
+- 源码提交：`06e2b96`。
+- 分发包：`fastDictionary-v2026.11.17-r3-win64.zip`（33,833,406 B），
+  SHA256 `426373E392DDB8DC7366B0D77EA2FB24FD0B3BAF95D552B507D6D0FD3AA3A76A`。
+- 程序已用新包重启：pid 19748，日志 build `2026-11-17T01:47`。
+
 ## 1.4.5 — 2026-11-17（长难句配色重做与全局配色收敛 · r2 分发包）
 
 这一版按反馈重做长难句卡的配色：去掉“语法难点”里的琥珀棕，把从句
