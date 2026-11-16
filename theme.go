@@ -124,7 +124,7 @@ func newAppTheme(dark bool, accent ui.Color) AppTheme {
 			SurfacePress:  ui.RGBA(255, 255, 255, 0.10),
 			Text:          ui.Hex("#F1F5F9"),
 			TextSec:       ui.Hex("#94A3B8"),
-			TextMuted:     ui.Hex("#64748B"),
+			TextMuted:     ui.Hex("#8895A7"),
 			TextDisabled:  ui.RGBA(241, 245, 249, 0.35),
 			BorderSubtle:  ui.RGBA(255, 255, 255, 0.08),
 			BorderCtrl:    ui.RGBA(255, 255, 255, 0.14),
@@ -159,7 +159,7 @@ func newAppTheme(dark bool, accent ui.Color) AppTheme {
 		SurfacePress:  ui.RGBA(15, 23, 42, 0.08),
 		Text:          ui.Hex("#0F172A"),
 		TextSec:       ui.Hex("#475569"),
-		TextMuted:     ui.Hex("#64748B"),
+		TextMuted:     ui.Hex("#5B697A"),
 		TextDisabled:  ui.RGBA(15, 23, 42, 0.36),
 		BorderSubtle:  ui.RGBA(15, 23, 42, 0.08),
 		BorderCtrl:    ui.RGBA(15, 23, 42, 0.14),
@@ -799,7 +799,7 @@ func grammarInkFor(t *ui.Theme) grammarInk {
 		obstacle:       ui.Hex("#B05A3C"),
 		obstacleBg:     ui.RGBA(176, 90, 60, 0.08),
 		body:           ui.Hex("#1E293B"),
-		muted:          ui.Hex("#8C94A3"),
+		muted:          ui.Hex("#64748B"),
 	}
 }
 
@@ -828,8 +828,8 @@ func grammarObstacleColors(t *ui.Theme, ink grammarInk) (cardBg, cardBorder, car
 	}
 	return ui.Hex("#F7F8FA"), ui.Hex("#E3E8EF"), ui.Hex("#9A5A44"),
 		ui.Hex("#F1F5F9"), ui.Hex("#E2E8F0"), ui.Hex("#9A5A44"),
-		ui.Hex("#1E293B"), ui.Hex("#64748B"), ui.Hex("#2F6F7A"),
-		ui.Hex("#64748B"), ui.Hex("#334155")
+		ui.Hex("#1E293B"), ui.Hex("#5B697A"), ui.Hex("#2F6F7A"),
+		ui.Hex("#5B697A"), ui.Hex("#334155")
 }
 
 // grammarToggleOnColors 是长难句卡片开关的选中态。

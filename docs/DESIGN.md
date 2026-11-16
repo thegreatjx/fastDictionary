@@ -10,44 +10,55 @@
   - **Learner First (学习者优先)**：单词必带标准 IPA 音标、CEFR 分级、语境原句与词根助记。
 
 ## 2. 色彩系统 (Color Tokens)
+
+> 实现以 `theme.go` 的 `newAppTheme` 为准；本节记录语义和禁用项，避免旧版翡翠绿/金书签重新回到界面。
+
 - **底色与基面**：
-  - Light Surface: `#FFFFFF` · Background: `#F8FAFC`
-  - Dark Surface: `#1E293B` · Background: `#0F172A`
-  - Border Hairline: `#E2E8F0` (Light) / `#334155` (Dark)
+  - Light Surface: `#FFFFFF` · Background: `#F5F7FA` · Text: `#0F172A`
+  - Dark Surface: `#181B21` · Background: `#111317` · Text: `#F1F5F9`
+  - Secondary text: `#475569` (Light) / `#94A3B8` (Dark)
+  - Muted text: `#5B697A` (Light) / `#8895A7` (Dark)，小字对比度不低于 4.5:1
+  - Border: `rgba(15,23,42,.14)` (Light) / `rgba(255,255,255,.14)` (Dark)
 - **悬浮条专用冷调色板**（与主界面分开，理由见 §5.1）：
-  - 胶囊底：`#FBFCFD` (Light) / `#1B2027` (Dark) —— 带一丝蓝的近白/近黑，不是纯白纯黑
-  - 发丝边：`#E3E8EE` / `#2E3641`
-  - 图标墨色：`#3F4A5A` / `#AEBAC8`（低饱和冷灰，所有次要按钮共用）
-  - 悬停墨色：`#1E2A38` / `#E4EAF1`
-  - 唯一强调色（仅“划词翻译”）：`#4A6E8A` / `#7FA6C4`
-  - 悬停底纹：`rgba(63,74,90,.07)` / `rgba(174,186,200,.12)`
-  - 悬停提示气泡：底 `#26303B` / `#E8EDF2`，字 `#EAF0F6` / `#1A2028`
+  - 胶囊底：`#F4F8FF` (Light) / `#171D28` (Dark)
+  - 发丝边：`#D4E2FA` / `#2B394F`
+  - 图标墨色：`#3A4960` / `#B6C5DA`
+  - 悬停墨色：`#1D4ED8` / `#E2ECFA`
+  - 唯一强调色（仅“划词翻译”）：`#2563EB` / `#60A5FA`
+  - 悬停提示气泡：底 `#1E293B` / `#E8EDF5`，字 `#F1F5F9` / `#0F172A`
 - **语义色彩**：
-  - **Accent (皇家蓝)**: `#2563EB` (交互焦点、主要按钮、外框高亮)
-  - **Success (翡翠绿)**: `#10B981` / Light: `#ECFDF5` (保存成功、A级难度徽章)
-  - **Bookmark (金书签)**: `#EAB308` / Light: `#FEFCE8` (生词库星标与收藏)
-  - **Difficulty CEFR**:
-    - A1/A2: 翡翠绿 (`#059669` on `#ECFDF5`)
-    - B1/B2: 皇家蓝 (`#2563EB` on `#EFF6FF`)
-    - C1/C2: 典雅紫 (`#7E22CE` on `#FAF5FF`)
-  - **Danger (警戒红)**: `#DC2626` / Light: `#FEE2E2` (退出、删除)
+  - **Accent**: `#2563EB`（交互焦点、主操作、当前选中）；系统强调色存在时优先级更高。
+  - **Success (松绿)**: `#2F6F5E` / `#9BC7B5`，Soft 为 10% 底色。用于保存成功、监听状态点、A 级难度徽章。
+  - **Danger (陶红)**: `#A33A34` / `#E39A93`，Soft 为 9% 底色。用于删除、OCR 失败。
+  - **Warning (赭石)**: `#8A6435` / `#D6B07A`。只用于暂停和“模型不在列表”等提示。
+  - **Save action (墨色主按钮)**: `#1E293B` / `#E2E8F0`，前景 `#FFFFFF` / `#0F172A`。保存按钮不再使用琥珀、金书签或橙色。
+  - **难度 CEFR**:
+    - A1/A2: 松绿 `#2F6F5E` on 10% tint
+    - B1/B2: Accent `#2563EB` on 10% tint
+    - C1/C2: 灰紫 `#6B4A8A` / `#C3B2E8`
+  - **写作批注**: 原句用陶红 `#9A4C4C` / `#D6A3A0`，改写用松绿 `#2F6F5E` / `#9BC7B5`；分类标签用中性描边，不用整块红/绿。
+  - **长难句标注**: 青 `#2F6F7A`、蓝 `#2A57C4`、梅 `#8A4B6B`、紫 `#6F4AA8`、橄榄 `#4C7A3F`、陶土 `#B05A3C`；靠线型（实线/波浪/双线/点线）区分，不只靠颜色。
+  - **禁用**：大面积浅绿卡片、荧光绿、琥珀色保存按钮、金书签填充、紫色渐变、饱和红绿并排。
 
 ## 3. 排版系统 (Typography Scale)
-- **字体族**：系统最优无衬线体 (`-apple-system, Segoe UI, PingFang SC, Microsoft YaHei`)
+- **字体族**：Windows 原生无衬线栈 `Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI`；代码/数据用 `Cascadia Mono, Consolas`。
 - **阶梯**：
-  - Title: `18px~20px` · Weight: 700 (词条大字、弹窗标题)
-  - Headline: `15px~16px` · Weight: 600 (译文主干、核心定义)
-  - Body: `13px~14px` · Weight: 400 · LineHeight: 1.6 (例句、释义正文)
-  - Caption / Tag: `11px~12px` · Weight: 600 (音标、词性胶囊、时间戳)
-  - Micro / Badge: `10px` · Weight: 700 (CEFR 等级)
+  - Page Title: `20px` · Weight 600
+  - Word Head: `18px` · Weight 700
+  - Section: `14px` · Weight 600
+  - Body / Control: `13px` · Weight 400~500
+  - Caption / Helper: `12px` · Weight 400~600
+  - Micro / Badge: `10–11px` · Weight 600~700
+  - 正文行高 `1.5~1.6`，长文最大阅读宽度约 `600 DIP`。
 
 ## 4. 间距与圆角 (Spacing & Geometry)
-- **间距模数**：4px / 8px / 12px / 16px / 20px
+- **间距模数**：主布局按 4 / 8 / 12 / 16 / 24 / 32 DIP；徽标、图标按钮允许 1–2 DIP 光学修正，不新增大块魔法数。
 - **圆角**：
-  - 微胶囊 (Badges): `4px~5px`
-  - 卡片与输入框 (Cards): `8px`
-  - 窗口主体 (Windows): `10px~12px`
-  - 悬浮胶囊工具条 (Floating Pill): `17px~18px` (完全胶囊圆弧)
+  - 微胶囊 (Badges): `4px`
+  - 控件与卡片 (Controls / Cards): `6px`
+  - 容器/分组 (Track): `8px`
+  - 窗口主体 (Windows): `10px`
+  - 悬浮胶囊工具条 (Floating Pill): 完全胶囊圆弧，高度 36 DIP。
 
 ## 5. 核心界面设计契约 (Surfaces)
 1. **悬浮条 (Selection Chip)**:
@@ -62,11 +73,14 @@
    - 沿条移动指针时气泡跟着走，不重新等待（400ms 内为“热”态）；
    - 气泡永不获取键盘焦点（`Focusable: false` + `ShowInactive`）。
 2. **查词主弹窗 (Popup)**:
-   - 顶部集成一键模式切换器 `[ 翻译 | 📘 词典 | 🔍 语法 | ✏️ 写作 ]`；
-   - 单词自动渲染 IPA 发音按钮、词性徽标、CEFR 分级与【⭐ 存入生词库】。
+   - 顶部只用三个阅读工具：`[ 翻译 | 长难句 | 写作 ]`，不再放词典/语法 Emoji 页签；
+   - 原文可折叠：收起态先合并段落再截断；展开态按段落渲染，段间 8 DIP，不用空行撑高度；
+   - 排版三档 `紧凑 / 智能 / 保留换行`，设置页可改，译文下方用段落标记 `¶` 菜单就地切换；
+   - 单词自动渲染 IPA 发音、词性胶囊、CEFR 分级；发音与复制使用无边框 ghost 图标按钮；
+   - 保存动作统一为墨色主按钮（浅色近黑 / 深色近白），图标、文字同前景色，hover/按下各深一档；已保存状态改为中性描边胶囊。
 3. **生词库 (Vocabulary Management)**:
    - 支持全量 JSON / Excel CSV 导入导出；
    - 条目富文本呈现，带词源助记与双语例句。
 4. **截图翻译 (Screenshot OCR)**:
-   - 全局热键 `Ctrl+Alt+S` / 悬浮条快捷图标唤起；
+   - 全局热键默认 `Alt+C`（设置 → 快捷键可改），也可从托盘或悬浮条唤起；
    - 离线 WinRT OCR 识别，极速翻译。

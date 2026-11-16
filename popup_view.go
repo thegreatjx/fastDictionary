@@ -31,7 +31,7 @@ func renderIconButton(c *ui.Context, icon *ui.SVG, tip string, size, iconSize fl
 	if b.Pressed() {
 		bg = at.SurfacePress
 	}
-	b.Background(bg).Border(0, ui.Transparent)
+	b.Background(bg).Border(0, ui.Transparent).Selected(active)
 	b.Children(func() {
 		ui.Icon(c, icon).Size(iconSize, iconSize).TextColor(fg)
 	})
