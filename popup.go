@@ -242,9 +242,6 @@ type app struct {
 	// chipTip is the label that names the button under the pointer. It has
 	// its own lock, so the render pass never waits on app.mu for it.
 	chipTip chipTipState
-	// chipClose is the small X that floats over the chip's top-right corner
-	// while the pointer is on the "more" button.
-	chipClose chipCloseState
 	// gestureGate drops a gesture that repeats the one just accepted. It is
 	// what keeps a scrollbar drag or a stutter from raising the chip twice.
 	gestureGate gestureGate

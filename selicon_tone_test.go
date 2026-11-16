@@ -138,7 +138,7 @@ func TestChipHoverUsesOneQuietWash(t *testing.T) {
 // animated rather than switched on.
 func TestChipHoverChangesTheRenderedPixels(t *testing.T) {
 	a := newTestApp()
-	tt := ui.NewTester(a.selIconView, a.currentSelectionChipWidth(), selIconHeight)
+	tt := ui.NewTester(a.selIconView, chipWindowWidth(a.currentSelectionChipWidth()), chipWindowHeight())
 	tt.Frame()
 
 	r, ok := tt.Find("朗读选中文字")

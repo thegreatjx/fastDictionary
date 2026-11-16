@@ -267,6 +267,7 @@ func normalizeClauses(res *SentenceAnalysisResult) {
 	}
 	clauses := make([]ClauseInfo, 0, len(res.Clauses))
 	seen := make(map[string]bool)
+	dropped := make(map[string]bool)
 	for i, c := range res.Clauses {
 		c.ID = strings.TrimSpace(c.ID)
 		if c.ID == "" {
@@ -280,7 +281,40 @@ func normalizeClauses(res *SentenceAnalysisResult) {
 		c.Type = strings.TrimSpace(c.Type)
 		c.ShortTag = strings.TrimSpace(c.ShortTag)
 		c.Target = strings.TrimSpace(c.Target)
+		// Some models file the main clause as a clause too, with type 主句 and
+		// a 主从 badge. It is already marked by is_backbone; washing the whole
+		// sentence and calling it a subordinate clause is worse than dropping it.
+		if strings.Contains(c.Type, "主句") && !strings.Contains(c.Type, "从句") {
+			dropped[c.ID] = true
+			continue
+		}
 		clauses = append(clauses, c)
+	}
+	for i := range clauses {
+		if dropped[clauses[i].ParentID] {
+			clauses[i].ParentID = ""
+		}
+	}
+	for i := range res.Segments {
+		if dropped[res.Segments[i].ClauseID] {
+			res.Segments[i].ClauseID = ""
+		}
+	}
+	// Models often tag only the first two words of a clause. Carry the open
+	// clause across the following non-backbone words until the next clause or
+	// the end of the sentence, so the wash covers one continuous block instead
+	// of stopping in the middle of the clause.
+	active := ""
+	for i := range res.Segments {
+		seg := &res.Segments[i]
+		if seg.ClauseID != "" {
+			active = seg.ClauseID
+		} else if active != "" && !seg.IsBackbone && seg.Role != RolePunct {
+			seg.ClauseID = active
+		}
+		if seg.IsBackbone || grammarEndsSentence(seg.Text) {
+			active = ""
+		}
 	}
 	res.Clauses = clauses
 	for i := range res.Difficulties {
@@ -288,6 +322,17 @@ func normalizeClauses(res *SentenceAnalysisResult) {
 		res.Difficulties[i].SpanText = strings.TrimSpace(res.Difficulties[i].SpanText)
 		res.Difficulties[i].Explanation = strings.TrimSpace(res.Difficulties[i].Explanation)
 	}
+}
+
+// grammarEndsSentence reports whether text closes a sentence, so an open
+// clause does not run into the next one.
+func grammarEndsSentence(text string) bool {
+	text = strings.TrimRightFunc(text, unicode.IsSpace)
+	if text == "" {
+		return false
+	}
+	r, _ := utf8.DecodeLastRuneInString(text)
+	return r == '.' || r == '?' || r == '!' || r == '。' || r == '？' || r == '！'
 }
 
 func normalizeSegmentRole(role SegmentRole) SegmentRole {
@@ -309,10 +354,12 @@ func normalizeSegmentRole(role SegmentRole) SegmentRole {
 
 // alignSegmentsToSource compares the model's slices with the real sentence.
 //
-// A model usually gets the words right and the spaces wrong: one space between
-// two slices disappears, or a trailing space is dropped. Rebuilding from the
-// non-space characters repairs exactly that case and returns the source's own
-// spacing; anything else is rejected.
+// A perfect match is rebuilt from the source's own spacing. Models also
+// reorder a word or two ("will visit" before "first") or change a dash or
+// quote; in that case the exact walk fails, and the fuzzy fallback assigns
+// each source token to the segment that named it, then emits source-order
+// runs. Every returned Text is still cut from the source, so the card never
+// shows words the model invented.
 func alignSegmentsToSource(segments []Segment, source string) ([]Segment, bool) {
 	if len(segments) == 0 {
 		return nil, false
@@ -323,7 +370,15 @@ func alignSegmentsToSource(segments []Segment, source string) ([]Segment, bool) 
 	if concatSegments(segments) == source {
 		return segments, true
 	}
+	if out, ok := alignSegmentsExact(segments, source); ok {
+		return out, true
+	}
+	return alignSegmentsFuzzy(segments, source)
+}
 
+// alignSegmentsExact walks the model's slices over the source's non-space
+// runes. It repairs whitespace-only differences and nothing else.
+func alignSegmentsExact(segments []Segment, source string) ([]Segment, bool) {
 	runes := []rune(source)
 	positions := make([]int, 0, len(runes))
 	for i, r := range runes {
@@ -359,6 +414,166 @@ func alignSegmentsToSource(segments []Segment, source string) ([]Segment, bool) 
 		out[len(out)-1].Text += string(runes[end:])
 	}
 	if concatSegments(out) != source {
+		return nil, false
+	}
+	return out, true
+}
+
+// grammarSourceToken is one word or punctuation mark with its rune span in
+// the source.
+type grammarSourceToken struct {
+	text       string
+	start, end int
+}
+
+// grammarTokenSpans splits text into comparable tokens: Latin/digit runs stay
+// whole, Han characters count one by one, and punctuation is its own token.
+// Hyphens and apostrophes are punctuation, so "Asia-Pacific" and "Asia–Pacific"
+// still line up token by token.
+func grammarTokenSpans(text string) []grammarSourceToken {
+	runes := []rune(text)
+	out := make([]grammarSourceToken, 0, len(runes)/3)
+	for i := 0; i < len(runes); {
+		r := runes[i]
+		if unicode.IsSpace(r) {
+			i++
+			continue
+		}
+		start := i
+		switch {
+		case unicode.Is(unicode.Han, r):
+			i++
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			for i < len(runes) &&
+				(unicode.IsLetter(runes[i]) || unicode.IsDigit(runes[i])) &&
+				!unicode.Is(unicode.Han, runes[i]) {
+				i++
+			}
+		default:
+			i++
+		}
+		out = append(out, grammarSourceToken{text: string(runes[start:i]), start: start, end: i})
+	}
+	return out
+}
+
+func grammarFoldToken(text string) string {
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case '‘', '’', '‚', '‛':
+			return '\''
+		case '“', '”', '„', '‟':
+			return '"'
+		case '–', '—', '−', '‐', '‑':
+			return '-'
+		}
+		return unicode.ToLower(r)
+	}, text)
+}
+
+// alignSegmentsFuzzy maps source tokens back to the model's segments by token
+// text, so a locally reordered phrase or a changed punctuation mark keeps its
+// role instead of dropping the whole analysis.
+func alignSegmentsFuzzy(segments []Segment, source string) ([]Segment, bool) {
+	srcTokens := grammarTokenSpans(source)
+	if len(srcTokens) == 0 {
+		return nil, false
+	}
+	type modelToken struct {
+		seg int
+	}
+	var modelTokens []modelToken
+	byFold := make(map[string][]int)
+	for si, seg := range segments {
+		for _, tok := range grammarTokenSpans(seg.Text) {
+			fold := grammarFoldToken(tok.text)
+			byFold[fold] = append(byFold[fold], len(modelTokens))
+			modelTokens = append(modelTokens, modelToken{seg: si})
+		}
+	}
+	if len(modelTokens) == 0 {
+		return nil, false
+	}
+	used := make([]bool, len(modelTokens))
+	segFor := make([]int, len(srcTokens))
+	for i := range segFor {
+		segFor[i] = -1
+	}
+	last, matched := -1, 0
+	for ti, tok := range srcTokens {
+		best, bestCost := -1, 0
+		for _, mi := range byFold[grammarFoldToken(tok.text)] {
+			if used[mi] {
+				continue
+			}
+			cost := mi - last
+			if cost < 0 {
+				cost = -cost + len(modelTokens)
+			}
+			if best < 0 || cost < bestCost {
+				best, bestCost = mi, cost
+			}
+		}
+		if best < 0 {
+			continue
+		}
+		used[best] = true
+		segFor[ti] = modelTokens[best].seg
+		last = best
+		matched++
+	}
+	if matched*2 < len(srcTokens) {
+		return nil, false
+	}
+	for i := range segFor {
+		if segFor[i] >= 0 {
+			continue
+		}
+		prev, next := -1, -1
+		for j := i - 1; j >= 0; j-- {
+			if segFor[j] >= 0 {
+				prev = segFor[j]
+				break
+			}
+		}
+		for j := i + 1; j < len(segFor); j++ {
+			if segFor[j] >= 0 {
+				next = segFor[j]
+				break
+			}
+		}
+		if prev >= 0 {
+			segFor[i] = prev
+		} else {
+			segFor[i] = next
+		}
+	}
+	runes := []rune(source)
+	out := make([]Segment, 0, len(segments)+2)
+	appendRun := func(segIdx, start, end int) {
+		if start >= end || strings.TrimSpace(string(runes[start:end])) == "" {
+			return
+		}
+		if segIdx < 0 || segIdx >= len(segments) {
+			out = append(out, Segment{Role: RoleModifier, Text: string(runes[start:end])})
+			return
+		}
+		seg := segments[segIdx]
+		seg.Text = string(runes[start:end])
+		out = append(out, seg)
+	}
+	start := 0
+	runSeg := segFor[0]
+	for i := 1; i < len(srcTokens); i++ {
+		if segFor[i] == runSeg {
+			continue
+		}
+		appendRun(runSeg, start, srcTokens[i].start)
+		start = srcTokens[i].start
+		runSeg = segFor[i]
+	}
+	appendRun(runSeg, start, len(runes))
+	if len(out) == 0 {
 		return nil, false
 	}
 	return out, true

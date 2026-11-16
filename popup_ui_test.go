@@ -130,7 +130,7 @@ func TestStopScreenshotOCRInvalidatesLateResult(t *testing.T) {
 func TestSelectionChipPrimaryActions(t *testing.T) {
 	a := newTestApp()
 	width := a.currentSelectionChipWidth()
-	tt := ui.NewTester(a.selIconView, width, selIconHeight)
+	tt := ui.NewTester(a.selIconView, chipWindowWidth(width), chipWindowHeight())
 	texts := strings.Join(tt.Texts(), "|")
 	for _, want := range []string{"划词翻译", "朗读选中文字", "截图翻译", "长难句分析", "写作改进", "复制与更多功能"} {
 		if !strings.Contains(texts, want) {
@@ -161,7 +161,7 @@ func TestSelectionChipWidthFollowsEnabledActions(t *testing.T) {
 		}
 	})
 	width := a.currentSelectionChipWidth()
-	tt := ui.NewTester(a.selIconView, width, selIconHeight)
+	tt := ui.NewTester(a.selIconView, chipWindowWidth(width), chipWindowHeight())
 	if !tt.HasText("长难句分析") || tt.HasText("写作改进") || tt.HasText("词典") {
 		t.Fatalf("chip did not follow the enabled actions: %q", tt.Texts())
 	}

@@ -44,7 +44,7 @@ func TestChipStateStrip(t *testing.T) {
 	for _, theme := range []string{"light", "dark"} {
 		for _, s := range states {
 			a.store.Update(func(c *Config) { c.ThemeMode = theme })
-			tt := ui.NewTester(a.selIconView, w, selIconHeight)
+			tt := ui.NewTester(a.selIconView, chipWindowWidth(w), chipWindowHeight())
 			tt.Frame()
 			r, ok := tt.Find(target)
 			if !ok {

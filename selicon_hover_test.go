@@ -14,16 +14,17 @@ import (
 func TestSelectionChipStaysIconOnly(t *testing.T) {
 	a := newTestApp()
 	width := a.currentSelectionChipWidth()
-	tt := ui.NewTester(a.selIconView, width, selIconHeight)
+	tt := ui.NewTester(a.selIconView, chipWindowWidth(width), chipWindowHeight())
 	tt.Frame()
 
 	if tt.HasText("悬停查看功能") {
 		t.Errorf("chip still renders the removed name slot: %q", tt.Texts())
 	}
 
-	// Every text left in the tree must be a button label (one per button).
+	// Every text left in the tree must be a button label (one per button,
+	// the close button included).
 	cfg := a.store.Get()
-	want := 4 + len(cfg.GetEnabledActions())
+	want := 5 + len(cfg.GetEnabledActions())
 	if got := len(tt.Texts()); got != want {
 		t.Errorf("chip renders %d text nodes, want %d button labels: %q", got, want, tt.Texts())
 	}
@@ -35,7 +36,7 @@ func TestSelectionChipStaysIconOnly(t *testing.T) {
 func TestSelectionChipButtonsAreComfortableHitTargets(t *testing.T) {
 	a := newTestApp()
 	width := a.currentSelectionChipWidth()
-	tt := ui.NewTester(a.selIconView, width, selIconHeight)
+	tt := ui.NewTester(a.selIconView, chipWindowWidth(width), chipWindowHeight())
 	tt.Frame()
 
 	if chipButtonSize < 28 {
@@ -68,51 +69,43 @@ func TestSelectionChipButtonsAreComfortableHitTargets(t *testing.T) {
 }
 
 // TestChipCloseBadgeSitsOnThePillCorner pins the close affordance: it is not a
-// permanent sixth button and not an overlay on the ellipsis. The badge is a
-// flyout whose centre lands on the pill's top-right corner, so the dots stay
-// visible and the resting row keeps its old width.
+// permanent sixth row button and not an overlay on the ellipsis. Its centre
+// lands on the pill's top-right corner, so the dots stay visible and the
+// resting row keeps its old width.
 func TestChipCloseBadgeSitsOnThePillCorner(t *testing.T) {
 	width := selectionChipWidth(2)
-	more := ui.Rect{
-		X: float32(width - chipPadH - chipButtonSize),
-		Y: chipPadV,
-		W: chipButtonSize,
-		H: chipButtonSize,
-	}
-	r := chipCloseRect(more)
+	r := chipCloseRect(width)
 	if r.W != chipCloseSize || r.H != chipCloseSize {
 		t.Fatalf("badge is %vx%v, want %dx%d", r.W, r.H, chipCloseSize, chipCloseSize)
 	}
-	if got, want := r.X+r.W/2, more.X+more.W-1; got != want {
-		t.Errorf("badge centre x = %v, want the more button's right edge %v", got, want)
+	if got, want := r.X+r.W/2, float32(width-1); got != want {
+		t.Errorf("badge centre x = %v, want the pill's right edge %v", got, want)
 	}
 	if got := r.Y + r.H/2; got != 0 {
 		t.Errorf("badge centre y = %v, want the pill's top edge 0", got)
 	}
-	if r.Y >= more.Y {
-		t.Errorf("badge top %v is not above the more button %v: it would cover the dots", r.Y, more.Y)
+	if r.Y >= 0 || r.Y+r.H <= 0 {
+		t.Errorf("badge %v does not straddle the pill's top edge: it either floats free or covers the dots", r)
 	}
 }
 
-// TestChipCloseHangsOutsideTheChipWindow keeps the pointer handoff working:
-// the badge's centre is above the pill, so the chip's own hit boxes do not
-// cover it. The badge state must answer for that overhanging part.
-func TestChipCloseHangsOutsideTheChipWindow(t *testing.T) {
+// TestChipCloseHangsOutsideThePill keeps the pointer handoff working: the
+// badge's centre is above the pill, so the row's own hit boxes do not cover
+// it. Its hit box must answer for the overhanging part.
+func TestChipCloseHangsOutsideThePill(t *testing.T) {
 	a := newTestApp()
-	a.chipClose.mu.Lock()
-	a.chipClose.shown = true
-	a.chipClose.rect = ui.Rect{X: 100, Y: -chipCloseSize / 2, W: chipCloseSize, H: chipCloseSize}
-	a.chipClose.mu.Unlock()
+	width := a.currentSelectionChipWidth()
+	r := chipCloseRect(width)
+	const originX, originY = 400, 300
 
-	if !a.chipCloseContains(100, -8) {
-		t.Error("badge does not answer for its overhanging part above the chip")
+	if !a.chipCloseContains(originX+int(r.X+r.W/2), originY-8, originX, originY) {
+		t.Error("badge does not answer for its overhanging part above the pill")
 	}
-	if a.chipCloseContains(100, 20) {
-		t.Error("badge answers for a point on the chip, not on the badge")
+	if a.chipCloseContains(originX+int(r.X+r.W/2), originY+20, originX, originY) {
+		t.Error("badge answers for a point on the pill, not on the badge")
 	}
-	a.hideChipClose()
-	if a.chipCloseContains(100, -8) {
-		t.Error("hidden badge still claims the pointer")
+	if a.chipCloseContains(originX+int(r.X+r.W/2), originY-8, originX, originY+100) {
+		t.Error("badge ignores the pill origin")
 	}
 }
 

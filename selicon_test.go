@@ -96,7 +96,8 @@ func TestPlaceChipFallsBackToPrimary(t *testing.T) {
 // the size of the window.
 func TestSelectionIconCornersAreTransparent(t *testing.T) {
 	a := newTestApp()
-	tt := ui.NewTester(a.selIconView, selectionChipWidth(len(DefaultCustomActions())), selIconHeight)
+	pillWidth := selectionChipWidth(len(DefaultCustomActions()))
+	tt := ui.NewTester(a.selIconView, chipWindowWidth(pillWidth), chipWindowHeight())
 	img := tt.Image()
 	if img == nil {
 		t.Fatal("no image rendered")
@@ -115,7 +116,8 @@ func TestSelectionIconCornersAreTransparent(t *testing.T) {
 
 func TestSelectionIconRenders(t *testing.T) {
 	a := newTestApp()
-	tt := ui.NewTester(a.selIconView, selectionChipWidth(len(DefaultCustomActions())), selIconHeight)
+	pillWidth := selectionChipWidth(len(DefaultCustomActions()))
+	tt := ui.NewTester(a.selIconView, chipWindowWidth(pillWidth), chipWindowHeight())
 	img := tt.Image()
 	if img == nil {
 		t.Fatal("no image rendered for selection toolbar")

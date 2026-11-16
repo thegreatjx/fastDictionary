@@ -323,7 +323,7 @@ func TestChipPaletteStrip(t *testing.T) {
 	for _, theme := range []string{"light", "dark"} {
 		for _, hover := range []string{"", "朗读选中文字", "长难句分析"} {
 			a.store.Update(func(c *Config) { c.ThemeMode = theme })
-			tt := ui.NewTester(a.selIconView, w, selIconHeight)
+			tt := ui.NewTester(a.selIconView, chipWindowWidth(w), chipWindowHeight())
 			tt.Frame()
 			name := "rest"
 			if hover != "" {

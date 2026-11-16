@@ -433,7 +433,6 @@ func main() {
 		reviewDemo := false
 		chipDemo := false
 		chipTipDemo := false
-		chipCloseDemo := false
 		previewDark := false
 		shotDelay := 1500 * time.Millisecond
 		args := os.Args[1:]
@@ -498,10 +497,6 @@ func main() {
 				// measured without a pointer: a label window that fails to
 				// place itself is invisible to every headless test.
 				chipDemo, chipTipDemo = true, true
-			case "--chip-more":
-				// Raise the close badge without moving the pointer onto the
-				// chip, so its window can be measured on its own.
-				chipDemo, chipCloseDemo = true, true
 			case "--ui-dark":
 				// Visual previews use an in-memory theme only; they never change
 				// the user's saved appearance.
@@ -557,22 +552,6 @@ func main() {
 				a.showSelIcon(760, 520, "serendipity")
 				sleepMS(500)
 				a.logChipState()
-				if chipCloseDemo {
-					// Drive the path the mouse hook drives: a point on the
-					// more button, the hover wait, then the badge. Feeding
-					// onChipPointer directly keeps the check off the real
-					// pointer, which a locked session no longer delivers.
-					geom := a.chipTip.geomSnapshot()
-					scale := scaleOf(geom.primary)
-					a.mu.Lock()
-					chipX, chipY := a.sel.x, a.sel.y
-					a.mu.Unlock()
-					x := chipX + a.currentSelectionChipWidth() - chipPadH - chipButtonSize/2
-					y := chipY + chipPadV + chipButtonSize/2
-					a.onChipPointer(int32(float64(x)*scale+0.5), int32(float64(y)*scale+0.5))
-					sleepMS(320)
-					a.logChipState()
-				}
 				if chipTipDemo {
 					// The second button, so the plate is centred on something that
 					// is not the first or the last: both of those are clamped.
@@ -694,13 +673,6 @@ func main() {
 					target = a.moreFlyout
 				} else if shotWindow == "chip-tip" && a.chipTip.win != nil {
 					target = a.chipTip.win
-				} else if shotWindow == "chip-close" {
-					a.chipClose.mu.Lock()
-					closeWin := a.chipClose.win
-					a.chipClose.mu.Unlock()
-					if closeWin != nil {
-						target = closeWin
-					}
 				}
 				if shotSizeW > 0 && shotSizeH > 0 {
 					target.SetSize(shotSizeW, shotSizeH)
