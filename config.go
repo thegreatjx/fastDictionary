@@ -908,6 +908,12 @@ func (c *Config) ResetAction(id string) bool {
 	return false
 }
 
+func legacyGrammarAnnotationsPrompt(prompt string) bool {
+	return strings.Contains(prompt, `"annotations"`) &&
+		!strings.Contains(prompt, `"segments"`) &&
+		strings.Contains(prompt, `"translation"`)
+}
+
 func ensureDefaultActions(cfg *Config) bool {
 	defaults := DefaultCustomActions()
 	if len(cfg.CustomActions) == 0 {
@@ -947,6 +953,10 @@ func ensureDefaultActions(cfg *Config) bool {
 					cfg.CustomActions[idx].SystemPrompt == grammarSystemPromptV2) {
 				// The old default was never edited by the user: upgrade it, or the
 				// mislabelled spans and the slow answer stay until they reset the app.
+				cfg.CustomActions[idx].SystemPrompt = grammarSystemPromptV3
+				dropped = true
+			} else if def.ID == "default-sentence-analysis" &&
+				legacyGrammarAnnotationsPrompt(cfg.CustomActions[idx].SystemPrompt) {
 				cfg.CustomActions[idx].SystemPrompt = grammarSystemPromptV3
 				dropped = true
 			}
