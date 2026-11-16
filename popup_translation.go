@@ -129,13 +129,15 @@ func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s
 			Placeholder(placeholder).
 			AutoFocus().OnTextKey(func(k ui.TextKey) bool {
 			if k.Key == ui.KeyEnter && k.Mods&ui.Shift == 0 {
-				if text := CleanSelectionText(k.Text()); text != "" {
+				raw := k.Text()
+				if text := cleanSourceForLayout(raw, a.store.Get().LayoutMode, false); text != "" {
 					targetMode := a.inputTargetMode
 					if targetMode == 0 {
 						targetMode = modeTranslate
 					}
 					a.mu.Lock()
 					a.source = text
+					a.rawSource = raw
 					a.inputText = ""
 					a.mu.Unlock()
 					a.switchMode(targetMode)
@@ -188,8 +190,12 @@ func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s
 					fontWeight = 600
 					lineHeight = 1.4
 				}
-				ui.Text(c, s.target).FontSize(fontSize).FontWeight(fontWeight).
-					TextColor(t.Text).Wrap().LineHeight(lineHeight)
+				ui.Column(c).FillWidth().Gap(Space2).Children(func() {
+					for _, para := range splitDisplayParagraphs(s.target) {
+						ui.Text(c, para).FontSize(fontSize).FontWeight(fontWeight).
+							TextColor(t.Text).Wrap().LineHeight(lineHeight)
+					}
+				})
 				ui.Row(c).FillWidth().Gap(2).AlignItems(ui.Center).Children(func() {
 					copyTip := "复制译文"
 					if s.copiedMsg != "" {
@@ -205,6 +211,7 @@ func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s
 							PlaySpeechLang(spText, spLang, false)
 						}
 					}
+					a.renderLayoutMenu(c, cfg)
 					renderAIRefineControls(c, t, a, s)
 					// The spacer pushes engine caption and notes controls to the right.
 					ui.Spacer(c).Grow(1)
@@ -262,6 +269,104 @@ func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s
 		}
 	}
 	a.renderNotesSummary(c, t, cfg, s)
+}
+
+// splitDisplayParagraphs divides text on blank lines so the card can draw a
+// small gap between paragraphs instead of an empty line's full height. It is
+// only a render-time split: s.target keeps its newlines, so copying the
+// translation still preserves the original paragraph breaks.
+func splitDisplayParagraphs(s string) []string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	s = strings.Trim(s, "\n")
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	blocks := strings.Split(s, "\n\n")
+	out := make([]string, 0, len(blocks))
+	for _, block := range blocks {
+		block = strings.Trim(block, "\n")
+		if strings.TrimSpace(block) != "" {
+			out = append(out, block)
+		}
+	}
+	return out
+}
+
+var layoutModeOptions = [...]struct{ label, mode string }{
+	{"紧凑", layoutCompact},
+	{"智能", layoutSmart},
+	{"保留换行", layoutPreserve},
+}
+
+func layoutModeLabel(mode string) string {
+	for _, option := range layoutModeOptions {
+		if option.mode == normalizeLayoutMode(mode) {
+			return option.label
+		}
+	}
+	return layoutModeOptions[1].label
+}
+
+// renderLayoutMenu puts the layout switch next to copy and speak, where the
+// user notices that the card is too tall. Changing it re-runs a machine
+// translation so paragraph breaks come back from the engine; a model result is
+// reflowed in place instead, because re-running the model would be slow and
+// would replace the answer the user is reading.
+func (a *app) renderLayoutMenu(c *ui.Context, cfg Config) {
+	mode := normalizeLayoutMode(cfg.LayoutMode)
+	btn := renderIconButton(c, iconAlign, "排版："+layoutModeLabel(mode), 28, 14, mode != layoutSmart)
+	btn.Menu(func(m *ui.Menu) {
+		for _, option := range layoutModeOptions {
+			if m.Item(option.label).Checked(option.mode == mode).Chosen() {
+				a.applyLayoutMode(option.mode)
+			}
+		}
+	})
+}
+
+func (a *app) applyLayoutMode(mode string) {
+	mode = normalizeLayoutMode(mode)
+	if a.store.Get().LayoutMode == mode {
+		return
+	}
+	a.store.Update(func(c *Config) { c.LayoutMode = mode })
+
+	a.mu.Lock()
+	raw := a.rawSource
+	source := a.source
+	screenshot := a.isScreenshotMode
+	aiAnswer := isAIResultEngine(a.engine)
+	busy := a.busy
+	hasTarget := a.target != ""
+	if mode == layoutCompact {
+		// Compact leaves no paragraphs to compare, and the pair view would
+		// otherwise survive the re-translation.
+		a.ocrCompare = false
+	}
+	a.mu.Unlock()
+	if raw == "" {
+		raw = source
+	}
+
+	if !busy && hasTarget && !aiAnswer && raw != "" {
+		if screenshot {
+			a.translateKeepingLines(raw)
+		} else {
+			a.translate(raw)
+		}
+		return
+	}
+
+	// A card that is still loading, or an answer from the model, has no raw
+	// engine text to reflow: format what is on screen.
+	a.mu.Lock()
+	if raw != "" {
+		a.source = cleanSourceForLayout(raw, mode, screenshot)
+	}
+	a.target = formatTranslationForLayout(a.target, mode, screenshot)
+	a.mu.Unlock()
+	a.fitHeight()
 }
 
 // translationEngineCaption labels the result row with where the text came from.
@@ -323,13 +428,21 @@ func (a *app) renderTranslationSource(c *ui.Context, t *ui.Theme, s snapshot) {
 	text := s.source
 	isLong := len([]rune(text)) > 110 || strings.Contains(text, "\n")
 	if isLong && !s.sourceExpanded {
-		text = TruncateEllipsis(text, 110)
+		// A collapsed preview is one strip: blank lines in it spend a whole
+		// line of height on nothing, which is what made a three-paragraph
+		// selection open a very tall card. The expanded view keeps the
+		// paragraphs, rendered with a gap instead of empty lines.
+		text = TruncateEllipsis(flattenTranslation(text), 110)
 	}
 	ui.Box(c).FillWidth().Padding(Space2, Space3).Radius(RadiusSM).
 		Background(at.TintSurface).Border(1, at.TintBorder).Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(Space1).Children(func() {
-			ui.Text(c, text).Font(fontUI).FontSize(FontControl).
-				TextColor(at.TextSec).Wrap().Grow(1).LineHeight(1.5)
+			ui.Column(c).Grow(1).Gap(Space2).Children(func() {
+				for _, para := range splitDisplayParagraphs(text) {
+					ui.Text(c, para).Font(fontUI).FontSize(FontControl).
+						TextColor(at.TextSec).Wrap().LineHeight(1.5)
+				}
+			})
 			ui.Row(c).Gap(0).AlignItems(ui.Center).Children(func() {
 				if isLong {
 					icon, tip := iconChevronDown, "展开完整原文"

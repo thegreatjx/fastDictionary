@@ -322,8 +322,12 @@ func (a *app) renderHomeTranslateTab(c *ui.Context, t *ui.Theme, at AppTheme, cf
 	if h.target != "" {
 		SurfaceCard(c, t).Children(func() {
 			ui.Column(c).FillWidth().Gap(Space3).Children(func() {
-				ui.Text(c, h.target).Font(fontUI).FontSize(16).FontWeight(500).
-					TextColor(at.Text).LineHeight(1.6).Wrap()
+				ui.Column(c).FillWidth().Gap(Space2).Children(func() {
+					for _, para := range splitDisplayParagraphs(h.target) {
+						ui.Text(c, para).Font(fontUI).FontSize(16).FontWeight(500).
+							TextColor(at.Text).LineHeight(1.6).Wrap()
+					}
+				})
 
 				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
 					spText, spLang, spTip := primarySpeechTarget(h.source, h.target)
@@ -601,7 +605,7 @@ func (a *app) homeClear() {
 }
 
 func (a *app) homeSubmit(raw string) {
-	text := CleanSelectionText(raw)
+	text := cleanSourceForLayout(raw, a.store.Get().LayoutMode, false)
 	if text == "" {
 		return
 	}
@@ -667,6 +671,7 @@ func (a *app) homeRunTab(tab, text string, fresh bool) {
 
 func (a *app) homeTranslate(text string) {
 	cfg := a.store.Get()
+	mode := normalizeLayoutMode(cfg.LayoutMode)
 	a.mu.Lock()
 	a.home.gen++
 	gen := a.home.gen
@@ -726,7 +731,7 @@ func (a *app) homeTranslate(text string) {
 		if r.Err != nil {
 			a.home.errText = r.Err.Error()
 		} else {
-			a.home.target = flattenTranslation(r.Text)
+			a.home.target = formatTranslationForLayout(r.Text, mode, false)
 			a.home.engine = r.Engine
 			a.home.detected = r.Detected
 			a.home.dict = yd
@@ -739,6 +744,7 @@ func (a *app) homeTranslate(text string) {
 
 func (a *app) homeRefineWithAI() {
 	cfg := a.store.Get()
+	mode := normalizeLayoutMode(cfg.LayoutMode)
 	if prob := cfg.AISetupProblem(); prob != "" {
 		a.mu.Lock()
 		a.home.aiRefineErr = prob
@@ -788,7 +794,7 @@ func (a *app) homeRefineWithAI() {
 				// 模型把原文原样退回来了：写入会把已有译文换成一模一样的输入。
 				a.home.aiRefineErr = "模型把原文原样返回了，换个目标语言再试"
 			} else {
-				a.home.target = flattenTranslation(txt)
+				a.home.target = formatTranslationForLayout(txt, mode, false)
 				a.home.engine = "AI 精翻"
 				a.home.elapsed = time.Since(started)
 			}

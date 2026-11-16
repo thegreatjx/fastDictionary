@@ -58,13 +58,17 @@ func modeName(m popupMode) string {
 type app struct {
 	store *store
 
-	mu       sync.Mutex
-	mode     popupMode
-	source   string
-	target   string
-	engine   string
-	detected string
-	errText  string
+	mu     sync.Mutex
+	mode   popupMode
+	source string
+	target string
+	// rawSource is the selection or OCR text before the layout mode cleaned
+	// it. The quick layout switch needs it to restore paragraph breaks that
+	// compact mode removed from the source.
+	rawSource string
+	engine    string
+	detected  string
+	errText   string
 	// echoNote explains a translation attempt whose engine echoed the source:
 	// an answer, not a failure. It names the engine that kept the text and, when
 	// another engine supplied the reading, the one that did.
@@ -598,8 +602,9 @@ func (a *app) resetScreenshotPinLocked() {
 
 func (a *app) openPopupAction(m popupMode, text string) {
 	a.stopScreenshotOCR()
-	text = CleanSelectionText(text)
 	cfg := a.store.Get()
+	raw := text
+	text = cleanSourceForLayout(raw, cfg.LayoutMode, false)
 	win := a.win
 	if win == nil {
 		return
@@ -643,6 +648,7 @@ func (a *app) openPopupAction(m popupMode, text string) {
 	a.inputText = ""
 	a.notice = ""
 	a.source = text
+	a.rawSource = raw
 	a.sourceExpanded = false
 	a.target = ""
 	a.errText = ""
@@ -693,8 +699,9 @@ func (a *app) openPopupAction(m popupMode, text string) {
 // have one, translates text that was already captured.
 func (a *app) openPopupWithText(m popupMode, text string) {
 	a.stopScreenshotOCR()
-	text = CleanSelectionText(text)
 	cfg := a.store.Get()
+	raw := text
+	text = cleanSourceForLayout(raw, cfg.LayoutMode, false)
 	win := a.win
 	if win == nil {
 		return
@@ -734,6 +741,7 @@ func (a *app) openPopupWithText(m popupMode, text string) {
 	a.inputText = ""
 	a.notice = ""
 	a.source, a.target, a.errText, a.aiText = "", "", "", ""
+	a.rawSource = raw
 	a.sourceExpanded = false
 	a.dict, a.gdict, a.busy, a.aiBusy = nil, nil, false, false
 	// 新卡片同样要让在飞的机器翻译失效，否则旧译文会写进这张新卡片。

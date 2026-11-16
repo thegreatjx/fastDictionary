@@ -1100,11 +1100,12 @@ func (a *app) capture() selection {
 // once, or offer the chip. It is the whole of the trigger policy, which is
 // why it is separate from reading the selection.
 func (a *app) deliverSelection(sel selection, px, py int32) {
-	sel.Text = CleanSelectionText(sel.Text)
+	sel.Text = removeZeroWidthChars(sel.Text)
 	if why := selectionTextProblem(sel.Text); why != "" {
-		// Cleaning can empty a selection that was only whitespace, so the
-		// check runs again on the text the chip would actually show.
-		log.Printf("fastDictionary: selection unusable after cleaning (%s)", why)
+		// The chip and the popup clean the text when the user acts on it, with
+		// the layout mode that is current then. Keeping the raw selection here
+		// is what lets 保留换行 restore paragraph breaks the card had folded.
+		log.Printf("fastDictionary: selection unusable (%s)", why)
 		return
 	}
 	if a.store.Get().SelectionTrigger == "auto" {

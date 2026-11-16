@@ -222,6 +222,15 @@ func (a *app) pageTranslate(c *ui.Context, t *ui.Theme, cfg Config) {
 		})
 
 		SettingCard(c, t, "显示选项", func() {
+			SettingRow(c, t, "原文与译文排版", "紧凑：全部并成一段，浮窗最矮；智能：段内折行合并、保留段落间隔；保留换行：原文或截图怎么换行就怎么显示，适合代码和逐行对照。", func() {
+				SegmentedControlMapped(c, false, cfg.LayoutMode, func(mode string) {
+					a.store.Update(func(c *Config) { c.LayoutMode = mode })
+				},
+					SegmentedOption[string]{Value: layoutCompact, Label: "紧凑"},
+					SegmentedOption[string]{Value: layoutSmart, Label: "智能"},
+					SegmentedOption[string]{Value: layoutPreserve, Label: "保留换行"},
+				)
+			})
 			SettingRow(c, t, "显示引擎与语种", "在浮窗底部标注引擎与目标语言。", func() {
 				v := cfg.ShowEngineTag
 				ui.Switch(c, &v).OnChange(func() {

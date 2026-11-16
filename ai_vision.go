@@ -112,6 +112,19 @@ func stripPartialVisionTargetMarker(s string) string {
 // parseVisionOutput 统一处理带分隔符和纯译文两种返回。纯译文流保留用户原有的
 // 流式体验，原文继续用本地 OCR 或用户已编辑的文本。
 func parseVisionOutput(out, fallbackSource string) (source, target string) {
+	source, target = rawVisionSections(out, fallbackSource)
+	return CleanOcrText(source), flattenTranslation(target)
+}
+
+// parseVisionOutputForLayout is parseVisionOutput with the card's layout mode
+// applied, so the 紧凑 / 智能 / 保留换行 switch also works on answers the model
+// read straight from the screenshot.
+func parseVisionOutputForLayout(out, fallbackSource, mode string) (source, target string) {
+	source, target = rawVisionSections(out, fallbackSource)
+	return cleanSourceForLayout(source, mode, true), formatTranslationForLayout(target, mode, true)
+}
+
+func rawVisionSections(out, fallbackSource string) (source, target string) {
 	var parser visionStreamParser
 	source, target = parser.Push(out)
 	if target == "" {
@@ -121,7 +134,7 @@ func parseVisionOutput(out, fallbackSource string) (source, target string) {
 	if source == "" {
 		source = fallbackSource
 	}
-	return CleanOcrText(source), flattenTranslation(target)
+	return source, target
 }
 
 func trimVisionSection(s string) string {

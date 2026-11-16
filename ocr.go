@@ -408,6 +408,7 @@ func (a *app) recognizeScreenshot(imgPath string) {
 	// 否则旧译文、引擎与词典会写回这张刚清空的卡片。
 	a.translateGen++
 	a.source, a.target = "", ""
+	a.rawSource = ""
 	a.ocrText = ""
 	win := a.win
 	a.mu.Unlock()

@@ -10,6 +10,7 @@ import (
 // 同时把本地 OCR 文本作为提示；模型以图片为准，流式刷新原文和译文。
 func (a *app) visionRefine() {
 	cfg := a.store.Get()
+	mode := normalizeLayoutMode(cfg.LayoutMode)
 	if problem := cfg.AISetupProblem(); problem != "" {
 		a.setVisionRefineError(problem)
 		return
@@ -69,11 +70,11 @@ func (a *app) visionRefine() {
 					return
 				}
 				if source != "" {
-					a.ocrText = CleanOcrText(source)
+					a.ocrText = cleanSourceForLayout(source, mode, true)
 					a.source = a.ocrText
 				}
 				if target != "" {
-					a.target = flattenTranslation(target)
+					a.target = formatTranslationForLayout(target, mode, true)
 				}
 				win := a.win
 				a.mu.Unlock()
@@ -85,7 +86,7 @@ func (a *app) visionRefine() {
 			a.finishVisionRefineError(ctx, gen, ocrGen, friendlyAIError(err))
 			return
 		}
-		source, target := parseVisionOutput(out, sourceHint)
+		source, target := parseVisionOutputForLayout(out, sourceHint, mode)
 		if target == "" {
 			a.finishVisionRefineError(ctx, gen, ocrGen, "模型没有返回译文")
 			return
@@ -99,8 +100,9 @@ func (a *app) visionRefine() {
 		a.aiRefineCancel = nil
 		a.aiRefineErr = ""
 		a.ocrError = ""
-		a.ocrText = CleanOcrText(source)
-		a.source = a.ocrText
+		a.ocrText = source
+		a.source = source
+		a.rawSource = source
 		a.target = target
 		a.engine = "AI 精翻"
 		a.elapsed = time.Since(started)
@@ -156,6 +158,7 @@ func (a *app) recognizeScreenshotVision(ctx context.Context, cancel context.Canc
 	defer recoverLog("ai_vision_actions.go:recognizeScreenshotVision")
 	defer cancel()
 	cfg := a.store.Get()
+	mode := normalizeLayoutMode(cfg.LayoutMode)
 	if problem := cfg.AISetupProblem(); problem != "" {
 		a.finishScreenshotVisionError(generation, fallbackText, problem)
 		return
@@ -180,11 +183,11 @@ func (a *app) recognizeScreenshotVision(ctx context.Context, cancel context.Canc
 				return
 			}
 			if source != "" {
-				a.ocrText = CleanOcrText(source)
+				a.ocrText = cleanSourceForLayout(source, mode, true)
 				a.source = a.ocrText
 			}
 			if target != "" {
-				a.target = flattenTranslation(target)
+				a.target = formatTranslationForLayout(target, mode, true)
 			}
 			win := a.win
 			a.mu.Unlock()
@@ -200,7 +203,7 @@ func (a *app) recognizeScreenshotVision(ctx context.Context, cancel context.Canc
 		a.finishScreenshotVisionError(generation, fallbackText, message)
 		return
 	}
-	source, target := parseVisionOutput(out, fallbackText)
+	source, target := parseVisionOutputForLayout(out, fallbackText, mode)
 	if target == "" {
 		a.finishScreenshotVisionError(generation, fallbackText, "模型没有返回译文")
 		return
@@ -212,8 +215,9 @@ func (a *app) recognizeScreenshotVision(ctx context.Context, cancel context.Canc
 	}
 	a.ocrBusy = false
 	a.ocrCancel = nil
-	a.ocrText = CleanOcrText(source)
-	a.source = a.ocrText
+	a.ocrText = source
+	a.source = source
+	a.rawSource = source
 	a.target = target
 	a.ocrError = ""
 	a.engine = "AI 精翻"

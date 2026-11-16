@@ -143,6 +143,7 @@ func (a *app) renderScreenshotPairActions(c *ui.Context, t *ui.Theme, cfg Config
 				PlaySpeechLang(spText, spLang, false)
 			}
 		}
+		a.renderLayoutMenu(c, cfg)
 		renderAIRefineControls(c, t, a, s)
 		ui.Spacer(c).Grow(1)
 		renderEngineCaptionWithAIState(c, t, s, cfg)

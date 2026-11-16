@@ -229,6 +229,87 @@ func reflowTranslation(s string) string {
 	return strings.Trim(strings.Join(blocks, "\n"), "\n")
 }
 
+const (
+	// layoutSmart joins wrapped lines inside a paragraph but keeps the blank
+	// line between paragraphs. It is the shipped default: most pages use
+	// line breaks as typesetting, not as meaning.
+	layoutSmart = "smart"
+	// layoutCompact folds every line break, including paragraph breaks, into
+	// one paragraph. It is for cards that are already too tall.
+	layoutCompact = "compact"
+	// layoutPreserve keeps the source's line breaks and blank lines. Code,
+	// lists and side-by-side paragraph reading need the layout to survive the
+	// round trip through the translator.
+	layoutPreserve = "preserve"
+)
+
+// normalizeLayoutMode folds anything unrecognised, including the empty value
+// of a config written before the setting existed, onto the default.
+func normalizeLayoutMode(mode string) string {
+	switch mode {
+	case layoutCompact, layoutPreserve:
+		return mode
+	default:
+		return layoutSmart
+	}
+}
+
+// cleanSourceForLayout prepares raw selection or OCR text for the card. ocr
+// selects the cleaner that understands OCR's per-glyph CJK spaces; it also
+// decides whether smart mode keeps the page's lines.
+func cleanSourceForLayout(s, mode string, ocr bool) string {
+	switch mode {
+	case layoutCompact:
+		return flattenTranslation(s)
+	case layoutPreserve:
+		if ocr {
+			return CleanOcrText(s)
+		}
+		return preserveLineBreaks(s)
+	default:
+		if ocr {
+			return CleanOcrText(s)
+		}
+		return CleanSelectionText(s)
+	}
+}
+
+// preserveLineBreaks tidies a selection without touching its line structure:
+// no line is joined to the next, and interior blank lines stay. Trailing
+// spaces are dropped because they are invisible yet make the text look ragged
+// when it wraps.
+func preserveLineBreaks(s string) string {
+	if s == "" {
+		return ""
+	}
+	s = removeZeroWidthChars(s)
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	lines := strings.Split(s, "\n")
+	for i := range lines {
+		lines[i] = strings.TrimRight(lines[i], " \t")
+	}
+	return strings.Trim(strings.Join(lines, "\n"), "\n")
+}
+
+// formatTranslationForLayout applies the user's layout mode to an engine
+// answer. keepParagraphs is the OCR path's request to keep paragraph breaks in
+// smart mode; a selection is already one paragraph by the time it reaches the
+// engine.
+func formatTranslationForLayout(s, mode string, keepParagraphs bool) string {
+	switch mode {
+	case layoutCompact:
+		return flattenTranslation(s)
+	case layoutPreserve:
+		return preserveLineBreaks(s)
+	default:
+		if keepParagraphs {
+			return reflowTranslation(s)
+		}
+		return flattenTranslation(s)
+	}
+}
+
 // TruncateEllipsis limits text to maxChars runes, appending "…" if truncated.
 func TruncateEllipsis(s string, maxChars int) string {
 	r := []rune(s)

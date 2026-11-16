@@ -206,17 +206,24 @@ func popupContentHeight(s snapshot, w float32) float32 {
 				// If source is not expanded, renderTranslationSource truncates it to 110 chars.
 				// Accounting for full text when truncated creates massive ghost whitespace.
 				if !s.sourceExpanded && (len([]rune(srcText)) > 110 || strings.Contains(srcText, "\n")) {
-					srcText = TruncateEllipsis(srcText, 110)
+					srcText = TruncateEllipsis(flattenTranslation(srcText), 110)
 				}
-				h += 24 + float32(wrappedLines(srcText, w-48, 13))*18
+				srcParas := splitDisplayParagraphs(srcText)
+				srcLines := wrappedLines(strings.Join(srcParas, "\n"), w-48, 13)
+				h += 24 + float32(srcLines)*18 + float32(len(srcParas)-1)*Space2
 			}
 			if s.target != "" {
 				sz := float32(14)
 				if s.isWord {
 					sz = 16
 				}
+				// Paragraph breaks are drawn as Space2 gaps, not as an empty
+				// text line: counting them as full lines made the first frame
+				// reserve a screenful of blank space before autofit corrected it.
+				paras := splitDisplayParagraphs(s.target)
+				lines := wrappedLines(strings.Join(paras, "\n"), w-48, sz)
 				// 40 covers target card padding and action bar row with gaps
-				h += 40 + float32(wrappedLines(s.target, w-48, sz))*20
+				h += 40 + float32(lines)*20 + float32(len(paras)-1)*Space2
 			}
 			if s.dict != nil || s.gdict != nil {
 				h += 60

@@ -41,6 +41,7 @@ var (
 	iconMicrosoft   = mustIcon("microsoft")
 	iconRefresh     = mustIcon("refresh")
 	iconExpand      = mustIcon("expand")
+	iconAlign       = mustIcon("alignleft")
 	iconScreenshot  = mustIcon("screenshot")
 	iconChevronDown = mustIcon("chevrondown")
 	iconChevronUp   = mustIcon("chevronup")

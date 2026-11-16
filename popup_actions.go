@@ -34,7 +34,7 @@ func (a *app) copyToClipboard(text string) {
 
 // translate runs the fast path: engine race, then dictionary data for words.
 func (a *app) translate(text string) {
-	a.translateText(CleanSelectionText(text))
+	a.translateText(cleanSourceForLayout(text, a.store.Get().LayoutMode, false))
 }
 
 // translateKeepingLines is translate for text whose line breaks carry meaning,
@@ -42,7 +42,10 @@ func (a *app) translate(text string) {
 // of a paragraph translated as one run-on line is harder to read than the image
 // was. CleanSelectionText folds newlines into spaces, so it cannot be used here.
 func (a *app) translateKeepingLines(text string) {
-	a.translateTextWithReflow(CleanOcrText(text), true)
+	a.mu.Lock()
+	a.rawSource = text
+	a.mu.Unlock()
+	a.translateTextWithReflow(cleanSourceForLayout(text, a.store.Get().LayoutMode, true), true)
 }
 
 // stopAIPassLocked invalidates the AI pass in flight. The generation and the
@@ -94,6 +97,7 @@ func (a *app) translateText(text string) {
 // the screenshot path asks for reflow; ordinary selections stay on one line.
 func (a *app) translateTextWithReflow(text string, keepParagraphs bool) {
 	cfg := a.store.Get()
+	mode := normalizeLayoutMode(cfg.LayoutMode)
 	win := a.win
 
 	a.mu.Lock()
@@ -180,11 +184,7 @@ func (a *app) translateTextWithReflow(text string, keepParagraphs bool) {
 				alt, usedAlt = pickEchoAnswer(r, TranslateRace(ctx, text, from, to, "race"))
 			}
 			if usedAlt {
-				if keepParagraphs {
-					a.target = reflowTranslation(alt.Text)
-				} else {
-					a.target = flattenTranslation(alt.Text)
-				}
+				a.target = formatTranslationForLayout(alt.Text, mode, keepParagraphs)
 				a.engine, a.detected = alt.Engine, alt.Detected
 				if word {
 					a.echoNote = r.Engine + "把「" + text + "」当作专有名词保留了原文，下面是" + alt.Engine + "的译文。"
@@ -197,11 +197,7 @@ func (a *app) translateTextWithReflow(text string, keepParagraphs bool) {
 			}
 			a.dict, a.gdict = yd, gd
 		} else {
-			if keepParagraphs {
-				a.target = reflowTranslation(r.Text)
-			} else {
-				a.target = flattenTranslation(r.Text)
-			}
+			a.target = formatTranslationForLayout(r.Text, mode, keepParagraphs)
 			a.engine, a.detected = r.Engine, r.Detected
 			a.dict, a.gdict = yd, gd
 		}

@@ -62,6 +62,10 @@ type Config struct {
 	TargetLang    string `json:"target_lang"` // zh-Hans | en | ja ...
 	SecondLang    string `json:"second_lang"` // when source == target
 	ShowEngineTag bool   `json:"show_engine_tag"`
+	// LayoutMode decides how the source and the answer are laid out in the
+	// card: smart keeps paragraph breaks, compact folds everything into one
+	// paragraph, preserve keeps every line break. See layoutSmart.
+	LayoutMode string `json:"layout_mode"`
 
 	// selection behaviour
 	// SelectionTrigger decides what a text selection does by itself:
@@ -402,6 +406,7 @@ func DefaultConfig() Config {
 		TargetLang:           "zh-Hans",
 		SecondLang:           "en",
 		ShowEngineTag:        true,
+		LayoutMode:           layoutSmart,
 		SelectionTrigger:     "icon",
 		SelectionCapture:     "auto",
 		SelectionBlocklist:   DefaultSelectionBlocklist(),
@@ -694,6 +699,7 @@ func (s *store) load() bool {
 	}
 	normalizeInitialAIMode(&cfg)
 	cfg.OCRMode = normalizeOCRMode(cfg.OCRMode)
+	cfg.LayoutMode = normalizeLayoutMode(cfg.LayoutMode)
 	// A file written while 词典精读 still existed is rewritten once, so it
 	// stops claiming a default view the popup cannot open.
 	var rawMode struct {
