@@ -196,7 +196,7 @@ func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s
 							TextColor(t.Text).Wrap().LineHeight(lineHeight)
 					}
 				})
-				ui.Row(c).FillWidth().Gap(2).AlignItems(ui.Center).Children(func() {
+				ui.Row(c).FillWidth().Gap(Space1).AlignItems(ui.Center).Children(func() {
 					copyTip := "复制译文"
 					if s.copiedMsg != "" {
 						copyTip = "译文已复制"
@@ -315,7 +315,7 @@ func layoutModeLabel(mode string) string {
 // would replace the answer the user is reading.
 func (a *app) renderLayoutMenu(c *ui.Context, cfg Config) {
 	mode := normalizeLayoutMode(cfg.LayoutMode)
-	btn := renderIconButton(c, iconAlign, "排版："+layoutModeLabel(mode), 28, 14, mode != layoutSmart)
+	btn := renderIconButton(c, iconLayout, "排版："+layoutModeLabel(mode), 28, 14, mode != layoutSmart)
 	btn.Menu(func(m *ui.Menu) {
 		for _, option := range layoutModeOptions {
 			if m.Item(option.label).Checked(option.mode == mode).Chosen() {

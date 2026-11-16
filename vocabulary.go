@@ -543,9 +543,9 @@ func formatAnkiCard(e VocabularyEntry) (front, back, term, tags string) {
 		`.fd-phonetic{font-size:14px;color:#64748B;margin-top:4px;}` +
 		`.fd-pos{background:#EFF6FF;color:#2563EB;font-size:11px;font-weight:600;padding:2px 7px;border-radius:4px;margin-left:6px;}` +
 		`.fd-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px;margin-left:6px;text-transform:uppercase;}` +
-		`.fd-badge-a1,.fd-badge-a2{background:#ECFDF5;color:#059669;}` +
+		`.fd-badge-a1,.fd-badge-a2{background:#EEF4F1;color:#2F6F5E;}` +
 		`.fd-badge-b1,.fd-badge-b2{background:#EFF6FF;color:#2563EB;}` +
-		`.fd-badge-c1,.fd-badge-c2{background:#FAF5FF;color:#7E22CE;}` +
+		`.fd-badge-c1,.fd-badge-c2{background:#F3EEF7;color:#6B4A8A;}` +
 		`.fd-header{display:flex;align-items:center;flex-wrap:wrap;gap:6px;}` +
 		`.fd-divider{border:none;border-top:1px solid #E2E8F0;margin:12px 0;}` +
 		`.fd-def{font-size:15px;font-weight:500;color:#0F172A;margin:8px 0;line-height:1.5;}` +
@@ -553,16 +553,16 @@ func formatAnkiCard(e VocabularyEntry) (front, back, term, tags string) {
 		`.fd-en{font-size:13.5px;color:#1E293B;line-height:1.55;}` +
 		`.fd-zh{font-size:12.5px;color:#64748B;margin-top:4px;line-height:1.5;}` +
 		`.fd-hl{color:#2563EB;background:#DBEAFE;padding:0 4px;border-radius:3px;font-weight:700;}` +
-		`.fd-tips-box{background:#FEFCE8;border:1px solid #FEF08A;border-radius:8px;padding:8px 12px;margin-top:10px;font-size:12.5px;color:#713F12;display:flex;gap:6px;}` +
+		`.fd-tips-box{background:#F3F7FF;border:1px solid #DCE7F7;border-radius:8px;padding:8px 12px;margin-top:10px;font-size:12.5px;color:#475569;display:flex;gap:6px;}` +
 		`.fd-tag{font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;display:inline-block;}` +
-		`.fd-tag-grammar{background:#F0FDF4;color:#16A34A;}` +
-		`.fd-tag-writing{background:#FFF7ED;color:#C2410C;}` +
+		`.fd-tag-grammar{background:#EEF4F1;color:#2F6F5E;}` +
+		`.fd-tag-writing{background:#F7F1EC;color:#9A5A44;}` +
 		`.fd-sentence{font-size:17px;font-weight:600;line-height:1.5;margin-top:8px;color:#0F172A;}` +
 		`.fd-sentence-hero{font-size:16px;font-weight:600;line-height:1.55;color:#0F172A;}` +
 		`.fd-zh-trans{font-size:13.5px;color:#475569;margin:6px 0 10px 0;}` +
-		`.fd-improved-box{background:#F0FDF4;border:1px solid #DCFCE7;border-radius:8px;padding:10px 14px;margin-top:8px;}` +
-		`.fd-improved-label{font-size:11px;font-weight:700;color:#15803D;margin-bottom:4px;}` +
-		`.fd-improved-text{font-size:14px;font-weight:600;color:#14532D;line-height:1.5;}` +
+		`.fd-improved-box{background:#F3F7FF;border:1px solid #DCE7F7;border-radius:8px;padding:10px 14px;margin-top:8px;}` +
+		`.fd-improved-label{font-size:11px;font-weight:700;color:#475569;margin-bottom:4px;}` +
+		`.fd-improved-text{font-size:14px;font-weight:600;color:#0F172A;line-height:1.5;}` +
 		`.fd-fix-note{font-size:13px;color:#334155;margin-top:8px;}` +
 		`.fd-footer{font-size:10px;color:#94A3B8;margin-top:14px;text-align:right;}` +
 		`.nightMode .fastdict-anki{color:#F1F5F9;}` +
@@ -575,9 +575,9 @@ func formatAnkiCard(e VocabularyEntry) (front, back, term, tags string) {
 		`.nightMode .fd-en{color:#F1F5F9;}` +
 		`.nightMode .fd-zh{color:#94A3B8;}` +
 		`.nightMode .fd-hl{color:#93C5FD;background:rgba(59,130,246,0.25);}` +
-		`.nightMode .fd-tips-box{background:rgba(234,179,8,0.12);border-color:rgba(234,179,8,0.3);color:#FDE047;}` +
-		`.nightMode .fd-improved-box{background:rgba(22,163,74,0.15);border-color:rgba(22,163,74,0.3);}` +
-		`.nightMode .fd-improved-text{color:#86EFAC;}` +
+		`.nightMode .fd-tips-box{background:rgba(96,165,250,0.10);border-color:rgba(96,165,250,0.25);color:#94A3B8;}` +
+		`.nightMode .fd-improved-box{background:rgba(155,199,181,0.12);border-color:rgba(155,199,181,0.25);}` +
+		`.nightMode .fd-improved-text{color:#9BC7B5;}` +
 		`.nightMode .fd-sentence,.nightMode .fd-sentence-hero{color:#F1F5F9;}` +
 		`.nightMode .fd-zh-trans{color:#CBD5E1;}` +
 		`.nightMode .fd-fix-note{color:#CBD5E1;}` +

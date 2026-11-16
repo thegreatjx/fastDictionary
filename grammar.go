@@ -749,11 +749,11 @@ func renderGrammarVisualCardEx(c *ui.Context, t *ui.Theme, origText string, res 
 			// 7. Bottom action bar: [ 保存到长难句本 ]
 			ui.Row(c).FillWidth().Justify(ui.End).AlignItems(ui.Center).Children(func() {
 				if saved {
-					ui.Box(c).Height(26).Padding(2, 12).Radius(5).
+					ui.Box(c).Height(HeightCompact).Padding(2, Space3).Radius(RadiusSM).
 						Background(t.Surface).Border(1, t.Border).Children(func() {
-						ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+						ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
 							ui.Icon(c, iconCheckSquare).Size(12, 12).TextColor(t.Success)
-							ui.Text(c, "✓ 已存入长难句本").FontSize(11).FontWeight(600).TextColor(t.TextMuted)
+							ui.Text(c, "✓ 已存入长难句本").FontSize(11).FontWeight(600).TextColor(appTheme(t).TextSec)
 						})
 					})
 					return
@@ -761,11 +761,12 @@ func renderGrammarVisualCardEx(c *ui.Context, t *ui.Theme, origText string, res 
 				if st.OnSave == nil {
 					return
 				}
-				btnSave := ui.Button(c, "").Height(26).Padding(2, 14).Radius(5).
-					Background(saveButtonColor(t)).TextColor(t.AccentText).Tooltip("将这条长难句分析保存到生词本的长难句分类")
+				btnSave := ui.Button(c, "").Height(HeightCompact).Padding(2, Space3).Radius(RadiusSM).
+					Tooltip("将这条长难句分析保存到生词本的长难句分类")
+				saveFG := saveButtonStyle(btnSave, t)
 				btnSave.Children(func() {
-					ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-						ui.Icon(c, iconBookmark).Size(13, 13).TextColor(t.AccentText)
+					ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
+						ui.Icon(c, iconBookmark).Size(13, 13).TextColor(saveFG)
 						ui.Text(c, "保存到长难句本").FontSize(11).FontWeight(600)
 					})
 				})

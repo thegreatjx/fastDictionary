@@ -129,7 +129,7 @@ func (a *app) renderOcrParagraphPairs(c *ui.Context, t *ui.Theme, s snapshot) {
 // AI refine and vocabulary controls that users expect from every translation
 // card. The pair view now gets its own copy of that row.
 func (a *app) renderScreenshotPairActions(c *ui.Context, t *ui.Theme, cfg Config, s snapshot) {
-	ui.Row(c).FillWidth().Gap(2).AlignItems(ui.Center).Children(func() {
+	ui.Row(c).FillWidth().Gap(Space1).AlignItems(ui.Center).Children(func() {
 		copyTip := "复制译文"
 		if s.copiedMsg != "" {
 			copyTip = "译文已复制"

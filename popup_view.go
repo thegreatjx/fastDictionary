@@ -10,21 +10,26 @@ import (
 
 // renderIconButton renders a square icon button where the icon is guaranteed
 // to be strictly horizontally and vertically centered with crisp feedback.
+// The resting ink is TextSec rather than TextMuted: the row holds real
+// actions, and a 14px glyph at muted grey disappeared into the card.
 func renderIconButton(c *ui.Context, icon *ui.SVG, tip string, size, iconSize float32, active bool) ui.Element {
 	t := c.Theme()
+	at := appTheme(t)
 	b := ui.Button(c, "").Size(size, size).Padding(0, 0).Radius(RadiusSM).Center().Tooltip(tip).Label(tip)
 	bg := ui.Color{}
-	fg := t.TextMuted
+	fg := at.TextSec
 	if active {
-		bg = t.SurfaceHover
-		fg = t.Accent
+		bg = at.AccentSoft
+		fg = at.Accent
 	}
 	if b.Hovered() {
-		bg = t.SurfaceHover
-		fg = t.Text
+		if !active {
+			bg = at.SurfaceHover
+		}
+		fg = at.Text
 	}
 	if b.Pressed() {
-		bg = t.SurfacePressed
+		bg = at.SurfacePress
 	}
 	b.Background(bg).Border(0, ui.Transparent)
 	b.Children(func() {
@@ -385,18 +390,19 @@ func renderNotesBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 			if len(s.notes) > 0 {
 				ui.Row(c).FillWidth().Justify(ui.End).Children(func() {
 					if s.notesSaved {
-						ui.Box(c).Height(HeightIconSm).Padding(2, 12).Radius(RadiusSM).
+						ui.Box(c).Height(HeightCompact).Padding(2, Space3).Radius(RadiusSM).
 							Background(t.Surface).Border(1, t.Border).Children(func() {
-							ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+							ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
 								ui.Icon(c, iconCheckSquare).Size(12, 12).TextColor(t.Success)
-								ui.Text(c, "已保存 ✓").FontSize(11).FontWeight(600).TextColor(t.TextMuted)
+								ui.Text(c, "已保存 ✓").FontSize(11).FontWeight(600).TextColor(appTheme(t).TextSec)
 							})
 						})
 					} else {
-						btnSave := ui.Button(c, "").Height(HeightIconSm).Padding(2, 14).Radius(RadiusSM).Background(saveButtonColor(t)).TextColor(t.AccentText).Tooltip("保存所选生词到笔记本 (Ctrl+S)")
+						btnSave := ui.Button(c, "").Height(HeightCompact).Padding(2, Space3).Radius(RadiusSM).Tooltip("保存所选生词到笔记本 (Ctrl+S)")
+						saveFG := saveButtonStyle(btnSave, t)
 						btnSave.Children(func() {
-							ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-								ui.Icon(c, iconBookmark).Size(12, 12).TextColor(t.AccentText)
+							ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
+								ui.Icon(c, iconBookmark).Size(12, 12).TextColor(saveFG)
 								ui.Text(c, "保存所选生词").FontSize(11).FontWeight(600)
 							})
 						})
@@ -414,20 +420,21 @@ func renderNotesBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 func renderWordSaveButton(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 	isSaved := s.savedDictTerm != "" && strings.EqualFold(strings.TrimSpace(s.savedDictTerm), strings.TrimSpace(s.source))
 	if isSaved {
-		ui.Box(c).Height(HeightIconSm).Padding(2, 8).Radius(RadiusSM).
+		ui.Box(c).Height(HeightCompact).Padding(2, Space3).Radius(RadiusSM).
 			Background(t.Surface).Border(1, t.Border).Children(func() {
-			ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+			ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
 				ui.Icon(c, iconCheckSquare).Size(12, 12).TextColor(t.Success)
-				ui.Text(c, "已保存 ✓").FontSize(11).FontWeight(600).TextColor(t.TextMuted)
+				ui.Text(c, "已保存 ✓").FontSize(11).FontWeight(600).TextColor(appTheme(t).TextSec)
 			})
 		})
 		return
 	}
-	save := ui.Button(c, "").Height(HeightIconSm).Padding(2, 8).Radius(RadiusSM).
-		Background(saveButtonColor(t)).TextColor(t.AccentText).Tooltip("将该单词保存到生词本 (Ctrl+S)")
+	save := ui.Button(c, "").Height(HeightCompact).Padding(2, Space3).Radius(RadiusSM).
+		Tooltip("将该单词保存到生词本 (Ctrl+S)")
+	saveFG := saveButtonStyle(save, t)
 	save.Children(func() {
-		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-			ui.Icon(c, iconBookmark).Size(12, 12).TextColor(t.AccentText)
+		ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, iconBookmark).Size(12, 12).TextColor(saveFG)
 			ui.Text(c, "保存生词").FontSize(11).FontWeight(600)
 		})
 	})
@@ -453,34 +460,20 @@ func dictBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 		ui.Row(c).FillWidth().Gap(14).AlignItems(ui.Center).Children(func() {
 			if s.dict != nil && s.dict.UKPhone != "" {
 				ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-					btnUK := ui.Button(c, "").Label("英式发音").Tooltip("英式发音").
-						Size(28, 28).Padding(0, 0).Radius(6).Center()
-					if btnUK.Hovered() {
-						btnUK.Background(t.SurfaceHover)
-					}
-					btnUK.Children(func() {
-						ui.Icon(c, iconSpeak).Size(14, 14).TextColor(t.TextMuted)
-					})
+					btnUK := renderIconButton(c, iconSpeak, "英式发音", 28, 14, false)
 					if btnUK.Clicked() && a != nil {
 						a.play(s.source, false)
 					}
-					ui.Text(c, "/"+s.dict.UKPhone+"/").FontSize(13).TextColor(t.TextMuted).SingleLine()
+					ui.Text(c, "/"+s.dict.UKPhone+"/").FontSize(13).TextColor(appTheme(t).TextMuted).SingleLine()
 				})
 			}
 			if s.dict != nil && s.dict.USPhone != "" {
 				ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-					btnUS := ui.Button(c, "").Label("美式发音").Tooltip("美式发音").
-						Size(28, 28).Padding(0, 0).Radius(6).Center()
-					if btnUS.Hovered() {
-						btnUS.Background(t.SurfaceHover)
-					}
-					btnUS.Children(func() {
-						ui.Icon(c, iconSpeak).Size(14, 14).TextColor(t.TextMuted)
-					})
+					btnUS := renderIconButton(c, iconSpeak, "美式发音", 28, 14, false)
 					if btnUS.Clicked() && a != nil {
 						a.play(s.source, true)
 					}
-					ui.Text(c, "/"+s.dict.USPhone+"/").FontSize(13).TextColor(t.TextMuted).SingleLine()
+					ui.Text(c, "/"+s.dict.USPhone+"/").FontSize(13).TextColor(appTheme(t).TextMuted).SingleLine()
 				})
 			} else if s.gdict != nil && s.gdict.Pron != "" {
 				ui.Text(c, "/"+s.gdict.Pron+"/").FontSize(13).TextColor(t.Accent)

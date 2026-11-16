@@ -112,8 +112,8 @@ func defaultAccent(dark bool) ui.Color {
 func newAppTheme(dark bool, accent ui.Color) AppTheme {
 	white := ui.Hex("#FFFFFF")
 	if dark {
-		danger := ui.Hex("#EF4444")
-		success := ui.Hex("#22C55E")
+		danger := ui.Hex("#E39A93")
+		success := ui.Hex("#9BC7B5")
 		return AppTheme{
 			Dark:          true,
 			Canvas:        ui.Hex("#111317"),
@@ -140,15 +140,15 @@ func newAppTheme(dark bool, accent ui.Color) AppTheme {
 			DangerHoverBg: danger.Alpha(0.09),
 			Success:       success,
 			SuccessSoft:   success.Alpha(0.10),
-			Warning:       ui.Hex("#F59E0B"),
+			Warning:       ui.Hex("#D6B07A"),
 			ShadowColor:   ui.RGBA(0, 0, 0, 0.35),
 			InsetColor:    ui.RGBA(255, 255, 255, 0.14),
 			TintSurface:   ui.Hex("#171D28"),
 			TintBorder:    ui.RGBA(96, 165, 250, 0.20),
 		}
 	}
-	danger := ui.Hex("#DC2626")
-	success := ui.Hex("#15803D")
+	danger := ui.Hex("#A33A34")
+	success := ui.Hex("#2F6F5E")
 	return AppTheme{
 		Dark:          false,
 		Canvas:        ui.Hex("#F5F7FA"),
@@ -175,7 +175,7 @@ func newAppTheme(dark bool, accent ui.Color) AppTheme {
 		DangerHoverBg: danger.Alpha(0.09),
 		Success:       success,
 		SuccessSoft:   success.Alpha(0.10),
-		Warning:       ui.Hex("#B45309"),
+		Warning:       ui.Hex("#8A6435"),
 		ShadowColor:   ui.RGBA(15, 23, 42, 0.12),
 		InsetColor:    ui.Transparent,
 		TintSurface:   ui.Hex("#F3F7FF"),
@@ -362,11 +362,17 @@ func IconButton(c *ui.Context, t *ui.Theme, icon *ui.SVG, tip string) ui.Element
 	b := ui.ButtonBase(c).Height(HeightIconMd).Width(HeightIconMd).
 		Radius(RadiusSM).Center().Background(ui.Transparent).BorderWidth(0).
 		Tooltip(tip)
+	fg := at.TextSec
 	if b.Hovered() {
 		b.Background(at.SurfaceHover)
+		fg = at.Text
+	}
+	if b.Pressed() {
+		b.Background(at.SurfacePress)
+		fg = at.Text
 	}
 	b.Children(func() {
-		ui.Icon(c, icon).Size(IconSize, IconSize).TextColor(at.TextSec)
+		ui.Icon(c, icon).Size(IconSize, IconSize).TextColor(fg)
 	})
 	return b
 }
@@ -561,69 +567,88 @@ func dangerLine(t *ui.Theme) ui.Color { return appTheme(t).Danger.Alpha(0.35) }
 // inkRuleWidth is the 2px accent rule marking the hero translation.
 const inkRuleWidth float32 = 3
 
-// Notice colours: the "why did the shortcut open this" banner. Amber in
-// both themes, because it explains rather than reports an error.
+// Notice colours: the "why did the shortcut open this" banner. It explains
+// rather than reports an error, so it borrows the cool tint the source strip
+// uses instead of spending a second warning hue.
 func noticeBg(t *ui.Theme) ui.Color {
-	if t.Dark {
-		return ui.RGBA(251, 191, 36, 0.14)
-	}
-	return ui.RGBA(251, 191, 36, 0.12)
+	return appTheme(t).TintSurface
 }
 
 func noticeBorder(t *ui.Theme) ui.Color {
-	if t.Dark {
-		return ui.RGBA(251, 191, 36, 0.45)
-	}
-	return ui.RGBA(217, 119, 6, 0.35)
+	return appTheme(t).TintBorder
 }
 
 func noticeText(t *ui.Theme) ui.Color {
-	if t.Dark {
-		return ui.Hex("#FCD34D")
-	}
-	return ui.Hex("#92400E")
+	return appTheme(t).TextSec
 }
 
 // cefrColors tints the CEFR level badge by difficulty band. Both colours come
 // from the theme so the badge stays readable in dark mode, where the fixed
 // pastels it used to use turned into unreadable pale blocks.
 func cefrColors(t *ui.Theme, level string) (bg, fg ui.Color) {
+	at := appTheme(t)
 	switch {
 	case strings.HasPrefix(level, "C"):
-		// Hardest: the danger-ish end of the scale.
+		// Hardest: a dusty violet, not a warning colour.
 		if t.Dark {
-			return ui.RGBA(168, 85, 247, 0.22), ui.Hex("#D8B4FE")
+			return ui.RGBA(179, 167, 230, 0.16), ui.Hex("#C3B2E8")
 		}
-		return ui.RGBA(168, 85, 247, 0.12), ui.Hex("#7E22CE")
+		return ui.RGBA(122, 78, 158, 0.10), ui.Hex("#6B4A8A")
 	case strings.HasPrefix(level, "A"):
-		// Easiest: the calm end.
+		// Easiest: a quiet pine, the same family as the success ink.
 		if t.Dark {
-			return ui.RGBA(74, 222, 128, 0.18), ui.Hex("#86EFAC")
+			return at.Success.Alpha(0.14), at.Success
 		}
-		return ui.RGBA(22, 163, 74, 0.10), ui.Hex("#15803D")
+		return at.Success.Alpha(0.08), at.Success
 	}
 	if t.Dark {
-		return ui.RGBA(56, 189, 248, 0.18), ui.Hex("#7DD3FC")
+		return at.Accent.Alpha(0.16), ui.Hex("#93B4F5")
 	}
-	return ui.RGBA(37, 99, 235, 0.10), ui.Hex("#1D4ED8")
+	return at.Accent.Alpha(0.09), at.Accent
 }
 
-// memoryTipColors tints the "memory tips" card: amber in light mode, a dim
-// amber wash in dark mode, where the light version was a glaring block.
+// memoryTipColors tints the "memory tips" card. It used to be amber in light
+// mode; the note is guidance, not a warning, so it now uses the same cool tint
+// as the source strip and leaves colour to the heading's icon.
 func memoryTipColors(t *ui.Theme) (bg, border, title, body ui.Color) {
-	if t.Dark {
-		return ui.RGBA(251, 191, 36, 0.12), ui.RGBA(251, 191, 36, 0.35), ui.Hex("#FCD34D"), ui.Hex("#FDE68A")
-	}
-	return ui.Hex("#FEFCE8"), ui.Hex("#FEF08A"), ui.Hex("#854D0E"), ui.Hex("#713F12")
+	at := appTheme(t)
+	return at.TintSurface, at.TintBorder, at.TextSec, at.Text
 }
 
-// saveButtonColor is the amber of the "save to notebook" action.
-//
-// The old pair (#EAB308 light, #CA8A04 dark) carried white labels at 1.9:1 and
-// 2.9:1, both far below WCAG AA. One deeper amber is used in both themes so
-// t.AccentText (white) stays above 4.5:1 wherever the button appears.
+// The save action is the one commit in a card, so it gets a neutral ink fill
+// instead of a semantic hue. In light mode it is near-black; in dark mode it
+// inverts to near-white. Both carry their own foreground, so the label never
+// depends on the system accent's brightness.
+func saveButtonColors(t *ui.Theme) (bg, fg, hover, press ui.Color) {
+	if t != nil && t.Dark {
+		return ui.Hex("#E2E8F0"), ui.Hex("#0F172A"), ui.Hex("#F1F5F9"), ui.Hex("#CBD5E1")
+	}
+	return ui.Hex("#1E293B"), ui.Hex("#FFFFFF"), ui.Hex("#111827"), ui.Hex("#0B1220")
+}
+
+// saveButtonStyle paints the button and returns the foreground its icon and
+// label must use.
+func saveButtonStyle(b ui.Element, t *ui.Theme) ui.Color {
+	bg, fg, hover, press := saveButtonColors(t)
+	switch {
+	case b.Pressed():
+		bg = press
+	case b.Hovered():
+		bg = hover
+	}
+	b.Background(bg).TextColor(fg)
+	return fg
+}
+
+// saveButtonColor is the ink used by the writing card's tone table.
 func saveButtonColor(t *ui.Theme) ui.Color {
-	return ui.Hex("#B45309")
+	bg, _, _, _ := saveButtonColors(t)
+	return bg
+}
+
+func saveButtonTextColor(t *ui.Theme) ui.Color {
+	_, fg, _, _ := saveButtonColors(t)
+	return fg
 }
 
 // chipTone names what one selection-chip button does. The tone picks one of
@@ -741,34 +766,38 @@ func chipTipColors(t *ui.Theme) (bg, fg ui.Color) {
 // ---- 内容语义色板：从 grammar.go / popup_view.go 收口到 theme.go ----
 
 // grammarInkFor 是长难句标注的明暗色板。颜色只在这里定义。
+//
+// The roles still need to be told apart at a glance, but the old palette spent
+// eight saturated hues and turned the sentence into sticky notes. This one is
+// an editorial family: muted teal, blue, plum, violet, olive and clay.
 func grammarInkFor(t *ui.Theme) grammarInk {
 	if t != nil && t.Dark {
 		return grammarInk{
-			subjectLine:    ui.Hex("#5EEAD4"),
-			predicateLine:  ui.Hex("#86A6FF"),
-			objectLine:     ui.Hex("#FDBA74"),
-			complementLine: ui.Hex("#C4B5FD"),
-			connector:      ui.Hex("#5CCB99"),
-			clauseTint:     ui.RGBA(92, 203, 153, 0.13),
-			clauseTint2:    ui.RGBA(92, 203, 153, 0.20),
-			clauseText:     ui.Hex("#A7B4C4"),
-			obstacle:       ui.Hex("#FF8A70"),
-			obstacleBg:     ui.RGBA(255, 138, 112, 0.12),
+			subjectLine:    ui.Hex("#6FB3BF"),
+			predicateLine:  ui.Hex("#8AAEFF"),
+			objectLine:     ui.Hex("#C98BAE"),
+			complementLine: ui.Hex("#C3A0E8"),
+			connector:      ui.Hex("#A8C79A"),
+			clauseTint:     ui.RGBA(168, 199, 154, 0.10),
+			clauseTint2:    ui.RGBA(168, 199, 154, 0.16),
+			clauseText:     ui.Hex("#94A3B8"),
+			obstacle:       ui.Hex("#E5A171"),
+			obstacleBg:     ui.RGBA(229, 161, 113, 0.12),
 			body:           ui.Hex("#E4EAF1"),
 			muted:          ui.Hex("#7D8595"),
 		}
 	}
 	return grammarInk{
-		subjectLine:    ui.Hex("#0E7C86"),
+		subjectLine:    ui.Hex("#2F6F7A"),
 		predicateLine:  ui.Hex("#2A57C4"),
-		objectLine:     ui.Hex("#A21CAF"),
-		complementLine: ui.Hex("#6D28D9"),
-		connector:      ui.Hex("#15803D"),
-		clauseTint:     ui.RGBA(23, 122, 83, 0.08),
-		clauseTint2:    ui.RGBA(23, 122, 83, 0.13),
-		clauseText:     ui.Hex("#4B5563"),
-		obstacle:       ui.Hex("#C43D27"),
-		obstacleBg:     ui.RGBA(196, 61, 39, 0.08),
+		objectLine:     ui.Hex("#8A4B6B"),
+		complementLine: ui.Hex("#6F4AA8"),
+		connector:      ui.Hex("#4C7A3F"),
+		clauseTint:     ui.RGBA(76, 122, 63, 0.06),
+		clauseTint2:    ui.RGBA(76, 122, 63, 0.10),
+		clauseText:     ui.Hex("#475569"),
+		obstacle:       ui.Hex("#B05A3C"),
+		obstacleBg:     ui.RGBA(176, 90, 60, 0.08),
 		body:           ui.Hex("#1E293B"),
 		muted:          ui.Hex("#8C94A3"),
 	}
@@ -780,29 +809,31 @@ func grammarHeaderColors(t *ui.Theme) (bg, border, text ui.Color) {
 	return at.SurfaceSubtle, at.BorderSubtle, at.TextSec
 }
 
-// grammarObstacleColors 是「句式难点」暖色卡片的明暗色板。
+// grammarObstacleColors 是「句式难点」卡片的明暗色板。It used to be a warm
+// brown card; the surface is now neutral and only the title/badge keep a muted
+// clay accent, so it no longer reads as a second warning panel.
 func grammarObstacleColors(t *ui.Theme, ink grammarInk) (cardBg, cardBorder, cardTitle, badgeBg, badgeBorder, badgeText, obsText, restoreLabel, restoreText, noteLabel, noteText ui.Color) {
 	if t != nil && t.Dark {
-		return ink.obstacleBg,
-			withAlpha(ink.obstacle, 0.35),
+		return ui.Hex("#1C222B"),
+			ui.Hex("#2B3442"),
 			ink.obstacle,
-			withAlpha(ink.obstacle, 0.22),
-			withAlpha(ink.obstacle, 0.45),
+			ink.obstacleBg,
+			withAlpha(ink.obstacle, 0.32),
 			ink.obstacle,
 			ink.body,
-			ink.obstacle,
-			ink.predicateLine,
+			ink.muted,
+			ink.subjectLine,
 			ink.muted,
 			ink.body
 	}
-	return ui.Hex("#FAF6F4"), ui.Hex("#E8DDD8"), ui.Hex("#8A5044"),
-		ui.Hex("#F0E4DF"), ui.Hex("#E0CFC8"), ui.Hex("#8A5044"),
-		ui.Hex("#3F3A38"), ui.Hex("#A26B5C"), ui.Hex("#55708C"),
-		ui.Hex("#9A8478"), ui.Hex("#5C524C")
+	return ui.Hex("#F7F8FA"), ui.Hex("#E3E8EF"), ui.Hex("#9A5A44"),
+		ui.Hex("#F1F5F9"), ui.Hex("#E2E8F0"), ui.Hex("#9A5A44"),
+		ui.Hex("#1E293B"), ui.Hex("#64748B"), ui.Hex("#2F6F7A"),
+		ui.Hex("#64748B"), ui.Hex("#334155")
 }
 
 // grammarToggleOnColors 是长难句卡片开关的选中态。
 func grammarToggleOnColors(t *ui.Theme) (bg, text, border ui.Color) {
 	at := appTheme(t)
-	return ui.Hex("#55708C"), at.AccentText, ui.Hex("#4A6E8A")
+	return at.AccentSoft, at.Accent, at.AccentRing
 }

@@ -402,12 +402,9 @@ func renderDictionaryCard(c *ui.Context, t *ui.Theme, origText string, res *Dict
 				}
 
 				// 28px square: the icon is 15px, but the hit area has to be
-				// large enough to press without aiming. A 22px button around a
-				// 14px glyph is a target the pointer keeps missing.
-				btnSpeak := ui.Button(c, "").Tooltip("朗读发音").Size(28, 28).Padding(0, 0).Radius(6).Center()
-				btnSpeak.Children(func() {
-					ui.Icon(c, iconSpeak).Size(15, 15).TextColor(t.TextMuted)
-				})
+				// large enough to press without aiming. It shares the ghost
+				// icon button used by the card's action row.
+				btnSpeak := renderIconButton(c, iconSpeak, "朗读发音", 28, 15, false)
 				if btnSpeak.Clicked() {
 					PlaySpeechLang(termText, "", false)
 				}
@@ -443,10 +440,7 @@ func renderDictionaryCard(c *ui.Context, t *ui.Theme, origText string, res *Dict
 					Background(t.SurfaceHover).Border(1, t.Border).Children(func() {
 					ui.Column(c).FillWidth().Gap(6).Children(func() {
 						ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Start).Children(func() {
-							btnSpeakCtx := ui.Button(c, "").Tooltip("朗读例句").Size(24, 24).Padding(0, 0).Radius(6).Center()
-							btnSpeakCtx.Children(func() {
-								ui.Icon(c, iconSpeak).Size(14, 14).TextColor(t.TextMuted)
-							})
+							btnSpeakCtx := renderIconButton(c, iconSpeak, "朗读例句", 24, 14, false)
 							if btnSpeakCtx.Clicked() {
 								PlaySpeechLang(res.Context, "", false)
 							}
@@ -494,20 +488,21 @@ func renderDictionaryCard(c *ui.Context, t *ui.Theme, origText string, res *Dict
 				// Drawing a button there offered a click that could only
 				// do nothing, which is the "保存根本点不了" report.
 				if saved || onSave == nil {
-					ui.Box(c).Height(26).Padding(2, 12).Radius(5).
+					ui.Box(c).Height(HeightCompact).Padding(2, Space3).Radius(RadiusSM).
 						Background(t.Surface).Border(1, t.Border).Children(func() {
-						ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+						ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
 							ui.Icon(c, iconCheckSquare).Size(12, 12).TextColor(t.Success)
-							ui.Text(c, "已保存 ✓").FontSize(11).FontWeight(600).TextColor(t.TextMuted)
+							ui.Text(c, "已保存 ✓").FontSize(11).FontWeight(600).TextColor(appTheme(t).TextSec)
 						})
 					})
 					return
 				}
-				btnSave := ui.Button(c, "").Height(26).Padding(2, 12).Radius(5).
-					Background(saveButtonColor(t)).TextColor(t.AccentText).Tooltip("把这个词条存入本地生词本")
+				btnSave := ui.Button(c, "").Height(HeightCompact).Padding(2, Space3).Radius(RadiusSM).
+					Tooltip("把这个词条存入本地生词本")
+				saveFG := saveButtonStyle(btnSave, t)
 				btnSave.Children(func() {
-					ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-						ui.Icon(c, iconBookmark).Size(12, 12).TextColor(t.AccentText)
+					ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
+						ui.Icon(c, iconBookmark).Size(12, 12).TextColor(saveFG)
 						ui.Text(c, "保存到生词本").FontSize(11).FontWeight(600)
 					})
 				})
@@ -541,42 +536,43 @@ type writingTheme struct {
 	improvedTitle ui.Color
 }
 
-// writingThemeFor keeps the light card's pastel palette and gives dark mode
-// equivalent dark surfaces with brighter, readable accents.
+// writingThemeFor keeps the writing card in the same cool ink family as the
+// rest of the app. The old light palette put a large pastel-green card next to
+// red corrections; the correction colours are now muted clay and pine, and the
+// "改后版本" block is a neutral tinted surface rather than a green block.
 func writingThemeFor(t *ui.Theme) writingTheme {
 	saveBackground := saveButtonColor(t)
-	// The amber carries white in both themes; saveButtonColor is tuned for it.
 	saveText := ui.Hex("#FFFFFF")
 	if t != nil {
-		saveText = t.AccentText
+		saveText = saveButtonTextColor(t)
 	}
 	if t != nil && t.Dark {
 		return writingTheme{
-			setting:       writingTone{background: ui.Hex("#1E293B"), border: ui.Hex("#38536F"), text: ui.Hex("#93C5FD")},
-			tag:           writingTone{background: ui.Hex("#3F2328"), border: ui.Hex("#7F3F46"), text: ui.Hex("#FCA5A5")},
-			success:       writingTone{background: ui.Hex("#172B21"), border: ui.Hex("#365A41"), text: ui.Hex("#86EFAC")},
-			improved:      writingTone{background: ui.Hex("#172B21"), border: ui.Hex("#365A41"), text: ui.Hex("#DCFCE7")},
-			copy:          writingTone{background: ui.Hex("#243A2C"), border: ui.Hex("#4B7256"), text: ui.Hex("#BBF7D0")},
+			setting:       writingTone{background: ui.Hex("#1E242C"), border: ui.Hex("#333C48"), text: ui.Hex("#CBD5E1")},
+			tag:           writingTone{background: ui.Hex("#262B35"), border: ui.Hex("#3A4350"), text: ui.Hex("#CBD5E1")},
+			success:       writingTone{background: ui.Hex("#1C222B"), border: ui.Hex("#2B3442"), text: ui.Hex("#9BC7B5")},
+			improved:      writingTone{background: ui.Hex("#1C222B"), border: ui.Hex("#2B3442"), text: ui.Hex("#E2E8F0")},
+			copy:          writingTone{background: ui.Hex("#22262E"), border: ui.Hex("#3A4350"), text: ui.Hex("#CBD5E1")},
 			save:          writingTone{background: saveBackground, border: saveBackground, text: saveText},
 			settingLabel:  ui.Hex("#94A3B8"),
-			removed:       ui.Hex("#FCA5A5"),
-			added:         ui.Hex("#86EFAC"),
-			deleted:       ui.Hex("#CBD5E1"),
-			improvedTitle: ui.Hex("#86EFAC"),
+			removed:       ui.Hex("#D6A3A0"),
+			added:         ui.Hex("#9BC7B5"),
+			deleted:       ui.Hex("#94A3B8"),
+			improvedTitle: ui.Hex("#94A3B8"),
 		}
 	}
 	return writingTheme{
-		setting:       writingTone{background: ui.Hex("#EFF6FF"), border: ui.Hex("#BFDBFE"), text: ui.Hex("#1D4ED8")},
-		tag:           writingTone{background: ui.Hex("#FEE2E2"), border: ui.Hex("#FECACA"), text: ui.Hex("#991B1B")},
-		success:       writingTone{background: ui.Hex("#F0FDF4"), border: ui.Hex("#BBF7D0"), text: ui.Hex("#15803D")},
-		improved:      writingTone{background: ui.Hex("#F0FDF4"), border: ui.Hex("#86EFAC"), text: ui.Hex("#14532D")},
-		copy:          writingTone{background: ui.Hex("#F0FDF4"), border: ui.Hex("#BBF7D0"), text: ui.Hex("#166534")},
+		setting:       writingTone{background: ui.Hex("#EEF2F6"), border: ui.Hex("#DDE4EC"), text: ui.Hex("#0F172A")},
+		tag:           writingTone{background: ui.Hex("#F1F5F9"), border: ui.Hex("#E2E8F0"), text: ui.Hex("#475569")},
+		success:       writingTone{background: ui.Hex("#F3F7FF"), border: ui.Hex("#DCE7F7"), text: ui.Hex("#2F6F5E")},
+		improved:      writingTone{background: ui.Hex("#F3F7FF"), border: ui.Hex("#DCE7F7"), text: ui.Hex("#0F172A")},
+		copy:          writingTone{background: ui.Hex("#FFFFFF"), border: ui.Hex("#CBD5E1"), text: ui.Hex("#475569")},
 		save:          writingTone{background: saveBackground, border: saveBackground, text: saveText},
 		settingLabel:  ui.Hex("#475569"),
-		removed:       ui.Hex("#B91C1C"),
-		added:         ui.Hex("#166534"),
+		removed:       ui.Hex("#9A4C4C"),
+		added:         ui.Hex("#2F6F5E"),
 		deleted:       ui.Hex("#475569"),
-		improvedTitle: ui.Hex("#166534"),
+		improvedTitle: ui.Hex("#475569"),
 	}
 }
 
@@ -641,10 +637,11 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 					}
 				})
 			} else {
-				ui.Box(c).FillWidth().Padding(8, 10).Radius(6).
+				ui.Box(c).FillWidth().Padding(8, 10).Radius(RadiusSM).
 					Background(w.success.background).Border(1, w.success.border).Children(func() {
-					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, "✓ 原文表达地道得体，无需修改。").FontSize(12).TextColor(w.success.text)
+					ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
+						ui.Icon(c, iconCheckSquare).Size(12, 12).TextColor(w.success.text)
+						ui.Text(c, "原文表达地道得体，无需修改。").FontSize(12).TextColor(w.success.text)
 					})
 				})
 			}
@@ -697,11 +694,11 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 			// 5. Bottom bar: [ 保存到笔记本 ]
 			ui.Row(c).FillWidth().Justify(ui.End).AlignItems(ui.Center).Children(func() {
 				if saved {
-					ui.Box(c).Height(26).Padding(2, 12).Radius(5).
+					ui.Box(c).Height(HeightCompact).Padding(2, Space3).Radius(RadiusSM).
 						Background(t.Surface).Border(1, t.Border).Children(func() {
-						ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+						ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
 							ui.Icon(c, iconCheckSquare).Size(12, 12).TextColor(t.Success)
-							ui.Text(c, "✓ 已存入笔记本").FontSize(11).FontWeight(600).TextColor(t.TextMuted)
+							ui.Text(c, "✓ 已存入笔记本").FontSize(11).FontWeight(600).TextColor(appTheme(t).TextSec)
 						})
 					})
 					return
@@ -709,11 +706,12 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 				if onSave == nil {
 					return
 				}
-				btnSave := ui.Button(c, "").Height(26).Padding(2, 12).Radius(5).
-					Background(w.save.background).Border(1, w.save.border).TextColor(w.save.text).Tooltip("保存改后版本与批注到笔记本")
+				btnSave := ui.Button(c, "").Height(HeightCompact).Padding(2, Space3).Radius(RadiusSM).
+					Tooltip("保存改后版本与批注到笔记本")
+				saveFG := saveButtonStyle(btnSave, t)
 				btnSave.Children(func() {
-					ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-						ui.Icon(c, iconBookmark).Size(12, 12).TextColor(w.save.text)
+					ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
+						ui.Icon(c, iconBookmark).Size(12, 12).TextColor(saveFG)
 						ui.Text(c, "保存到笔记本").FontSize(11).FontWeight(600)
 					})
 				})

@@ -530,9 +530,9 @@ func (a *app) renderScreenshotSource(c *ui.Context, t *ui.Theme, s snapshot) {
 		return
 	}
 	if ocrShowErrorBox(s) {
-		ui.Box(c).FillWidth().Padding(8, 10).Radius(6).Background(noticeBg(t)).Border(1, noticeBorder(t)).Children(func() {
+		ui.Box(c).FillWidth().Padding(8, 10).Radius(RadiusSM).Background(dangerSoft(t)).Border(1, dangerLine(t)).Children(func() {
 			ui.Column(c).FillWidth().Gap(8).Children(func() {
-				ui.Text(c, s.ocrError).FontSize(12).TextColor(noticeText(t)).Wrap()
+				ui.Text(c, s.ocrError).FontSize(12).TextColor(t.Danger).Wrap()
 				ui.Row(c).Gap(8).Children(func() {
 					if ui.Button(c, "重新识别").Height(28).FontSize(12).Clicked() {
 						a.retryScreenshotOCR()
