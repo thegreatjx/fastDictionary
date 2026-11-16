@@ -132,17 +132,17 @@ var (
 )
 
 // selectionChipWidth keeps the toolbar compact and proportional.
-// Base buttons: translate, speak, screenshot, more (4 buttons). Every item is
-// chipButtonSize wide, one 1px divider separates the tools from "more", and
-// the row carries a gap between each pair of neighbours.
+// Buttons: translate, speak, screenshot, more, close (5) plus enabled actions.
+// Two 1px dividers separate the tools from "more" and "more" from "close".
 func selectionChipWidth(enabledActions int) int {
 	if enabledActions < 0 {
 		enabledActions = 0
 	}
-	items := 4 + enabledActions
-	// One gap between each neighbouring item, the divider included.
-	gaps := items
-	return 2*chipPadH + items*chipButtonSize + 1 + gaps*chipRowGap
+	buttons := 5 + enabledActions
+	// One gap between every neighbouring element: the buttons plus the two
+	// dividers, which are elements of their own.
+	gaps := buttons + 1
+	return 2*chipPadH + buttons*chipButtonSize + 2 + gaps*chipRowGap
 }
 
 func (a *app) currentSelectionChipWidth() int {
@@ -1299,6 +1299,8 @@ func (a *app) selIconView(c *ui.Context) {
 			}
 			ui.Box(c).Width(1).Height(14).Background(chipBorderColor(t))
 			a.chipIconButton(c, t, iconMore, chipToneInk, "复制与更多功能", func() { a.toggleMoreFlyout() })
+			ui.Box(c).Width(1).Height(14).Background(chipBorderColor(t))
+			a.chipCloseButton(c, t)
 		})
 }
 
@@ -1344,6 +1346,29 @@ func (a *app) chipIconButton(c *ui.Context, t *ui.Theme, icon *ui.SVG, tone chip
 			iconEl.Scale(0.88, 0.88)
 		}
 		iconEl.TextColor(iconEl.AnimateColor("fg", fg, chipHoverMotion))
+	})
+}
+
+// chipCloseButton dismisses the chip without acting on the selection. It keeps
+// the same 28px hit area as the other commands but draws a smaller circled X,
+// so the row still reads as tools plus one quiet escape hatch.
+func (a *app) chipCloseButton(c *ui.Context, t *ui.Theme) {
+	at := appTheme(t)
+	btn := ui.Button(c, "").Label("关闭").
+		Size(chipButtonSize, chipButtonSize).Padding(0, 0).Radius(7).Center().
+		Cursor(ui.CursorPointer)
+	fg := at.TextMuted
+	if btn.Hovered() {
+		fg = at.Text
+	}
+	btn.Background(ui.Transparent).Border(0, ui.Transparent).
+		OnClick(func() { a.hideSelIcon() })
+	a.recordChipHit(btn, "关闭")
+	btn.Children(func() {
+		ui.Box(c).Size(20, 20).Radius(10).Background(t.Surface).
+			Border(1, chipBorderColor(t)).Center().Children(func() {
+			ui.Icon(c, iconClose).Size(11, 11).TextColor(fg)
+		})
 	})
 }
 

@@ -23,7 +23,7 @@ func TestSelectionChipStaysIconOnly(t *testing.T) {
 
 	// Every text left in the tree must be a button label (one per button).
 	cfg := a.store.Get()
-	want := 4 + len(cfg.GetEnabledActions())
+	want := 5 + len(cfg.GetEnabledActions())
 	if got := len(tt.Texts()); got != want {
 		t.Errorf("chip renders %d text nodes, want %d button labels: %q", got, want, tt.Texts())
 	}
@@ -51,7 +51,7 @@ func TestSelectionChipButtonsAreComfortableHitTargets(t *testing.T) {
 	for _, act := range cfg.GetEnabledActions() {
 		tips = append(tips, act.Name)
 	}
-	tips = append(tips, "复制与更多功能")
+	tips = append(tips, "复制与更多功能", "关闭")
 
 	for _, tip := range tips {
 		r, ok := tt.Find(tip)
