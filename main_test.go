@@ -40,8 +40,21 @@ func TestPopupShowsDictCard(t *testing.T) {
 	if !strings.Contains(joined, "ˌserənˈdɪpəti") {
 		t.Errorf("phonetics missing: %q", joined)
 	}
-	if !strings.Contains(joined, "noun") {
-		t.Errorf("pos missing: %q", joined)
+	if !strings.Contains(joined, "n. 好运") {
+		t.Errorf("youdao explanation missing: %q", joined)
+	}
+	if strings.Contains(joined, "noun") {
+		t.Errorf("google entry overrides youdao: %q", joined)
+	}
+
+	b := newTestApp()
+	b.source = "serendipity"
+	b.target = "机缘巧合"
+	b.gdict = &DictResult{Entries: []DictEntry{{POS: "noun", Explain: "机缘巧合"}}}
+	tb := ui.NewTester(b.popupView, 400, 340)
+	fallback := strings.Join(tb.Texts(), "|")
+	if !strings.Contains(fallback, "noun") || !strings.Contains(fallback, "机缘巧合") {
+		t.Errorf("google fallback missing: %q", fallback)
 	}
 }
 

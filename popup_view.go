@@ -22,21 +22,18 @@ func renderIconButton(c *ui.Context, icon *ui.SVG, tip string, size, iconSize fl
 		fg = at.Success
 	}
 	if active {
-		bg = at.AccentSoft
 		fg = at.Accent
 	}
 	if b.Hovered() {
-		if !active {
-			bg = at.SurfaceHover
-		}
-		if icon != iconCheck {
+		bg = at.SurfaceHover
+		if icon != iconCheck && !active {
 			fg = at.Text
 		}
 	}
 	if b.Pressed() {
 		bg = at.SurfacePress
 	}
-	b.Background(bg).Border(0, ui.Transparent).Selected(active)
+	b.Background(bg).Border(0, ui.Transparent).AccessSelected(active)
 	b.Children(func() {
 		ui.Icon(c, icon).Size(iconSize, iconSize).TextColor(fg)
 	})
@@ -478,7 +475,11 @@ func dictBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 			}
 		})
 	}
-	if s.gdict != nil {
+	if s.dict != nil && len(s.dict.Explains) > 0 {
+		for _, ex := range s.dict.Explains {
+			ui.Text(c, ex).FontSize(14).TextColor(t.Text).Wrap().LineHeight(1.5)
+		}
+	} else if s.gdict != nil {
 		for _, e := range s.gdict.Entries {
 			ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Start).Children(func() {
 				// A pill, not bare coloured text: it separates the part of
@@ -489,10 +490,6 @@ func dictBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 				})
 				ui.Text(c, e.Explain).FontSize(14).TextColor(t.Text).Grow(1).Wrap().LineHeight(1.5)
 			})
-		}
-	} else if s.dict != nil {
-		for _, ex := range s.dict.Explains {
-			ui.Text(c, ex).FontSize(14).TextColor(t.Text).Wrap().LineHeight(1.5)
 		}
 	}
 }

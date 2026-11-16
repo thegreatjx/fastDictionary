@@ -355,6 +355,9 @@ func (a *app) renderHomeTranslateTab(c *ui.Context, t *ui.Theme, at AppTheme, cf
 							PlaySpeechLang(h.source, h.detected, true)
 						}
 					}
+					if h.dict == nil && h.gdict != nil && h.gdict.Pron != "" {
+						ui.Text(c, "/"+h.gdict.Pron+"/").Font(fontUI).FontSize(FontHelper).TextColor(at.TextMuted)
+					}
 					ui.Spacer(c).Grow(1)
 					if h.wordSaved {
 						ui.Text(c, "已存入生词本").Font(fontUI).FontSize(FontHelper).TextColor(at.TextMuted)
@@ -363,7 +366,11 @@ func (a *app) renderHomeTranslateTab(c *ui.Context, t *ui.Theme, at AppTheme, cf
 					}
 				})
 
-				if h.gdict != nil {
+				if h.dict != nil && len(h.dict.Explains) > 0 {
+					for _, ex := range h.dict.Explains {
+						ui.Text(c, ex).Font(fontUI).FontSize(FontControl).TextColor(at.Text).Wrap().LineHeight(1.5)
+					}
+				} else if h.gdict != nil {
 					for _, e := range h.gdict.Entries {
 						ui.Row(c).FillWidth().Gap(Space2).AlignItems(ui.Start).Children(func() {
 							ui.Box(c).Shrink(0).Padding(2, 6).Radius(RadiusXS).
@@ -372,10 +379,6 @@ func (a *app) renderHomeTranslateTab(c *ui.Context, t *ui.Theme, at AppTheme, cf
 							})
 							ui.Text(c, e.Explain).Font(fontUI).FontSize(FontControl).TextColor(at.Text).Wrap().Grow(1).LineHeight(1.5)
 						})
-					}
-				} else if h.dict != nil {
-					for _, ex := range h.dict.Explains {
-						ui.Text(c, ex).Font(fontUI).FontSize(FontControl).TextColor(at.Text).Wrap().LineHeight(1.5)
 					}
 				}
 			})
