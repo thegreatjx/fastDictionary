@@ -38,7 +38,6 @@ func filledAppForTabSync(s *store) *app {
 		aiBusy:               true,
 		aiCancel:             func() {},
 		grammarResult:        &SentenceAnalysisResult{},
-		grammarSentIdx:       2,
 		grammarResultPrefill: true,
 		dictResult:           &DictionaryResult{},
 		writingResult:        &ImproveWritingResult{},

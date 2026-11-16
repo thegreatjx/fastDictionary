@@ -84,8 +84,8 @@ func (a *app) popupView(c *ui.Context) {
 	}
 	if c.Shortcut(ui.Ctrl, ui.KeyL) {
 		if s.mode == modeGrammar {
-			if sent, _, _ := grammarActiveSentence(s.source, s.grammarSentIdx); sent != "" {
-				a.play(sent, false)
+			if text := grammarAnalysisText(s.source); text != "" {
+				a.play(text, false)
 			}
 		} else if text, lang, _ := primarySpeechTarget(s.source, s.target); text != "" {
 			PlaySpeechLang(text, lang, false)
@@ -189,11 +189,11 @@ func (a *app) popupView(c *ui.Context) {
 					// Dedicated Sentence Analysis Mode!
 					switch classifyAIView(s) {
 					case aiPassStructured:
-						// One sentence at a time: the card shows the sentence the
-						// analysis actually describes, not the whole paragraph the
-						// user selected.
-						sent, _, _ := grammarActiveSentence(s.source, s.grammarSentIdx)
-						a.renderGrammarVisualCard(c, t, sent, s.grammarResult, s.grammarSaved, func() { a.saveGrammarToVocab(s.grammarResult) })
+						// The card covers the whole selection in one pass: every
+						// sentence keeps its own segmentation, but the reader sees
+						// the paragraph as one structure instead of paging through it.
+						text := grammarAnalysisText(s.source)
+						a.renderGrammarVisualCard(c, t, text, s.grammarResult, s.grammarSaved, func() { a.saveGrammarToVocab(s.grammarResult) })
 					case aiPassIdle:
 						a.renderGrammarEmptyState(c, t, s)
 					default:

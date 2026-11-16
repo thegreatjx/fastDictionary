@@ -121,11 +121,6 @@ type app struct {
 	notesCancel   context.CancelFunc
 	onlyTrunk     bool
 	grammarResult *SentenceAnalysisResult
-	// grammarSentIdx is which sentence of a multi-sentence selection the
-	// grammar card is analysing. A paragraph is analysed one sentence at a
-	// time: the model mixes up clauses across sentences, and a single
-	// sentence answers in seconds rather than tens of seconds.
-	grammarSentIdx int
 	// grammarResultPrefill reports that grammarResult.Translation came from the
 	// machine engines rather than the model, so the card can say so while the
 	// annotations are still being generated.
@@ -325,7 +320,6 @@ type snapshot struct {
 	notesBusy            bool
 	onlyTrunk            bool
 	grammarResult        *SentenceAnalysisResult
-	grammarSentIdx       int // which sentence the card shows; see grammarActiveSentence
 	grammarResultPrefill bool
 	aiRefining           bool
 	aiRefineErr          string
@@ -415,7 +409,7 @@ func (a *app) snap() snapshot {
 		mode: a.mode, source: a.source, target: a.target, engine: a.engine,
 		detected: a.detected, errText: a.errText, echoNote: a.echoNote, notice: a.notice, busy: a.busy, elapsed: a.elapsed,
 		dict: a.dict, gdict: a.gdict, aiText: a.aiText, aiBusy: a.aiBusy,
-		inputText: a.inputText, inputTargetMode: a.inputTargetMode, isWord: isWord(a.source), pinned: a.pinned, showNotes: a.showNotes, notes: notes, notesBusy: a.notesBusy, onlyTrunk: a.onlyTrunk, grammarResult: a.grammarResult, grammarSentIdx: a.grammarSentIdx, grammarResultPrefill: a.grammarResultPrefill, aiRefining: a.aiRefining, aiRefineErr: a.aiRefineErr,
+		inputText: a.inputText, inputTargetMode: a.inputTargetMode, isWord: isWord(a.source), pinned: a.pinned, showNotes: a.showNotes, notes: notes, notesBusy: a.notesBusy, onlyTrunk: a.onlyTrunk, grammarResult: a.grammarResult, grammarResultPrefill: a.grammarResultPrefill, aiRefining: a.aiRefining, aiRefineErr: a.aiRefineErr,
 		activeActionID: a.activeActionID, dictResult: a.dictResult, writingResult: a.writingResult, actionSavedMsg: actionSavedMsg, saveErr: a.saveErr, savedDictTerm: a.savedDictTerm, copiedMsg: copiedMsg, showSlashes: a.showSlashes, notesSaved: a.notesSaved, grammarSaved: a.grammarSaved, writingSaved: a.writingSaved,
 		isScreenshotMode: a.isScreenshotMode, snipBitmap: a.snipBitmap, sourceExpanded: a.sourceExpanded,
 		snipExpanded: a.snipExpanded, notesExpanded: a.notesExpanded, ocrBusy: a.ocrBusy, ocrError: a.ocrError, ocrText: a.ocrText,
@@ -589,7 +583,6 @@ func (a *app) resetPopupTransientLocked() {
 	a.onlyTrunk = false
 	a.showSlashes = false
 	a.activeActionID = ""
-	a.grammarSentIdx = 0
 }
 
 // resetScreenshotPinLocked 把「截图翻译临时置顶」的复位规则收在一处：

@@ -582,9 +582,10 @@ func (a *app) onChipPointer(px, py int32) {
 		return
 	}
 	if t.key == label && t.shown {
+		moreAnchor := t.anchorFor(chipMoreLabel)
 		t.mu.Unlock()
-		if label != chipMoreLabel {
-			a.hideChipClose()
+		if moreAnchor.W > 0 {
+			a.showChipClose(moreAnchor)
 		}
 		return
 	}
@@ -608,9 +609,10 @@ func (a *app) onChipPointer(px, py int32) {
 			t.timer.Stop()
 		}
 		t.timer = time.AfterFunc(remaining, func() { a.onChipPointer(px, py) })
+		moreAnchor := t.anchorFor(chipMoreLabel)
 		t.mu.Unlock()
-		if label != chipMoreLabel {
-			a.hideChipClose()
+		if moreAnchor.W > 0 {
+			a.showChipClose(moreAnchor)
 		}
 		return
 	}
@@ -620,15 +622,17 @@ func (a *app) onChipPointer(px, py int32) {
 	}
 	t.shown = true
 	anchor := t.anchorFor(label)
+	moreAnchor := t.anchorFor(chipMoreLabel)
 	t.mu.Unlock()
+	if moreAnchor.W > 0 {
+		a.showChipClose(moreAnchor)
+	}
 	if label == chipMoreLabel {
 		// The badge takes this button's place instead of joining its label:
 		// the X sits exactly where the label's lower-right corner would, and
 		// two floating plates over one 28px button read as clutter.
-		a.showChipClose(anchor)
 		return
 	}
-	a.hideChipClose()
 	a.raiseChipTip(label, anchor)
 }
 
@@ -826,6 +830,10 @@ func (a *app) showChipClose(more ui.Rect) {
 
 	s := &a.chipClose
 	s.mu.Lock()
+	if s.shown && s.rect == rect {
+		s.mu.Unlock()
+		return
+	}
 	s.shown = true
 	s.rect = rect
 	gen := s.gen

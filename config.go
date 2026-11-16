@@ -807,7 +807,9 @@ const grammarSystemPromptV2 = `你是一位严谨的英语语法老师。请对�
   "translation": "自然准确的中文译文"
 }`
 
-// grammarSystemPromptV3 is the segment-based long-sentence prompt.
+// grammarSystemPromptV3 is the previous single-sentence segment prompt. It is
+// kept only so ensureDefaultActions can recognise an unedited config and
+// upgrade it to V4, which analyses the whole paragraph in one pass.
 //
 // V2 asked the model for overlapping annotation spans and an occurrence count.
 // Models miscomputed both often enough that highlights landed on the wrong
@@ -842,6 +844,39 @@ const grammarSystemPromptV3 = `你是一位严谨的英语语法老师。请对�
   "translation": "中文全句译文"
 }`
 
+// grammarSystemPromptV4 analyses the whole selected paragraph in one request.
+//
+// Splitting the selection into one sentence per request made the reader page
+// through a paragraph and wait for a model answer each time. V4 keeps V3's
+// verbatim-slice contract, but the slices now cover every sentence in the
+// selection in order; sentence boundaries stay where the punctuation is, so the
+// card can draw one continuous structure instead of isolated cards.
+const grammarSystemPromptV4 = `你是一位严谨的英语语法老师。请对给定的【一段英文】（通常 1~5 句）做逐句句法拆解，只输出严格合法的 JSON（不要 Markdown 代码块，不要任何解释）。
+
+硬性规则：
+1. segments 必须按原文顺序覆盖整段：把所有 text 依次直接拼接，必须与输入原文逐字符完全一致（含大小写、空格、标点、缩略词）。不要改写、遗漏、补字或调换语序；空格和标点并入相邻片段，不要输出只含空白的片段。片段按短语/意群层级切分：每句的主语、谓语、宾语/表语、引导词、从句和修饰短语都要各自成段，不要把整个从句或整句压成一段；不要把单个副词或介词单独切开；每句通常 8~16 段。
+2. 每个片段只填一个 role：subject|predicate|object|connector|modifier|punct。predicate 只含谓语动词本身，不含宾语、表语、状语。引导词（although/when/that/because 等）只标引导词本身，不要把整个从句塞进 connector；从句内部的主语、谓语、宾语也要拆段。
+3. is_backbone 只标每一句最外层主句的主语、谓语、宾语/表语，以及连接并列主句的 and/but；从句内部、介词短语、非谓语、插入语一律 false。
+4. 只有真正的从句（有引导词或主语+谓语）才建立 clauses 条目，并在其片段的 clause_id 填该 id；整段内 id 唯一（c1、c2…），嵌套时片段填最内层从句 id，parent_id 指向父从句。不要把单个副词或介词短语当从句。short_tag 用两字：宾从/定从/状从/主从/表从/同位。
+5. break_before 只在自然意群停顿处为 true（主谓宾大块之间、介词短语/非谓语/从句引导词前），每句 3~7 个，不要逐词切碎。
+6. note 只在修饰语、非谓语、引导词或难点处写，不超过 18 个汉字；简单主干词留空。difficulties 只列真正影响理解的难点（倒装、省略、虚拟、后置定语、插入语等），整段最多 3 条。
+7. backbone_summary 用一句简短中文概括整段主干，多句之间用分号连接；translation 给整段自然流畅的中文译文，逐句对应，不增删信息。
+
+输出 JSON 格式：
+{
+  "backbone_summary": "一句中文主干（多句用分号）",
+  "segments": [
+    {"text": "原文连续片段", "role": "subject", "is_backbone": true, "break_before": false, "clause_id": "", "note": ""}
+  ],
+  "clauses": [
+    {"id": "c1", "parent_id": "", "type": "宾语从句", "short_tag": "宾从", "target": "作 see 的宾语"}
+  ],
+  "difficulties": [
+    {"title": "后置定语", "span_text": "原文片段", "explanation": "一句人话解释"}
+  ],
+  "translation": "中文整段译文"
+}`
+
 func DefaultCustomActions() []CustomActionConfig {
 	return []CustomActionConfig{
 		{
@@ -851,7 +886,7 @@ func DefaultCustomActions() []CustomActionConfig {
 			Icon:         "grammar",
 			ProviderID:   "magpie",
 			Model:        "",
-			SystemPrompt: grammarSystemPromptV3,
+			SystemPrompt: grammarSystemPromptV4,
 			Prompt:       "## Input\nSelection: {{selection}}\nParagraphs: {{paragraphs}}\nTarget language: {{targetLanguage}}",
 			OutputSchema: []string{"segments", "clauses", "difficulties", "translation"},
 		},
@@ -950,14 +985,16 @@ func ensureDefaultActions(cfg *Config) bool {
 				cfg.CustomActions[idx].SystemPrompt = def.SystemPrompt
 			} else if def.ID == "default-sentence-analysis" &&
 				(cfg.CustomActions[idx].SystemPrompt == grammarSystemPrompt ||
-					cfg.CustomActions[idx].SystemPrompt == grammarSystemPromptV2) {
+					cfg.CustomActions[idx].SystemPrompt == grammarSystemPromptV2 ||
+					cfg.CustomActions[idx].SystemPrompt == grammarSystemPromptV3) {
 				// The old default was never edited by the user: upgrade it, or the
-				// mislabelled spans and the slow answer stay until they reset the app.
-				cfg.CustomActions[idx].SystemPrompt = grammarSystemPromptV3
+				// one-sentence pager and the slow per-sentence answers stay until
+				// they reset the app.
+				cfg.CustomActions[idx].SystemPrompt = grammarSystemPromptV4
 				dropped = true
 			} else if def.ID == "default-sentence-analysis" &&
 				legacyGrammarAnnotationsPrompt(cfg.CustomActions[idx].SystemPrompt) {
-				cfg.CustomActions[idx].SystemPrompt = grammarSystemPromptV3
+				cfg.CustomActions[idx].SystemPrompt = grammarSystemPromptV4
 				dropped = true
 			}
 			if cfg.CustomActions[idx].Prompt == "" {

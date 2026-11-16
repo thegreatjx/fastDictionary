@@ -38,7 +38,6 @@ type homeState struct {
 
 	grammarResult        *SentenceAnalysisResult
 	grammarResultPrefill bool
-	grammarSentIdx       int
 	grammarSaved         bool
 	onlyTrunk            bool
 	showSlashes          bool
@@ -412,31 +411,11 @@ func (a *app) renderHomeGrammarTab(c *ui.Context, t *ui.Theme, at AppTheme, cfg 
 		return
 	}
 	if h.grammarResult != nil {
-		sent, sentIdx, sentCount := grammarActiveSentence(h.source, h.grammarSentIdx)
+		text := grammarAnalysisText(h.source)
 		st := grammarCardState{
 			OnlyTrunk:   h.onlyTrunk,
 			ShowSlashes: h.showSlashes,
 			Prefill:     h.grammarResultPrefill,
-			SentIdx:     sentIdx,
-			SentCount:   sentCount,
-			OnPrevSent: func() {
-				if sentIdx > 0 {
-					a.mu.Lock()
-					a.home.grammarSentIdx = sentIdx - 1
-					src := a.home.source
-					a.mu.Unlock()
-					a.homeRunGrammar(src, false)
-				}
-			},
-			OnNextSent: func() {
-				if sentIdx+1 < sentCount {
-					a.mu.Lock()
-					a.home.grammarSentIdx = sentIdx + 1
-					src := a.home.source
-					a.mu.Unlock()
-					a.homeRunGrammar(src, false)
-				}
-			},
 			OnToggleTrunk: func() {
 				a.mu.Lock()
 				a.home.onlyTrunk = !a.home.onlyTrunk
@@ -450,13 +429,13 @@ func (a *app) renderHomeGrammarTab(c *ui.Context, t *ui.Theme, at AppTheme, cfg 
 				a.settingsRefresh()
 			},
 			OnSpeak: func() {
-				PlaySpeechLang(sent, h.detected, false)
+				PlaySpeechLang(text, h.detected, false)
 			},
 			OnSave: func() {
 				a.homeSaveGrammar()
 			},
 		}
-		renderGrammarVisualCardEx(c, t, sent, h.grammarResult, h.grammarSaved, st)
+		renderGrammarVisualCardEx(c, t, text, h.grammarResult, h.grammarSaved, st)
 		return
 	}
 	if h.aiBusy {
@@ -562,7 +541,6 @@ func (a *app) homeSubmit(raw string) {
 		a.home.tab = "translate"
 	}
 	if a.home.source != text {
-		a.home.grammarSentIdx = 0
 		a.home.grammarResult = nil
 		a.home.writingResult = nil
 		a.home.grammarSaved = false
@@ -765,21 +743,20 @@ func (a *app) homeRunGrammar(text string, fresh bool) {
 	if model == "" {
 		model = cfg.AIModel
 	}
+	analysis := grammarAnalysisText(text)
 	a.mu.Lock()
-	sent, clamped, _ := grammarActiveSentence(text, a.home.grammarSentIdx)
-	a.home.grammarSentIdx = clamped
 	if a.home.aiCancel != nil {
 		a.home.aiCancel()
 	}
 	a.home.aiGen++
 	gen := a.home.aiGen
-	cacheKey := aiResultCacheKey(act.ID, model, cfg.TargetLang, sent, actionCacheVariant(act, cfg))
+	cacheKey := aiResultCacheKey(act.ID, model, cfg.TargetLang, analysis, actionCacheVariant(act, cfg))
 	raw := ""
 	if !fresh {
 		raw = a.cachedAIResult(cacheKey)
 	}
 	if raw != "" {
-		parsed := ParseSentenceAnalysisDetailed(raw, sent)
+		parsed := ParseSentenceAnalysisDetailed(raw, analysis)
 		if parsed.Result != nil {
 			a.home.grammarResult = parsed.Result
 			a.home.grammarResultPrefill = false
@@ -809,7 +786,7 @@ func (a *app) homeRunGrammar(text string, fresh bool) {
 		if targetLangName == "" {
 			targetLangName = "简体中文"
 		}
-		userPrompt := FormatActionPrompt(act.Prompt, sent, "", targetLangName)
+		userPrompt := FormatActionPrompt(act.Prompt, analysis, "", targetLangName)
 		out, err := StreamAI(ctx, cfg.AIConn(model), act.SystemPrompt, userPrompt, cfg.AIReasoningEffortFor(model), nil)
 		a.mu.Lock()
 		if gen != a.home.aiGen {
@@ -822,7 +799,7 @@ func (a *app) homeRunGrammar(text string, fresh bool) {
 			a.home.errText = friendlyAIError(err)
 		} else {
 			a.home.aiText = out
-			if parsed := ParseSentenceAnalysisDetailed(out, sent); parsed.Result != nil {
+			if parsed := ParseSentenceAnalysisDetailed(out, analysis); parsed.Result != nil {
 				a.home.grammarResult = parsed.Result
 				a.home.grammarResultPrefill = false
 				a.storeAIResult(cacheKey, out)
@@ -982,16 +959,18 @@ func (a *app) homeSaveGrammar() {
 	a.mu.Lock()
 	res := a.home.grammarResult
 	src := a.home.source
-	idx := a.home.grammarSentIdx
 	if res == nil {
 		a.mu.Unlock()
 		return
 	}
-	sent, _, _ := grammarActiveSentence(src, idx)
+	text := grammarAnalysisText(src)
+	if text == "" {
+		text = src
+	}
 	a.mu.Unlock()
 
 	GetVocabularyStore().Add(VocabularyEntry{
-		Term: truncateFor(sent, 24), Context: sent, ContextTranslation: res.Translation, Source: "grammar", CreatedAt: time.Now(),
+		Term: truncateFor(text, 24), Context: text, ContextTranslation: res.Translation, Source: "grammar", CreatedAt: time.Now(),
 	})
 	a.homeSaved(&a.home.grammarSaved, "长难句已保存到生词本 ✓", GetVocabularyStore().LastSaveError())
 }

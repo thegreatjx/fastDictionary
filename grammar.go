@@ -190,19 +190,16 @@ func grammarParagraphs(text string) []string {
 	return out
 }
 
-// grammarActiveSentence returns sentence idx, clamped, with its index and total.
-func grammarActiveSentence(text string, idx int) (string, int, int) {
+// grammarAnalysisText normalizes a selection into the one piece of text the
+// grammar pass analyses: paragraphs reflowed into single lines, sentences
+// joined with one space. The card and the parser both see this same text, so
+// the model's slices can be aligned against it exactly.
+func grammarAnalysisText(text string) string {
 	sents := splitGrammarSentences(text)
 	if len(sents) == 0 {
-		return strings.TrimSpace(text), 0, 0
+		return strings.TrimSpace(text)
 	}
-	if idx < 0 {
-		idx = 0
-	}
-	if idx >= len(sents) {
-		idx = len(sents) - 1
-	}
-	return sents[idx], idx, len(sents)
+	return strings.Join(sents, " ")
 }
 
 // ParseSentenceAnalysis parses the model output and validates it against the
@@ -470,10 +467,8 @@ type grammarCardState struct {
 	OnlyTrunk     bool
 	ShowSlashes   bool
 	Prefill       bool
-	SentIdx       int
-	SentCount     int
-	OnPrevSent    func()
-	OnNextSent    func()
+	SentenceCount int
+	ClauseCount   int
 	OnToggleTrunk func()
 	OnToggleSlash func()
 	OnSpeak       func()
@@ -482,36 +477,10 @@ type grammarCardState struct {
 
 // renderGrammarVisualCard renders the read-only card from the app's state.
 func (a *app) renderGrammarVisualCard(c *ui.Context, t *ui.Theme, origText string, res *SentenceAnalysisResult, saved bool, onSave func()) {
-	a.mu.Lock()
-	src, curIdx := a.source, a.grammarSentIdx
-	a.mu.Unlock()
-	_, sentIdx, sentCount := grammarActiveSentence(src, curIdx)
 	st := grammarCardState{
-		OnlyTrunk:   a.onlyTrunk,
-		ShowSlashes: a.showSlashes,
-		Prefill:     a.grammarResultPrefill,
-		SentIdx:     sentIdx,
-		SentCount:   sentCount,
-		OnPrevSent: func() {
-			if sentIdx <= 0 {
-				return
-			}
-			a.mu.Lock()
-			a.grammarSentIdx = sentIdx - 1
-			src := a.source
-			a.mu.Unlock()
-			a.runAction("default-sentence-analysis", src)
-		},
-		OnNextSent: func() {
-			if sentIdx+1 >= sentCount {
-				return
-			}
-			a.mu.Lock()
-			a.grammarSentIdx = sentIdx + 1
-			src := a.source
-			a.mu.Unlock()
-			a.runAction("default-sentence-analysis", src)
-		},
+		OnlyTrunk:     a.onlyTrunk,
+		ShowSlashes:   a.showSlashes,
+		Prefill:       a.grammarResultPrefill,
 		OnToggleTrunk: func() { a.onlyTrunk = !a.onlyTrunk },
 		OnToggleSlash: func() { a.showSlashes = !a.showSlashes },
 		OnSpeak:       func() { PlaySpeechLang(origText, a.speechLang(), false) },
@@ -524,6 +493,8 @@ func (a *app) renderGrammarVisualCard(c *ui.Context, t *ui.Theme, origText strin
 func renderGrammarVisualCardEx(c *ui.Context, t *ui.Theme, origText string, res *SentenceAnalysisResult, saved bool, st grammarCardState) {
 	at := appTheme(t)
 	ink := grammarInkFor(t)
+	st.SentenceCount = len(splitGrammarSentences(origText))
+	st.ClauseCount = len(res.Clauses)
 
 	ui.Box(c).FillWidth().Padding(Space3, Space4).Radius(8).
 		Background(t.Surface).Border(1, t.Border).
@@ -532,7 +503,7 @@ func renderGrammarVisualCardEx(c *ui.Context, t *ui.Theme, origText string, res 
 			renderGrammarCardHeader(c, t, st)
 
 			ui.Box(c).FillWidth().Padding(12, 14).Radius(6).
-				Background(t.SurfaceHover).Border(1, t.Border).Children(func() {
+				Background(at.SurfaceSubtle).Border(1, at.TintBorder).Children(func() {
 				ui.Column(c).FillWidth().Gap(6).Children(func() {
 					if len(res.Segments) == 0 {
 						renderGrammarFallbackSentence(c, t, origText, res, st)
@@ -568,31 +539,29 @@ func renderGrammarCardHeader(c *ui.Context, t *ui.Theme, st grammarCardState) {
 			ui.Text(c, "长难句拆解").FontSize(11).FontWeight(600).TextColor(topText).SingleLine()
 		})
 
-		if st.SentCount > 1 {
-			ui.Row(c).AlignItems(ui.Center).Gap(Space1).Children(func() {
-				prevBtn := ui.Button(c, "‹").Height(22).Width(22).Padding(0, 0).Radius(RadiusXS).
-					Center().Disabled(st.SentIdx <= 0).Tooltip("上一句")
-				if prevBtn.Clicked() && st.OnPrevSent != nil {
-					st.OnPrevSent()
-				}
-				ui.Text(c, fmt.Sprintf("第 %d / %d 句", st.SentIdx+1, st.SentCount)).
-					Font(fontMono).FontFeatures("tnum").FontSize(FontMicro).
-					TextColor(t.TextMuted).SingleLine()
-				nextBtn := ui.Button(c, "›").Height(22).Width(22).Padding(0, 0).Radius(RadiusXS).
-					Center().Disabled(st.SentIdx+1 >= st.SentCount).Tooltip("下一句")
-				if nextBtn.Clicked() && st.OnNextSent != nil {
-					st.OnNextSent()
-				}
-			})
+		if scope := grammarScopeLabel(st); scope != "" {
+			ui.Text(c, scope).Font(fontMono).FontFeatures("tnum").FontSize(FontMicro).
+				TextColor(t.TextMuted).SingleLine()
 		}
 
 		ui.Spacer(c).Grow(1)
 
-		btnSpeak := renderIconButton(c, iconSpeak, "朗读本句", 28, 14, false)
+		btnSpeak := renderIconButton(c, iconSpeak, "朗读整段", 28, 14, false)
 		if btnSpeak.Clicked() && st.OnSpeak != nil {
 			st.OnSpeak()
 		}
 	})
+}
+
+func grammarScopeLabel(st grammarCardState) string {
+	parts := make([]string, 0, 2)
+	if st.SentenceCount > 0 {
+		parts = append(parts, fmt.Sprintf("%d 句", st.SentenceCount))
+	}
+	if st.ClauseCount > 0 {
+		parts = append(parts, fmt.Sprintf("%d 处从句", st.ClauseCount))
+	}
+	return strings.Join(parts, " · ")
 }
 
 // renderGrammarSentence draws the sentence as one wrapping rich text. Each
@@ -1116,12 +1085,19 @@ func grammarDefaultHint(res *SentenceAnalysisResult, prefill bool) string {
 	return "悬停句子成分，查看它的语法作用"
 }
 
-// grammarClausePalette assigns a low-saturation family to a clause tag.
-// Backgrounds are 10% washes; the badge uses the same hue at 20% and full ink.
+// grammarClausePalette keeps every clause in the theme accent's blue family.
+// The wash depth separates clause types without introducing a second hue; the
+// badge takes the same accent at a slightly stronger alpha with accent ink.
 func grammarClausePalette(t *ui.Theme, tag string) (ui.Color, ui.Color, ui.Color) {
-	base := grammarClauseBaseColor(t, tag)
-	// The wash stays faint so three nested clauses do not turn the sentence
-	// into a colour block. The badge carries the full hue in its background and
-	// uses body ink, which stays readable on every theme.
-	return base.Alpha(0.08), base.Alpha(0.30), appTheme(t).Text
+	base := grammarClauseBaseColor(t)
+	wash := base.Alpha(0.12)
+	switch {
+	case strings.Contains(tag, "状"):
+		wash = base.Alpha(0.10)
+	case strings.Contains(tag, "定") || strings.Contains(tag, "同位"):
+		wash = base.Alpha(0.13)
+	case strings.Contains(tag, "宾") || strings.Contains(tag, "主") || strings.Contains(tag, "表"):
+		wash = base.Alpha(0.16)
+	}
+	return wash, base.Alpha(0.18), base
 }

@@ -1,14 +1,34 @@
 package main
 
 import (
-	"strings"
 	"testing"
-
-	"github.com/egoist/mygo/ui"
 )
 
-// 长难句卡片一次只分析一句：整段发给模型时，模型会把不同句子的成分混进
-// 同一张卡片，回答也慢得多。拆句是纯函数，边界情况可以直接测。
+// 长难句卡片整段分析：句子仍先切分，只为把硬换行重排成一段干净的原文，
+// 随后的请求、解析和渲染都使用同一份整段文本。
+
+func TestGrammarAnalysisTextJoinsSentencesIntoOneParagraph(t *testing.T) {
+	text := "This is a slide.\nI am confident it works.\n\nThen we stop!"
+	if got, want := grammarAnalysisText(text), "This is a slide. I am confident it works. Then we stop!"; got != want {
+		t.Fatalf("analysis text = %q, want %q", got, want)
+	}
+	if got := grammarAnalysisText("   "); got != "" {
+		t.Fatalf("blank text produced %q, want nothing", got)
+	}
+}
+
+// TestGrammarCardAnalysesTheWholeSelection pins the wiring: one request and one
+// card cover the whole selection, with no sentence pager.
+func TestGrammarCardAnalysesTheWholeSelection(t *testing.T) {
+	src := readSourceFile(t, "popup_view.go")
+	if !containsText(src, "grammarAnalysisText(s.source)") {
+		t.Error("the grammar card is not handed the whole selection")
+	}
+	card := readSourceFile(t, "grammar.go")
+	if containsText(card, `第 %d / %d 句`) {
+		t.Error("the grammar card still has a sentence pager")
+	}
+}
 
 func TestSplitGrammarSentencesSplitsAParagraph(t *testing.T) {
 	sents := splitGrammarSentences("This is a slide. I am confident it works. Then we stop!")
@@ -61,59 +81,5 @@ func TestSplitGrammarSentencesFallsBackToTheWholeText(t *testing.T) {
 	}
 	if sents := splitGrammarSentences("   "); len(sents) != 0 {
 		t.Fatalf("blank text produced %q, want nothing", sents)
-	}
-}
-
-func TestGrammarActiveSentenceClampsTheIndex(t *testing.T) {
-	text := "One. Two. Three."
-
-	if sent, idx, count := grammarActiveSentence(text, 0); sent != "One." || idx != 0 || count != 3 {
-		t.Errorf("first = %q idx=%d count=%d", sent, idx, count)
-	}
-	// 负数夹到第一句：上一句按钮在下标 0 上被禁用，但状态有可能被别处写坏。
-	if sent, idx, _ := grammarActiveSentence(text, -5); sent != "One." || idx != 0 {
-		t.Errorf("negative index = %q idx=%d, want the first sentence", sent, idx)
-	}
-	// 越界夹到最后一句，而不是返回空字符串。
-	if sent, idx, _ := grammarActiveSentence(text, 99); sent != "Three." || idx != 2 {
-		t.Errorf("out of range index = %q idx=%d, want the last sentence", sent, idx)
-	}
-}
-
-// TestGrammarCardOffersASentencePager pins the UI half of the split: a
-// multi-sentence selection shows one sentence with a pager, so the reader can
-// walk the paragraph without asking the model for the whole thing at once.
-func TestGrammarCardOffersASentencePager(t *testing.T) {
-	a := newTestApp()
-	a.source = "One sentence here. Two sentence here. Three sentence here."
-	res := &SentenceAnalysisResult{
-		Segments: []Segment{
-			{Text: "One sentence here", Role: RoleSubject, IsBackbone: true},
-			{Text: ".", Role: RolePunct},
-		},
-		Translation: "第一句。",
-	}
-	tt := ui.NewTester(func(c *ui.Context) {
-		sent, _, _ := grammarActiveSentence(a.source, a.grammarSentIdx)
-		a.renderGrammarVisualCard(c, grammarThemeForTest(t), sent, res, false, nil)
-	}, 700, 400)
-	tt.Frame()
-	texts := strings.Join(tt.Texts(), "")
-	if !strings.Contains(texts, "第 1 / 3 句") {
-		t.Errorf("no sentence pager in the card, texts %q", texts)
-	}
-}
-
-// TestGrammarCardShowsOneSentence pins the wiring: the card renders the active
-// sentence, and a multi-sentence text offers a pager instead of analysing the
-// whole paragraph at once.
-func TestGrammarCardShowsOneSentence(t *testing.T) {
-	src := readSourceFile(t, "popup_view.go")
-	if !containsText(src, "grammarActiveSentence(s.source, s.grammarSentIdx)") {
-		t.Error("the grammar card is handed the whole selection instead of the active sentence")
-	}
-	card := readSourceFile(t, "grammar.go")
-	if !containsText(card, `第 %d / %d 句`) {
-		t.Error("the grammar card has no sentence pager")
 	}
 }

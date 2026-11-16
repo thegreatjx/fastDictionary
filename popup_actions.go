@@ -103,10 +103,6 @@ func (a *app) translateTextWithReflow(text string, keepParagraphs bool) {
 	a.mu.Lock()
 	a.stopAIPassLocked()
 	a.stopNotesLocked()
-	// 换了一段文字就回到第一句：上一段的句子序号对新文字没有意义。
-	if a.source != text {
-		a.grammarSentIdx = 0
-	}
 	a.source, a.target, a.errText = text, "", ""
 	a.echoNote = ""
 	a.sourceExpanded = false
@@ -453,15 +449,15 @@ func (a *app) saveGrammarToVocab(res *SentenceAnalysisResult) {
 		return
 	}
 	a.mu.Lock()
-	sent, _, _ := grammarActiveSentence(a.source, a.grammarSentIdx)
+	src := a.source
 	a.mu.Unlock()
-	if sent == "" {
-		sent = a.source
+	text := grammarAnalysisText(src)
+	if text == "" {
+		text = src
 	}
-	// 存的是当前这一句：卡片展示的就是它，生词本里的 Term 和 Context 也应与之一致。
 	entry := VocabularyEntry{
-		Term:               truncateFor(sent, 24),
-		Context:            sent,
+		Term:               truncateFor(text, 24),
+		Context:            text,
 		ContextTranslation: res.Translation,
 		Source:             "grammar",
 		CreatedAt:          time.Now(),
@@ -757,7 +753,6 @@ func (a *app) runAction(actionID string, text string) {
 	a.mu.Lock()
 	fresh := a.skipAIResultCache
 	a.skipAIResultCache = false
-	sentIdx := a.grammarSentIdx
 	a.mu.Unlock()
 	cfg := a.store.Get()
 	if cfg.AISetupProblem() != "" || strings.TrimSpace(text) == "" {
@@ -768,16 +763,9 @@ func (a *app) runAction(actionID string, text string) {
 		return
 	}
 
-	// 长难句只发当前这一句。整段一起发时，模型会把分句张冠李戴，回答也慢得多；
-	// 缓存、预填机器译文和用户提示词都要用同一份单句，否则三者对不上。
 	targetText := text
 	if actionID == "default-sentence-analysis" {
-		if active, clamped, _ := grammarActiveSentence(text, sentIdx); active != "" {
-			targetText = active
-			a.mu.Lock()
-			a.grammarSentIdx = clamped
-			a.mu.Unlock()
-		}
+		targetText = grammarAnalysisText(text)
 	}
 
 	model := act.Model

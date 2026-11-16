@@ -25,7 +25,6 @@ type tabViewState struct {
 	busy                 bool
 	ocrBusy              bool
 	grammarResult        *SentenceAnalysisResult
-	grammarSentIdx       int
 	grammarResultPrefill bool
 	dictResult           *DictionaryResult
 	writingResult        *ImproveWritingResult
@@ -77,7 +76,6 @@ func (a *app) saveTabLocked() {
 		busy:                 a.busy,
 		ocrBusy:              a.ocrBusy,
 		grammarResult:        a.grammarResult,
-		grammarSentIdx:       a.grammarSentIdx,
 		grammarResultPrefill: a.grammarResultPrefill,
 		dictResult:           a.dictResult,
 		writingResult:        a.writingResult,
@@ -117,9 +115,6 @@ func (a *app) restoreTabLocked(st *tabViewState) {
 	a.busy = false
 	a.ocrBusy = false
 	a.grammarResult = st.grammarResult
-	// 句子序号跟着结果一起存：不同步的话，切走再切回会拿另一页的序号去
-	// 索引这句的标注，分页器显示的句号与卡片内容对不上。
-	a.grammarSentIdx = st.grammarSentIdx
 	a.grammarResultPrefill = st.grammarResultPrefill
 	a.dictResult = st.dictResult
 	a.writingResult = st.writingResult

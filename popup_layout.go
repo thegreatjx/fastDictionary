@@ -148,9 +148,9 @@ func popupContentHeight(s snapshot, w float32) float32 {
 		// the right neighbourhood instead of reserving a fixed 420 DIP.
 		h = 300
 		if s.source != "" {
-			// 只算当前这一句：卡片只渲染它，按整段估高会留下一整块空白。
-			sent, _, _ := grammarActiveSentence(s.source, s.grammarSentIdx)
-			h += float32(wrappedLines(sent, w-56, 14)) * 22
+			// 卡片整段渲染，按整段文字估高，避免首帧把底部保存按钮挤出可视区。
+			text := grammarAnalysisText(s.source)
+			h += float32(wrappedLines(text, w-56, 14)) * 22
 		}
 		if cardReadyForMode(s) {
 			gr := s.grammarResult

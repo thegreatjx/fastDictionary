@@ -868,7 +868,7 @@ func chipTipColors(t *ui.Theme) (bg, fg ui.Color) {
 // The card no longer spends six hues on six roles. The trunk is bold body ink,
 // the predicate is the one element that takes the theme accent and a single
 // fine underline, modifiers fall back to muted grey, and clauses are told
-// apart by a 10% accent wash plus a micro badge.
+// apart by accent washes of different depth plus a micro badge.
 func grammarInkFor(t *ui.Theme) grammarInk {
 	at := appTheme(t)
 	return grammarInk{
@@ -877,7 +877,7 @@ func grammarInkFor(t *ui.Theme) grammarInk {
 		predicateLine: at.AccentRing,
 		muted:         at.TextMuted,
 		connector:     at.TextSec,
-		clauseTint:    at.Accent.Alpha(0.10),
+		clauseTint:    at.Accent.Alpha(0.15),
 		clauseText:    at.TextSec,
 	}
 }
@@ -895,28 +895,11 @@ func withAlpha(c ui.Color, a float32) ui.Color {
 	return c
 }
 
-// grammarClauseBaseColor is the one hue behind a clause family. The wash and
-// badge alpha are applied by grammarClausePalette; the base lives here so the
-// UI files keep no literal colours.
-func grammarClauseBaseColor(t *ui.Theme, tag string) ui.Color {
-	dark := appTheme(t).Dark
-	switch {
-	case strings.Contains(tag, "定") || strings.Contains(tag, "同位"):
-		if dark {
-			return ui.Hex("#A78BFA")
-		}
-		return ui.Hex("#7C3AED")
-	case strings.Contains(tag, "状"):
-		if dark {
-			return ui.Hex("#FB923C")
-		}
-		return ui.Hex("#C2410C")
-	default:
-		if dark {
-			return ui.Hex("#4ADE80")
-		}
-		return ui.Hex("#16A34A")
-	}
+// grammarClauseBaseColor is the one hue behind every clause family: the
+// current theme accent. Clause types differ only in wash depth, never in hue,
+// so the card stays inside the selected light-blue atmosphere.
+func grammarClauseBaseColor(t *ui.Theme) ui.Color {
+	return appTheme(t).Accent
 }
 
 // grammarHeaderColors 是长难句卡片顶部「拆解」标签的底、边、字。
