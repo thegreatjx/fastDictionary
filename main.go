@@ -555,7 +555,8 @@ func main() {
 				if chipTipDemo {
 					// The second button, so the plate is centred on something that
 					// is not the first or the last: both of those are clamped.
-					a.raiseChipTip("朗读选中文字", ui.Rect{X: chipPadH + chipButtonSize + chipRowGap, Y: 4, W: chipButtonSize, H: chipButtonSize})
+					anchorX := float32(chipShadowMargin + chipPadH + chipButtonSize + chipRowGap)
+					a.raiseChipTip("朗读选中文字", ui.Rect{X: anchorX, Y: chipShadowMargin + chipPadV, W: chipButtonSize, H: chipButtonSize})
 					sleepMS(500)
 					a.logChipTipState()
 				}

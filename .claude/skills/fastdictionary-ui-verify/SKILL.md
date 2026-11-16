@@ -47,6 +47,10 @@ go test -run 'TestGrammarPaletteContrastAcrossThemes|TestGrammarClauseWashHierar
 .\scripts\ui-evidence.ps1 -View home     -Theme light -Accent sky
 .\scripts\ui-evidence.ps1 -View settings -Theme light -Accent sky -Page general
 .\scripts\ui-evidence.ps1 -View writing  -Theme dark  -Accent violet
+
+# 5. 划词条（浅色与深色各看一次）
+.\scripts\ui-evidence.ps1 -View chip     -Theme light -Accent sky
+.\scripts\ui-evidence.ps1 -View chip     -Theme dark  -Accent sky
 ```
 
 每个目录包含：
@@ -66,8 +70,8 @@ go test -run 'TestGrammarPaletteContrastAcrossThemes|TestGrammarClauseWashHierar
 - 长难句卡的“只看主干 / 断句 / 保存到长难句本”应可见、可聚焦；隐藏窗口也能
   截图，但要用控件树确认它真的渲染了。
 - 主题色样本：选中态 2px `TextSecondary` 圆环 + 对勾；未选中 1px `BorderCtrl`。
-- 划词关闭键：常驻胶囊右上角；在窗口透明边（例如坐标 195,3）能命中，点击只
-  收起胶囊，不改变选区。
+- 划词条：没有关闭键（与 Google Docs、Notion 的选区气泡一致）；在胶囊外任意
+  位置点击、滚轮、按 Esc 或重新划词都应收起它，胶囊四周的透明阴影边不吞点击。
 - 设置页导航：每页都能渲染；不要用 `--page home --shot-window settings`，`home`
   会被重定向到通用页。
 

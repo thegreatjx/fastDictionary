@@ -140,7 +140,7 @@ func TestSelectionChipPrimaryActions(t *testing.T) {
 		if !ok {
 			continue
 		}
-		if r.X < 0 || r.X+r.W > float32(width) {
+		if r.X < chipShadowMargin || r.X+r.W > float32(chipShadowMargin+width) {
 			t.Errorf("selection chip clips %q: bounds %+v, width %d", want, r, width)
 		}
 	}
@@ -166,7 +166,7 @@ func TestSelectionChipWidthFollowsEnabledActions(t *testing.T) {
 		t.Fatalf("chip did not follow the enabled actions: %q", tt.Texts())
 	}
 	r, ok := tt.Find("复制与更多功能")
-	if !ok || r.X+r.W > float32(width) {
+	if !ok || r.X < chipShadowMargin || r.X+r.W > float32(chipShadowMargin+width) {
 		t.Fatalf("adaptive chip clips its last action: %+v, width %d", r, width)
 	}
 }

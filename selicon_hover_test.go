@@ -21,10 +21,9 @@ func TestSelectionChipStaysIconOnly(t *testing.T) {
 		t.Errorf("chip still renders the removed name slot: %q", tt.Texts())
 	}
 
-	// Every text left in the tree must be a button label (one per button,
-	// the close button included).
+	// Every text left in the tree must be a button label.
 	cfg := a.store.Get()
-	want := 5 + len(cfg.GetEnabledActions())
+	want := 4 + len(cfg.GetEnabledActions())
 	if got := len(tt.Texts()); got != want {
 		t.Errorf("chip renders %d text nodes, want %d button labels: %q", got, want, tt.Texts())
 	}
@@ -62,50 +61,9 @@ func TestSelectionChipButtonsAreComfortableHitTargets(t *testing.T) {
 		if r.W != chipButtonSize || r.H != chipButtonSize {
 			t.Errorf("button %q is %vx%v, want %vx%v", tip, r.W, r.H, chipButtonSize, chipButtonSize)
 		}
-		if r.X < 0 || r.X+r.W > float32(width) {
-			t.Errorf("button %q is clipped: bounds %+v, width %d", tip, r, width)
+		if r.X < chipShadowMargin || r.X+r.W > float32(chipShadowMargin+width) {
+			t.Errorf("button %q is clipped: bounds %+v, pill width %d", tip, r, width)
 		}
-	}
-}
-
-// TestChipCloseBadgeSitsOnThePillCorner pins the close affordance: it is not a
-// permanent sixth row button and not an overlay on the ellipsis. Its centre
-// lands on the pill's top-right corner, so the dots stay visible and the
-// resting row keeps its old width.
-func TestChipCloseBadgeSitsOnThePillCorner(t *testing.T) {
-	width := selectionChipWidth(2)
-	r := chipCloseRect(width)
-	if r.W != chipCloseSize || r.H != chipCloseSize {
-		t.Fatalf("badge is %vx%v, want %dx%d", r.W, r.H, chipCloseSize, chipCloseSize)
-	}
-	if got, want := r.X+r.W/2, float32(width-1); got != want {
-		t.Errorf("badge centre x = %v, want the pill's right edge %v", got, want)
-	}
-	if got := r.Y + r.H/2; got != 0 {
-		t.Errorf("badge centre y = %v, want the pill's top edge 0", got)
-	}
-	if r.Y >= 0 || r.Y+r.H <= 0 {
-		t.Errorf("badge %v does not straddle the pill's top edge: it either floats free or covers the dots", r)
-	}
-}
-
-// TestChipCloseHangsOutsideThePill keeps the pointer handoff working: the
-// badge's centre is above the pill, so the row's own hit boxes do not cover
-// it. Its hit box must answer for the overhanging part.
-func TestChipCloseHangsOutsideThePill(t *testing.T) {
-	a := newTestApp()
-	width := a.currentSelectionChipWidth()
-	r := chipCloseRect(width)
-	const originX, originY = 400, 300
-
-	if !a.chipCloseContains(originX+int(r.X+r.W/2), originY-8, originX, originY) {
-		t.Error("badge does not answer for its overhanging part above the pill")
-	}
-	if a.chipCloseContains(originX+int(r.X+r.W/2), originY+20, originX, originY) {
-		t.Error("badge answers for a point on the pill, not on the badge")
-	}
-	if a.chipCloseContains(originX+int(r.X+r.W/2), originY-8, originX, originY+100) {
-		t.Error("badge ignores the pill origin")
 	}
 }
 

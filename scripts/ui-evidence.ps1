@@ -9,6 +9,7 @@
 #   .\scripts\ui-evidence.ps1 -View home -Theme dark -Accent mint
 #   .\scripts\ui-evidence.ps1 -View settings -Theme light -Accent sky -Page general
 #   .\scripts\ui-evidence.ps1 -View writing -Theme light -Accent coral -Keep
+#   .\scripts\ui-evidence.ps1 -View chip    -Theme light -Accent sky
 #
 # 输出目录默认 build/ui-evidence/<时间>-<视图>-<主题>-<强调色>/，包含：
 #   manifest.json      commit / 工作区状态 / exe SHA256 / 配置 / 主题 / 窗口 / 时间
@@ -21,7 +22,7 @@
 # 每次运行重建 fixture；结束时只停止自己启动的 PID。
 
 param(
-    [ValidateSet("home", "settings", "grammar", "writing")]
+    [ValidateSet("home", "settings", "grammar", "writing", "chip")]
     [string]$View = "home",
 
     [ValidateSet("light", "dark")]
@@ -110,6 +111,7 @@ try {
         "settings" { $appArgs += @("--settings", "--page", $Page) }
         "grammar" { $appArgs += @("--demo-action", "grammar") }
         "writing" { $appArgs += @("--demo-action", "writing") }
+        "chip" { $appArgs += @("--chip") }
     }
 
     if (Test-Path $socket) { Remove-Item -Force $socket }
@@ -130,6 +132,15 @@ try {
 
     $openOut = Invoke-Automation @("open", "--socket", $socket)
     $opened = $true
+    # 划词条在启动约 600ms 后才出现；其余视图的主窗口在 socket 就绪时已经可见。
+    if ($View -eq "chip") {
+        $deadline = (Get-Date).AddSeconds(10)
+        do {
+            Start-Sleep -Milliseconds 250
+            $windows = Invoke-Automation @("windows")
+            $chipVisible = @($windows | Where-Object { $_ -match '^w\d+' -and $_ -notmatch '\bhidden\b' }).Count -gt 0
+        } while (-not $chipVisible -and (Get-Date) -lt $deadline)
+    }
     $windows = Invoke-Automation @("windows")
     $windows | Set-Content -LiteralPath (Join-Path $OutDir "windows.txt") -Encoding utf8
 
