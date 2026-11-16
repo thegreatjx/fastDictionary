@@ -27,7 +27,7 @@ func TestWritingCardSaveStateFeedback(t *testing.T) {
 
 	// Before save: should show "保存到笔记本"
 	ttBefore := ui.NewTester(a.popupView, 480, 500)
-	if !ttBefore.HasText("保存到笔记本") || ttBefore.HasText("✓ 已存入笔记本") {
+	if !ttBefore.HasText("保存到笔记本") || ttBefore.HasText("已存入笔记本") {
 		t.Errorf("expected unsaved state to show '保存到笔记本', got: %v", ttBefore.Texts())
 	}
 
@@ -38,10 +38,10 @@ func TestWritingCardSaveStateFeedback(t *testing.T) {
 		t.Fatal("saveWritingToVocab failed to set writingSaved")
 	}
 
-	// After save: should show "✓ 已存入笔记本"
+	// After save: should show "已存入笔记本"
 	ttAfter := ui.NewTester(a.popupView, 480, 500)
-	if !ttAfter.HasText("✓ 已存入笔记本") {
-		t.Errorf("expected saved state to show '✓ 已存入笔记本', got: %v", ttAfter.Texts())
+	if !ttAfter.HasText("已存入笔记本") {
+		t.Errorf("expected saved state to show '已存入笔记本', got: %v", ttAfter.Texts())
 	}
 
 	// Tab switch persistence: should restore writingSaved
@@ -68,7 +68,7 @@ func TestGrammarObstaclesDarkThemeAdaptive(t *testing.T) {
 
 	// Test Dark Mode rendering
 	ttDark := ui.NewTester(func(c *ui.Context) {
-		applyTheme(c, "dark", true)
+		applyTheme(c, "dark", true, "")
 		a.renderGrammarVisualCard(c, c.Theme(), "Only then did she realize", res, false, nil)
 	}, 500, 400)
 	ttDark.Frame()
@@ -96,7 +96,7 @@ func TestGrammarCardSaveStateFeedback(t *testing.T) {
 
 	// Before save: should show "保存到长难句本"
 	ttBefore := ui.NewTester(a.popupView, 480, 500)
-	if !ttBefore.HasText("保存到长难句本") || ttBefore.HasText("✓ 已存入长难句本") {
+	if !ttBefore.HasText("保存到长难句本") || ttBefore.HasText("已存入长难句本") {
 		t.Errorf("expected unsaved grammar state to show '保存到长难句本', got: %v", ttBefore.Texts())
 	}
 
@@ -106,10 +106,10 @@ func TestGrammarCardSaveStateFeedback(t *testing.T) {
 		t.Fatal("saveGrammarToVocab failed to set grammarSaved")
 	}
 
-	// After save: should show static badge "✓ 已存入长难句本"
+	// After save: should show static badge "已存入长难句本"
 	ttAfter := ui.NewTester(a.popupView, 480, 500)
-	if !ttAfter.HasText("✓ 已存入长难句本") {
-		t.Errorf("expected saved grammar state to show '✓ 已存入长难句本', got: %v", ttAfter.Texts())
+	if !ttAfter.HasText("已存入长难句本") {
+		t.Errorf("expected saved grammar state to show '已存入长难句本', got: %v", ttAfter.Texts())
 	}
 
 	// Tab switch persistence
@@ -153,15 +153,15 @@ func TestWordSaveButtonFeedback(t *testing.T) {
 	}
 
 	ttBefore := ui.NewTester(a.popupView, 480, 500)
-	if !ttBefore.HasText("保存生词") || ttBefore.HasText("已保存 ✓") {
+	if !ttBefore.HasText("保存生词") || ttBefore.HasText("已保存") {
 		t.Errorf("expected unsaved word button to say '保存生词', got: %v", ttBefore.Texts())
 	}
 
 	// Mark as saved
 	a.savedDictTerm = "apple"
 	ttAfter := ui.NewTester(a.popupView, 480, 500)
-	if !ttAfter.HasText("已保存 ✓") {
-		t.Errorf("expected saved word to show '已保存 ✓', got: %v", ttAfter.Texts())
+	if !ttAfter.HasText("已保存") {
+		t.Errorf("expected saved word to show '已保存', got: %v", ttAfter.Texts())
 	}
 }
 
@@ -208,7 +208,7 @@ func TestOcrParagraphRefineErrorHasRetryButtons(t *testing.T) {
 func TestTrayQuitButtonDarkTheme(t *testing.T) {
 	a := newTestApp()
 	tt := ui.NewTester(func(c *ui.Context) {
-		applyTheme(c, "dark", true)
+		applyTheme(c, "dark", true, "")
 		a.trayFlyoutView(c)
 	}, 320, 240)
 	tt.Frame()

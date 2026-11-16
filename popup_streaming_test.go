@@ -96,16 +96,30 @@ func TestSavedDictionaryButtonStopsOfferingAgain(t *testing.T) {
 	}
 }
 
-// TestDictionarySaveBannerAppearsBelowTheCard is the last piece of the same
-// report: the click worked but said nothing in this mode, so it read as dead.
-func TestDictionarySaveBannerAppearsBelowTheCard(t *testing.T) {
+// TestDictionarySaveSuccessNeedsNoBanner pins the report that opened this
+// change: the card already turns the save button into 已保存, so a second
+// green strip repeating the sentence is noise, not confirmation.
+func TestDictionarySaveSuccessNeedsNoBanner(t *testing.T) {
 	a := newTestApp()
 	a.mode = modeDictionary
 	a.dictResult = &DictionaryResult{Term: "seize", Definition: "夺取"}
 	a.actionSavedMsg = "已保存「seize」到生词本 ✓"
 	tt := ui.NewTester(a.popupView, 500, 700)
-	if !tt.HasText("已保存「seize」到生词本 ✓") {
-		t.Fatalf("no confirmation in the dictionary mode: %q", tt.Texts())
+	if tt.HasText("已保存「seize」到生词本 ✓") {
+		t.Fatalf("the redundant save banner is still rendered: %q", tt.Texts())
+	}
+}
+
+// TestDictionarySaveFailureAppearsBelowTheCard keeps the other half: a write
+// that failed must still say why. Only success loses its banner.
+func TestDictionarySaveFailureAppearsBelowTheCard(t *testing.T) {
+	a := newTestApp()
+	a.mode = modeDictionary
+	a.dictResult = &DictionaryResult{Term: "seize", Definition: "夺取"}
+	a.saveErr = "保存失败: disk full"
+	tt := ui.NewTester(a.popupView, 500, 700)
+	if !tt.HasText("保存失败: disk full") {
+		t.Fatalf("no failure reason in the dictionary mode: %q", tt.Texts())
 	}
 }
 
@@ -135,7 +149,7 @@ func TestDictionarySaveButtonIsReachable(t *testing.T) {
 	if a.savedDictTerm != "seize" {
 		t.Fatalf("the save button did not fire: savedDictTerm = %q, texts %q", a.savedDictTerm, tt.Texts())
 	}
-	if a.actionSavedMsg == "" {
-		t.Fatal("the save produced no confirmation message")
+	if a.actionSavedMsg != "" || a.saveErr != "" {
+		t.Fatalf("a successful save left a banner: msg=%q err=%q", a.actionSavedMsg, a.saveErr)
 	}
 }

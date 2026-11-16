@@ -357,7 +357,7 @@ func (a *app) openPinnedScreenshot(rect winRect, imgPath string, bmp *ui.Bitmap)
 	a.mode = modeTranslate
 	a.source, a.target, a.engine, a.detected, a.errText, a.notice = "", "", "", "", "", ""
 	a.dict, a.gdict, a.busy, a.aiBusy = nil, nil, false, false
-	a.aiText, a.activeActionID, a.actionSavedMsg, a.copiedMsg = "", "", "", ""
+	a.aiText, a.activeActionID, a.actionSavedMsg, a.saveErr, a.copiedMsg = "", "", "", "", ""
 	a.dictResult, a.grammarResult, a.writingResult = nil, nil, nil
 	a.notes, a.notesBusy, a.notesSaved = nil, false, false
 	a.grammarSaved = false

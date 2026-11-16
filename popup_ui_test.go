@@ -183,7 +183,7 @@ func TestPopupSystemThemeFollowsNativeTheme(t *testing.T) {
 				base = ui.DarkTheme()
 			}
 			c.SetTheme(base)
-			applyTheme(c, a.store.Get().ThemeMode, c.Theme().Dark)
+			applyTheme(c, a.store.Get().ThemeMode, c.Theme().Dark, a.store.Get().AccentTheme)
 			if c.Theme().Dark != dark {
 				t.Errorf("system theme dark=%v became %v", dark, c.Theme().Dark)
 			}

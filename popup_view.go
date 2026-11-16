@@ -42,7 +42,7 @@ func (a *app) popupView(c *ui.Context) {
 	cfg := a.store.Get()
 	// MyGo resolves "system" in its base theme. Deriving darkness from the
 	// config alone forced every system-themed popup into the light palette.
-	applyTheme(c, cfg.ThemeMode, c.Theme().Dark)
+	applyTheme(c, cfg.ThemeMode, c.Theme().Dark, cfg.AccentTheme)
 	t := c.Theme()
 	s := a.snap()
 
@@ -140,24 +140,17 @@ func (a *app) popupView(c *ui.Context) {
 					})
 				}
 
-				// A quiet confirmation that a copy actually landed with positive success feedback.
-				if s.copiedMsg != "" {
+				// A copy or save that landed is shown by the control itself:
+				// the copy icon turns into a check and the save button turns
+				// into 已保存. A second banner repeating the same sentence was
+				// pure noise, and its green fill was the loudest thing in the
+				// card. Only a failed write still needs a strip of its own.
+				if s.saveErr != "" {
 					ui.Box(c).FillWidth().Padding(6, 10).Radius(6).
-						Background(appTheme(t).SuccessSoft).Border(1, appTheme(t).Success.Alpha(0.25)).Children(func() {
+						Background(dangerSoft(t)).Border(1, dangerLine(t)).Children(func() {
 						ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
-							ui.Icon(c, iconCheckSquare).Size(13, 13).TextColor(t.Success)
-							ui.Text(c, s.copiedMsg).FontSize(12).TextColor(t.Success).Wrap().Grow(1)
-						})
-					})
-				}
-
-				// A save that landed shows a gentle success confirmation banner.
-				if s.actionSavedMsg != "" {
-					ui.Box(c).FillWidth().Padding(6, 10).Radius(6).
-						Background(appTheme(t).SuccessSoft).Border(1, appTheme(t).Success.Alpha(0.25)).Children(func() {
-						ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
-							ui.Icon(c, iconCheckSquare).Size(13, 13).TextColor(t.Success)
-							ui.Text(c, s.actionSavedMsg).FontSize(12).TextColor(t.Success).Wrap().Grow(1)
+							ui.Icon(c, iconInfo).Size(13, 13).TextColor(t.Danger)
+							ui.Text(c, s.saveErr).FontSize(12).TextColor(t.Danger).Wrap().Grow(1)
 						})
 					})
 				}
@@ -390,12 +383,9 @@ func renderNotesBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 			if len(s.notes) > 0 {
 				ui.Row(c).FillWidth().Justify(ui.End).Children(func() {
 					if s.notesSaved {
-						ui.Box(c).Height(HeightCompact).Padding(2, Space3).Radius(RadiusSM).
-							Background(t.Surface).Border(1, t.Border).Children(func() {
-							ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
-								ui.Icon(c, iconCheckSquare).Size(12, 12).TextColor(t.Success)
-								ui.Text(c, "已保存 ✓").FontSize(11).FontWeight(600).TextColor(appTheme(t).TextSec)
-							})
+						ui.Row(c).Height(HeightCompact).Gap(Space1).AlignItems(ui.Center).Children(func() {
+							ui.Icon(c, iconCheck).Size(12, 12).TextColor(appTheme(t).TextMuted)
+							ui.Text(c, "已保存").FontSize(11).FontWeight(500).TextColor(appTheme(t).TextMuted)
 						})
 					} else {
 						btnSave := ui.Button(c, "").Height(HeightCompact).Padding(2, Space3).Radius(RadiusSM).Tooltip("保存所选生词到笔记本 (Ctrl+S)")
@@ -420,12 +410,9 @@ func renderNotesBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 func renderWordSaveButton(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 	isSaved := s.savedDictTerm != "" && strings.EqualFold(strings.TrimSpace(s.savedDictTerm), strings.TrimSpace(s.source))
 	if isSaved {
-		ui.Box(c).Height(HeightCompact).Padding(2, Space3).Radius(RadiusSM).
-			Background(t.Surface).Border(1, t.Border).Children(func() {
-			ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
-				ui.Icon(c, iconCheckSquare).Size(12, 12).TextColor(t.Success)
-				ui.Text(c, "已保存 ✓").FontSize(11).FontWeight(600).TextColor(appTheme(t).TextSec)
-			})
+		ui.Row(c).Height(HeightCompact).Gap(Space1).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, iconCheck).Size(12, 12).TextColor(appTheme(t).TextMuted)
+			ui.Text(c, "已保存").FontSize(11).FontWeight(500).TextColor(appTheme(t).TextMuted)
 		})
 		return
 	}

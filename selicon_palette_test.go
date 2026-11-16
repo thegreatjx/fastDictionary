@@ -185,7 +185,7 @@ func TestChipTipNamesEveryButton(t *testing.T) {
 func TestChipTipAppearsWithoutAWindow(t *testing.T) {
 	var asked []time.Duration
 	tt := ui.NewTester(func(c *ui.Context) {
-		applyTheme(c, "light", false)
+		applyTheme(c, "light", false, "")
 		ui.Row(c).Fill().Children(func() {
 			b := ui.Button(c, "").Label("词典").Size(28, 28)
 			// Stand in for the real render hook: record what it would ask.

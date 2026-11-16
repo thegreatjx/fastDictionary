@@ -129,6 +129,17 @@ func (a *app) settingsRefresh() {
 	}
 }
 
+// refreshThemeWindows repaints the open windows after the accent changes. The
+// popup keeps its content; only the accent-derived states (focus, selection,
+// links) have to be redrawn.
+func (a *app) refreshThemeWindows() {
+	for _, w := range []*mygo.Window{a.win, a.cfgWin} {
+		if w != nil && !w.IsDestroyed() {
+			w.Update(func() {})
+		}
+	}
+}
+
 type settingsNavEntry struct {
 	id    string
 	label string
@@ -206,7 +217,7 @@ func (a *app) settingsNavItem(c *ui.Context, t *ui.Theme, at AppTheme, item sett
 // settingsView renders the settings window: a sidebar of pages and a form.
 func (a *app) settingsView(c *ui.Context) {
 	cfg := a.store.Get()
-	applyTheme(c, cfg.ThemeMode, c.Theme().Dark)
+	applyTheme(c, cfg.ThemeMode, c.Theme().Dark, cfg.AccentTheme)
 	t := c.Theme()
 	at := appTheme(t)
 

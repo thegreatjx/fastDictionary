@@ -24,6 +24,43 @@ func (a *app) pageGeneral(c *ui.Context, t *ui.Theme, cfg Config) {
 					SegmentedOption[string]{Value: "dark", Label: "深色"},
 				)
 			})
+			SettingRow(c, t, "主题色", "只改变交互强调色，纸面、墨色与状态色保持不变。", func() {
+				at := appTheme(t)
+				current := cfg.AccentTheme
+				if current == "" {
+					current = "slate"
+				}
+				currentLabel := "黛青"
+				for _, choice := range accentChoices {
+					if choice.Value == current {
+						currentLabel = choice.Label
+					}
+				}
+				ui.Row(c).Gap(Space3).AlignItems(ui.Center).Children(func() {
+					ui.Row(c).Gap(Space2).AlignItems(ui.Center).Children(func() {
+						for _, choice := range accentChoices {
+							swatch := choice.Light
+							if t.Dark {
+								swatch = choice.Dark
+							}
+							b := ui.ButtonBase(c).Width(26).Height(26).Radius(13).
+								Background(swatch).Tooltip(choice.Label).Label(choice.Label)
+							if choice.Value == current {
+								b.Border(2, at.Text)
+							} else {
+								b.Border(1, at.BorderCtrl)
+							}
+							value := choice.Value
+							if b.Clicked() {
+								a.store.Update(func(c *Config) { c.AccentTheme = value })
+								a.refreshThemeWindows()
+							}
+						}
+					})
+					ui.Text(c, currentLabel).Font(fontUI).FontSize(FontHelper).
+						TextColor(at.TextMuted).Width(36).SingleLine()
+				})
+			})
 			op := cfg.WindowOpacity
 			if op <= 0 {
 				op = 0.95

@@ -358,7 +358,7 @@ func (a *app) renderHomeTranslateTab(c *ui.Context, t *ui.Theme, at AppTheme, cf
 							a.homeSaveTranslation()
 						}
 					} else if h.transSaved {
-						ui.Text(c, "已收藏 ✓").Font(fontUI).FontSize(FontHelper).TextColor(at.Success)
+						ui.Text(c, "已收藏").Font(fontUI).FontSize(FontHelper).TextColor(at.TextMuted)
 					}
 
 					ui.Spacer(c).Grow(1)
@@ -398,7 +398,7 @@ func (a *app) renderHomeTranslateTab(c *ui.Context, t *ui.Theme, at AppTheme, cf
 					}
 					ui.Spacer(c).Grow(1)
 					if h.wordSaved {
-						ui.Text(c, "已存入生词本 ✓").Font(fontUI).FontSize(FontHelper).TextColor(at.Success)
+						ui.Text(c, "已存入生词本").Font(fontUI).FontSize(FontHelper).TextColor(at.TextMuted)
 					} else if SecondaryButton(c, t, "存生词本", iconBookmark).Clicked() {
 						a.homeSaveWord()
 					}

@@ -189,7 +189,7 @@ func grammarThemeForTest(t *testing.T) *ui.Theme {
 	t.Helper()
 	var got *ui.Theme
 	tt := ui.NewTester(func(c *ui.Context) {
-		applyTheme(c, "light", false)
+		applyTheme(c, "light", false, "")
 		got = c.Theme()
 	}, 40, 20)
 	tt.Frame()

@@ -109,6 +109,9 @@ type Config struct {
 	AlwaysOnTop bool    `json:"always_on_top"`
 	PopupWidth  float32 `json:"popup_width"`
 	ThemeMode   string  `json:"theme_mode"` // system | light | dark
+	// AccentTheme picks the single interactive accent. Surfaces stay neutral
+	// paper in every choice; only links, focus rings and selected states move.
+	AccentTheme string `json:"accent_theme"` // slate | indigo | plum | graphite
 	// LogSelectionText writes the selected text and OCR output into the log.
 	// Off by default: the file is plain text and lives far longer than the
 	// popup it was copied from.
@@ -424,6 +427,7 @@ func DefaultConfig() Config {
 		AlwaysOnTop:          true,
 		PopupWidth:           500,
 		ThemeMode:            "system",
+		AccentTheme:          "slate",
 		ShowNotes:            true,
 		NotesMigrated:        1,
 		WindowOpacity:        0.95,

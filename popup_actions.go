@@ -435,13 +435,12 @@ func (a *app) saveDictToVocab(res *DictionaryResult) {
 	vocabStore := GetVocabularyStore()
 	vocabStore.Add(entry)
 	a.mu.Lock()
+	a.savedDictTerm = term
 	if err := vocabStore.LastSaveError(); err != nil {
-		a.actionSavedMsg = "保存失败: " + err.Error()
+		a.savedDictTerm = ""
+		a.saveErr = "保存失败: " + err.Error()
 	} else {
-		a.actionSavedMsg = "已保存「" + term + "」到生词本 ✓"
-		// Remember which entry was just saved so the card's own button can read
-		// 已保存 instead of inviting a second click that would add a duplicate.
-		a.savedDictTerm = term
+		a.saveErr = ""
 	}
 	a.mu.Unlock()
 	if a.win != nil {
@@ -470,11 +469,12 @@ func (a *app) saveGrammarToVocab(res *SentenceAnalysisResult) {
 	vocabStore := GetVocabularyStore()
 	vocabStore.Add(entry)
 	a.mu.Lock()
+	a.grammarSaved = true
 	if err := vocabStore.LastSaveError(); err != nil {
-		a.actionSavedMsg = "保存失败: " + err.Error()
+		a.grammarSaved = false
+		a.saveErr = "保存失败: " + err.Error()
 	} else {
-		a.grammarSaved = true
-		a.actionSavedMsg = "长难句已保存到生词本 ✓"
+		a.saveErr = ""
 	}
 	a.mu.Unlock()
 	if a.win != nil {
@@ -498,11 +498,12 @@ func (a *app) saveWritingToVocab(res *ImproveWritingResult) {
 	vocabStore := GetVocabularyStore()
 	vocabStore.Add(entry)
 	a.mu.Lock()
+	a.writingSaved = true
 	if err := vocabStore.LastSaveError(); err != nil {
-		a.actionSavedMsg = "保存失败: " + err.Error()
+		a.writingSaved = false
+		a.saveErr = "保存失败: " + err.Error()
 	} else {
-		a.writingSaved = true
-		a.actionSavedMsg = "写作改进已保存到生词本 ✓"
+		a.saveErr = ""
 	}
 	a.mu.Unlock()
 	if a.win != nil {
@@ -838,6 +839,7 @@ func (a *app) runAction(actionID string, text string) {
 	a.aiBusy = true
 	a.errText = ""
 	a.actionSavedMsg = ""
+	a.saveErr = ""
 	a.copiedMsg = ""
 	// A new pass produces a new entry, so the button stops claiming the
 	// previous one is already in the notebook.
@@ -1197,7 +1199,7 @@ func (a *app) saveCurrentWordToVocab(s snapshot) {
 	}
 	a.mu.Lock()
 	a.savedDictTerm = s.source
-	a.actionSavedMsg = "已保存「" + s.source + "」到生词本 ✓"
+	a.saveErr = ""
 	a.mu.Unlock()
 	if a.win != nil {
 		a.win.Update(func() {})
@@ -1219,7 +1221,7 @@ func (a *app) saveNotesToVocab(s snapshot) {
 	}
 	a.mu.Lock()
 	a.notesSaved = true
-	a.actionSavedMsg = "已将所选生词存入生词库 ✓"
+	a.saveErr = ""
 	pending := make([]VocabularyEntry, 0, len(s.notes))
 	for _, n := range s.notes {
 		if n.Checked {

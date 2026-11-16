@@ -28,17 +28,34 @@ func writingContrastRatio(foreground, background ui.Color) float64 {
 	return (fg + 0.05) / (bg + 0.05)
 }
 
+// writingThemeForTest builds the app's real theme, not the framework default:
+// the writing card's "added" ink follows the user's accent, and the framework
+// default accent is a bright system blue that is not used by this app.
+func writingThemeForTest(dark bool) *ui.Theme {
+	var got *ui.Theme
+	tt := ui.NewTester(func(c *ui.Context) {
+		applyTheme(c, themeModeFor(dark), dark, "slate")
+		got = c.Theme()
+	}, 40, 20)
+	tt.Frame()
+	return got
+}
+
 func TestWritingThemeContrast(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		base *ui.Theme
 	}{
-		{name: "light", base: ui.LightTheme()},
-		{name: "dark", base: ui.DarkTheme()},
+		{name: "light", base: writingThemeForTest(false)},
+		{name: "dark", base: writingThemeForTest(true)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := writingThemeFor(tc.base)
 			base := tc.base
+			// SurfaceHover is a translucent wash. Composite it over the card
+			// surface before measuring contrast; using the raw RGBA treats the
+			// wash as a near-black plate and fails every text colour.
+			hoverBg := base.SurfaceHover.Over(base.Surface)
 			checks := []struct {
 				name       string
 				foreground ui.Color
@@ -46,9 +63,9 @@ func TestWritingThemeContrast(t *testing.T) {
 			}{
 				{name: "setting label", foreground: w.settingLabel, background: w.setting.background},
 				{name: "setting value", foreground: w.setting.text, background: w.setting.background},
-				{name: "removed text", foreground: w.removed, background: base.SurfaceHover},
-				{name: "added text", foreground: w.added, background: base.SurfaceHover},
-				{name: "deleted text", foreground: w.deleted, background: base.SurfaceHover},
+				{name: "removed text", foreground: w.removed, background: hoverBg},
+				{name: "added text", foreground: w.added, background: hoverBg},
+				{name: "deleted text", foreground: w.deleted, background: hoverBg},
 				{name: "annotation tag", foreground: w.tag.text, background: w.tag.background},
 				{name: "success message", foreground: w.success.text, background: w.success.background},
 				{name: "improved heading", foreground: w.improvedTitle, background: w.improved.background},

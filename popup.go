@@ -144,6 +144,10 @@ type app struct {
 	dictResult        *DictionaryResult
 	writingResult     *ImproveWritingResult
 	actionSavedMsg    string
+	// saveErr is the popup's own save failure. Success never needs a banner:
+	// the card's button already turns into 已保存, and a second green strip
+	// saying the same thing is noise.
+	saveErr string
 	// savedDictTerm is the term that went into the notebook on the last save,
 	// so the card's own button can answer 已保存 instead of offering a second
 	// click that would add the same entry twice.
@@ -328,6 +332,7 @@ type snapshot struct {
 	dictResult            *DictionaryResult
 	writingResult         *ImproveWritingResult
 	actionSavedMsg        string
+	saveErr               string
 	savedDictTerm         string
 	copiedMsg             string
 	showSlashes           bool
@@ -412,7 +417,7 @@ func (a *app) snap() snapshot {
 		detected: a.detected, errText: a.errText, echoNote: a.echoNote, notice: a.notice, busy: a.busy, elapsed: a.elapsed,
 		dict: a.dict, gdict: a.gdict, aiText: a.aiText, aiBusy: a.aiBusy,
 		inputText: a.inputText, inputTargetMode: a.inputTargetMode, isWord: isWord(a.source), pinned: a.pinned, showNotes: a.showNotes, notes: notes, notesBusy: a.notesBusy, onlyTrunk: a.onlyTrunk, grammarResult: a.grammarResult, grammarSentIdx: a.grammarSentIdx, grammarResultPrefill: a.grammarResultPrefill, aiRefining: a.aiRefining, aiRefineErr: a.aiRefineErr,
-		activeActionID: a.activeActionID, dictResult: a.dictResult, writingResult: a.writingResult, actionSavedMsg: actionSavedMsg, savedDictTerm: a.savedDictTerm, copiedMsg: copiedMsg, showSlashes: a.showSlashes, filterRole: a.filterRole, grammarHoverKnowledge: a.grammarHoverKnowledge, notesSaved: a.notesSaved, grammarSaved: a.grammarSaved, writingSaved: a.writingSaved,
+		activeActionID: a.activeActionID, dictResult: a.dictResult, writingResult: a.writingResult, actionSavedMsg: actionSavedMsg, saveErr: a.saveErr, savedDictTerm: a.savedDictTerm, copiedMsg: copiedMsg, showSlashes: a.showSlashes, filterRole: a.filterRole, grammarHoverKnowledge: a.grammarHoverKnowledge, notesSaved: a.notesSaved, grammarSaved: a.grammarSaved, writingSaved: a.writingSaved,
 		isScreenshotMode: a.isScreenshotMode, snipBitmap: a.snipBitmap, sourceExpanded: a.sourceExpanded,
 		snipExpanded: a.snipExpanded, notesExpanded: a.notesExpanded, ocrBusy: a.ocrBusy, ocrError: a.ocrError, ocrText: a.ocrText,
 		ocrCompare: a.ocrCompare, ocrExpanded: a.ocrExpanded,
@@ -665,6 +670,7 @@ func (a *app) openPopupAction(m popupMode, text string) {
 	a.grammarResultPrefill = false
 	a.writingResult = nil
 	a.actionSavedMsg = ""
+	a.saveErr = ""
 	a.copiedMsg = ""
 	a.feedbackText = ""
 	a.notesSaved = false
@@ -752,6 +758,7 @@ func (a *app) openPopupWithText(m popupMode, text string) {
 	a.grammarResult = nil
 	a.grammarResultPrefill = false
 	a.actionSavedMsg = ""
+	a.saveErr = ""
 	a.copiedMsg = ""
 	a.feedbackText = ""
 	a.notes, a.notesBusy, a.notesSaved, a.notesExpanded = nil, false, false, false

@@ -778,7 +778,7 @@ func clipRoundedWindow(hwnd uintptr, w, h int32, radius int) {
 // chipTipView draws the label: one line of text on a slate plate.
 func (a *app) chipTipView(c *ui.Context) {
 	cfg := a.store.Get()
-	applyTheme(c, cfg.ThemeMode, c.Theme().Dark)
+	applyTheme(c, cfg.ThemeMode, c.Theme().Dark, cfg.AccentTheme)
 	t := c.Theme()
 	c.Root().Background(ui.Transparent)
 
@@ -1240,7 +1240,7 @@ func (a *app) actOnSelection(fn func(text string)) {
 
 func (a *app) selIconView(c *ui.Context) {
 	cfg := a.store.Get()
-	applyTheme(c, cfg.ThemeMode, c.Theme().Dark)
+	applyTheme(c, cfg.ThemeMode, c.Theme().Dark, cfg.AccentTheme)
 	t := c.Theme()
 	c.Root().Background(ui.Transparent)
 
@@ -1417,7 +1417,7 @@ func (a *app) toggleMoreFlyout() {
 // menu tall for no gain.
 func (a *app) moreFlyoutView(c *ui.Context) {
 	cfg := a.store.Get()
-	applyTheme(c, cfg.ThemeMode, c.Theme().Dark)
+	applyTheme(c, cfg.ThemeMode, c.Theme().Dark, cfg.AccentTheme)
 	t := c.Theme()
 
 	c.Root().Background(ui.Transparent)

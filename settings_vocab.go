@@ -40,9 +40,10 @@ func (a *app) pageCustomActions(c *ui.Context, t *ui.Theme, cfg Config) {
 							ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 								ui.Text(c, act.Name).FontSize(15).FontWeight(600).TextColor(t.Text)
 								if act.Model != "" {
-									mBg := ui.Hex("#EFF6FF")
-									mBorder := ui.Hex("#BFDBFE")
-									mFg := ui.Hex("#1D4ED8")
+									mat := appTheme(t)
+									mBg := mat.SurfaceSubtle
+									mBorder := mat.BorderSubtle
+									mFg := mat.TextSec
 									if t.Dark {
 										mBg = withAlpha(t.Accent, 0.16)
 										mBorder = withAlpha(t.Accent, 0.30)

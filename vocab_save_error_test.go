@@ -58,7 +58,7 @@ func TestQuickSaveSurfacesPersistenceFailure(t *testing.T) {
 	if got := countOccurrences(actions, "vocabStore.LastSaveError()"); got != 3 {
 		t.Fatalf("卡片快速保存检查 LastSaveError 的次数 = %d，期望 3", got)
 	}
-	if got := countOccurrences(actions, `a.actionSavedMsg = "保存失败: "`); got != 3 {
+	if got := countOccurrences(actions, `a.saveErr = "保存失败: "`); got != 3 {
 		t.Fatalf("快速保存失败提示次数 = %d，期望 3", got)
 	}
 

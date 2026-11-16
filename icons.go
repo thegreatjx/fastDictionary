@@ -37,7 +37,7 @@ var (
 	iconPolish      = mustIcon("polish")
 	iconGripDots    = mustIcon("gripdots")
 	iconBookmark    = mustIcon("bookmark")
-	iconCheckSquare = mustIcon("checksquare")
+	iconCheck       = mustIcon("check")
 	iconMicrosoft   = mustIcon("microsoft")
 	iconRefresh     = mustIcon("refresh")
 	iconExpand      = mustIcon("expand")

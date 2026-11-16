@@ -12,7 +12,7 @@ import (
 func renderHome(t *testing.T, a *app) []string {
 	t.Helper()
 	tt := ui.NewTester(func(c *ui.Context) {
-		applyTheme(c, "light", false)
+		applyTheme(c, "light", false, "")
 		a.pageHome(c, c.Theme(), a.store.Get())
 	}, 920, 660)
 	tt.Frame()

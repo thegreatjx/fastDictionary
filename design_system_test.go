@@ -126,7 +126,7 @@ func TestSegmentedControlGeometry(t *testing.T) {
 	for _, dark := range []bool{false, true} {
 		t.Run(map[bool]string{false: "light", true: "dark"}[dark], func(t *testing.T) {
 			tt := ui.NewTester(func(c *ui.Context) {
-				applyTheme(c, themeModeFor(dark), dark)
+				applyTheme(c, themeModeFor(dark), dark, "")
 				idx := 1
 				ui.Column(c).FillWidth().Padding(Space4).Gap(Space3).Children(func() {
 					SegmentedControl(c, &idx, "显示图标", "直接翻译", "仅快捷键").Label("std-track")
@@ -166,9 +166,9 @@ func TestSegmentedControlGeometry(t *testing.T) {
 	}
 }
 
-// TestChipPaletteCoolBlue 防止悬浮条退回中性灰：主图标必须偏冷蓝，浅色底
-// 必须带蓝调，hover 微底必须可见。
-func TestChipPaletteCoolBlue(t *testing.T) {
+// TestChipPaletteNeutralPaper 防止悬浮条退回彩色贴片：底色必须是中性纸面，
+// 只有主图标允许一点低饱和黛青，hover 微底必须可见。
+func TestChipPaletteNeutralPaper(t *testing.T) {
 	for _, dark := range []bool{false, true} {
 		th := ui.Theme{Dark: dark, Accent: defaultAccent(dark)}
 		surf := chipSurface(&th)
@@ -179,13 +179,22 @@ func TestChipPaletteCoolBlue(t *testing.T) {
 			t.Fatalf("dark=%v: 悬浮条颜色塌缩", dark)
 		}
 		if primFg.B <= primFg.R {
-			t.Fatalf("dark=%v: 主图标应偏冷蓝，得到 %+v", dark, primFg)
+			t.Fatalf("dark=%v: 主图标应偏冷黛青，得到 %+v", dark, primFg)
 		}
 		if primWash.A <= 0 {
 			t.Fatalf("dark=%v: 主图标 hover 微底不可见", dark)
 		}
-		if !dark && surf.B <= surf.R {
-			t.Fatalf("浅色悬浮条底色应保留淡蓝调，得到 %+v", surf)
+		maxc, minc := surf.R, surf.R
+		for _, v := range []uint8{surf.G, surf.B} {
+			if v > maxc {
+				maxc = v
+			}
+			if v < minc {
+				minc = v
+			}
+		}
+		if maxc-minc > 4 {
+			t.Fatalf("dark=%v: 悬浮条底色带了明显色相，得到 %+v", dark, surf)
 		}
 	}
 }

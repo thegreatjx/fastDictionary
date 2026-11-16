@@ -194,7 +194,7 @@ func (a *app) reviewSummary(c *ui.Context, t *ui.Theme) {
 			} else {
 				at := appTheme(t)
 				ui.Box(c).Size(40, 40).Radius(RadiusTrack).Center().Background(at.SuccessSoft).Children(func() {
-					ui.Icon(c, iconCheckSquare).Size(20, 20).TextColor(at.Success)
+					ui.Icon(c, iconCheck).Size(20, 20).TextColor(at.Success)
 				})
 				ui.Text(c, "今天的词复习完了").FontSize(16).FontWeight(600).TextColor(t.Text)
 			}

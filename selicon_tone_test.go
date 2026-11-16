@@ -40,7 +40,7 @@ func chipThemeForTest(t *testing.T, dark bool) *ui.Theme {
 	t.Helper()
 	var got *ui.Theme
 	tt := ui.NewTester(func(c *ui.Context) {
-		applyTheme(c, map[bool]string{true: "dark", false: "light"}[dark], dark)
+		applyTheme(c, map[bool]string{true: "dark", false: "light"}[dark], dark, "")
 		got = c.Theme()
 	}, 40, 20)
 	tt.Frame()

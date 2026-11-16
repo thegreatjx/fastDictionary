@@ -103,83 +103,118 @@ type AppTheme struct {
 
 func defaultAccent(dark bool) ui.Color {
 	if dark {
-		return ui.Hex("#3B82F6")
+		return ui.Hex("#9DBBD1")
 	}
-	return ui.Hex("#2563EB")
+	return ui.Hex("#34566F")
 }
 
-// newAppTheme 是明暗两套色板的唯一定义处。
-func newAppTheme(dark bool, accent ui.Color) AppTheme {
-	white := ui.Hex("#FFFFFF")
-	if dark {
-		danger := ui.Hex("#E39A93")
-		success := ui.Hex("#9BC7B5")
-		return AppTheme{
-			Dark:          true,
-			Canvas:        ui.Hex("#111317"),
-			Surface:       ui.Hex("#181B21"),
-			SurfaceSubtle: ui.Hex("#22262E"),
-			SurfaceElev:   ui.Hex("#262B35"),
-			SurfaceHover:  ui.RGBA(255, 255, 255, 0.06),
-			SurfacePress:  ui.RGBA(255, 255, 255, 0.10),
-			Text:          ui.Hex("#F1F5F9"),
-			TextSec:       ui.Hex("#94A3B8"),
-			TextMuted:     ui.Hex("#8895A7"),
-			TextDisabled:  ui.RGBA(241, 245, 249, 0.35),
-			BorderSubtle:  ui.RGBA(255, 255, 255, 0.08),
-			BorderCtrl:    ui.RGBA(255, 255, 255, 0.14),
-			BorderHover:   ui.RGBA(255, 255, 255, 0.24),
-			BorderWindow:  ui.RGBA(255, 255, 255, 0.12),
-			Accent:        accent,
-			AccentHover:   ui.Hex("#2563EB"),
-			AccentPress:   ui.Hex("#1D4ED8"),
-			AccentSoft:    accent.Alpha(0.16),
-			AccentRing:    accent.Alpha(0.45),
-			AccentText:    white,
-			Danger:        danger,
-			DangerHoverBg: danger.Alpha(0.09),
-			Success:       success,
-			SuccessSoft:   success.Alpha(0.10),
-			Warning:       ui.Hex("#D6B07A"),
-			ShadowColor:   ui.RGBA(0, 0, 0, 0.35),
-			InsetColor:    ui.RGBA(255, 255, 255, 0.14),
-			TintSurface:   ui.Hex("#171D28"),
-			TintBorder:    ui.RGBA(96, 165, 250, 0.20),
+// accentChoice is one user-selectable accent. Every choice is a low-saturation
+// ink that already works on the paper surfaces; the theme does not change hue
+// anywhere else, so switching accent cannot bring the old green/blue blocks
+// back.
+type accentChoice struct {
+	Value string
+	Label string
+	Light ui.Color
+	Dark  ui.Color
+}
+
+var accentChoices = []accentChoice{
+	{Value: "slate", Label: "黛青", Light: ui.Hex("#34566F"), Dark: ui.Hex("#9DBBD1")},
+	{Value: "indigo", Label: "靛蓝", Light: ui.Hex("#3D4E86"), Dark: ui.Hex("#A7B6E8")},
+	{Value: "plum", Label: "紫檀", Light: ui.Hex("#5C3F5E"), Dark: ui.Hex("#C6A9C9")},
+	{Value: "graphite", Label: "石墨", Light: ui.Hex("#3A3D42"), Dark: ui.Hex("#C2C6CC")},
+}
+
+// accentForTheme resolves a saved value; an empty or unknown value falls back
+// to the default slate, so configs written before this setting existed do not
+// open with a zero colour.
+func accentForTheme(value string, dark bool) ui.Color {
+	for _, choice := range accentChoices {
+		if choice.Value == value {
+			if dark {
+				return choice.Dark
+			}
+			return choice.Light
 		}
 	}
-	danger := ui.Hex("#A33A34")
-	success := ui.Hex("#2F6F5E")
+	return defaultAccent(dark)
+}
+
+// newAppTheme 是纸墨系统的唯一定义处。
+//
+// 规则只有四条：底是中性纸面，字是墨，线是发丝；全局只留一个低饱和黛青
+// 作为交互色；成功不占用色相，用图标和文字本身表达，避免绿色块再次出现。
+func newAppTheme(dark bool, accent ui.Color) AppTheme {
+	white := ui.Hex("#FFFFFF")
+	black := ui.Hex("#000000")
+	if dark {
+		danger := ui.Hex("#D98B80")
+		return AppTheme{
+			Dark:          true,
+			Canvas:        ui.Hex("#121316"),
+			Surface:       ui.Hex("#191B1E"),
+			SurfaceSubtle: ui.Hex("#222528"),
+			SurfaceElev:   ui.Hex("#25282C"),
+			SurfaceHover:  ui.RGBA(255, 255, 255, 0.06),
+			SurfacePress:  ui.RGBA(255, 255, 255, 0.10),
+			Text:          ui.Hex("#E8E9EB"),
+			TextSec:       ui.Hex("#A6ABB2"),
+			TextMuted:     ui.Hex("#8E949C"),
+			TextDisabled:  ui.RGBA(232, 233, 235, 0.34),
+			BorderSubtle:  ui.RGBA(255, 255, 255, 0.08),
+			BorderCtrl:    ui.RGBA(255, 255, 255, 0.15),
+			BorderHover:   ui.RGBA(255, 255, 255, 0.26),
+			BorderWindow:  ui.RGBA(255, 255, 255, 0.12),
+			Accent:        accent,
+			AccentHover:   accent.Mix(white, 0.16),
+			AccentPress:   accent.Mix(white, 0.30),
+			AccentSoft:    accent.Alpha(0.14),
+			AccentRing:    accent.Alpha(0.40),
+			AccentText:    ui.Hex("#12181D"),
+			Danger:        danger,
+			DangerHoverBg: danger.Alpha(0.09),
+			Success:       accent,
+			SuccessSoft:   accent.Alpha(0.12),
+			Warning:       ui.Hex("#D2B078"),
+			ShadowColor:   ui.RGBA(0, 0, 0, 0.45),
+			InsetColor:    ui.RGBA(255, 255, 255, 0.10),
+			TintSurface:   ui.Hex("#1D2023"),
+			TintBorder:    ui.RGBA(255, 255, 255, 0.10),
+		}
+	}
+	danger := ui.Hex("#A34A3E")
 	return AppTheme{
 		Dark:          false,
-		Canvas:        ui.Hex("#F5F7FA"),
+		Canvas:        ui.Hex("#F2F2EF"),
 		Surface:       ui.Hex("#FFFFFF"),
-		SurfaceSubtle: ui.Hex("#EEF2F6"),
+		SurfaceSubtle: ui.Hex("#EAEAE6"),
 		SurfaceElev:   ui.Hex("#FFFFFF"),
-		SurfaceHover:  ui.RGBA(15, 23, 42, 0.045),
-		SurfacePress:  ui.RGBA(15, 23, 42, 0.08),
-		Text:          ui.Hex("#0F172A"),
-		TextSec:       ui.Hex("#475569"),
-		TextMuted:     ui.Hex("#5B697A"),
-		TextDisabled:  ui.RGBA(15, 23, 42, 0.36),
-		BorderSubtle:  ui.RGBA(15, 23, 42, 0.08),
-		BorderCtrl:    ui.RGBA(15, 23, 42, 0.14),
-		BorderHover:   ui.RGBA(15, 23, 42, 0.24),
-		BorderWindow:  ui.RGBA(15, 23, 42, 0.10),
+		SurfaceHover:  ui.RGBA(26, 28, 30, 0.045),
+		SurfacePress:  ui.RGBA(26, 28, 30, 0.09),
+		Text:          ui.Hex("#1A1C1E"),
+		TextSec:       ui.Hex("#555A61"),
+		TextMuted:     ui.Hex("#666C74"),
+		TextDisabled:  ui.RGBA(26, 28, 30, 0.34),
+		BorderSubtle:  ui.RGBA(26, 28, 30, 0.09),
+		BorderCtrl:    ui.RGBA(26, 28, 30, 0.16),
+		BorderHover:   ui.RGBA(26, 28, 30, 0.28),
+		BorderWindow:  ui.RGBA(26, 28, 30, 0.12),
 		Accent:        accent,
-		AccentHover:   ui.Hex("#1D4ED8"),
-		AccentPress:   ui.Hex("#1E40AF"),
-		AccentSoft:    accent.Alpha(0.11),
-		AccentRing:    accent.Alpha(0.45),
+		AccentHover:   accent.Mix(black, 0.14),
+		AccentPress:   accent.Mix(black, 0.26),
+		AccentSoft:    accent.Alpha(0.10),
+		AccentRing:    accent.Alpha(0.38),
 		AccentText:    white,
 		Danger:        danger,
-		DangerHoverBg: danger.Alpha(0.09),
-		Success:       success,
-		SuccessSoft:   success.Alpha(0.10),
-		Warning:       ui.Hex("#8A6435"),
-		ShadowColor:   ui.RGBA(15, 23, 42, 0.12),
+		DangerHoverBg: danger.Alpha(0.08),
+		Success:       accent,
+		SuccessSoft:   accent.Alpha(0.10),
+		Warning:       ui.Hex("#8A6A3A"),
+		ShadowColor:   ui.RGBA(20, 24, 28, 0.10),
 		InsetColor:    ui.Transparent,
-		TintSurface:   ui.Hex("#F3F7FF"),
-		TintBorder:    ui.RGBA(37, 99, 235, 0.16),
+		TintSurface:   ui.Hex("#F7F7F4"),
+		TintBorder:    ui.RGBA(26, 28, 30, 0.10),
 	}
 }
 
@@ -189,8 +224,9 @@ func appTheme(t *ui.Theme) AppTheme {
 }
 
 // applyTheme 同时喂给框架控件（ui.Theme）和自定义组件（appTheme）。
-// 系统 accent 仍优先，保证 Windows 上跟随用户主题色。
-func applyTheme(c *ui.Context, mode string, dark bool) {
+// 强调色固定为纸墨系统的黛青，不再跟随系统强调色：Windows 主题可能是
+// 荧光绿或高饱和蓝，一旦接管就会破坏整套中性纸面。
+func applyTheme(c *ui.Context, mode string, dark bool, accentTheme string) {
 	curr := c.Theme()
 	t := *curr
 	if mode == "light" {
@@ -198,12 +234,7 @@ func applyTheme(c *ui.Context, mode string, dark bool) {
 	} else if mode == "dark" {
 		dark = true
 	}
-	sysAccent := curr.Accent
-	hasSysAccent := sysAccent.A > 0 && !(sysAccent.R == 0 && sysAccent.G == 0 && sysAccent.B == 0)
-	accent := defaultAccent(dark)
-	if hasSysAccent {
-		accent = sysAccent
-	}
+	accent := accentForTheme(accentTheme, dark)
 	at := newAppTheme(dark, accent)
 
 	t.Dark = at.Dark
@@ -568,8 +599,8 @@ func dangerLine(t *ui.Theme) ui.Color { return appTheme(t).Danger.Alpha(0.35) }
 const inkRuleWidth float32 = 3
 
 // Notice colours: the "why did the shortcut open this" banner. It explains
-// rather than reports an error, so it borrows the cool tint the source strip
-// uses instead of spending a second warning hue.
+// rather than reports an error, so it uses the plain paper tint and neutral
+// ink instead of spending a warning hue.
 func noticeBg(t *ui.Theme) ui.Color {
 	return appTheme(t).TintSurface
 }
@@ -582,34 +613,25 @@ func noticeText(t *ui.Theme) ui.Color {
 	return appTheme(t).TextSec
 }
 
-// cefrColors tints the CEFR level badge by difficulty band. Both colours come
-// from the theme so the badge stays readable in dark mode, where the fixed
-// pastels it used to use turned into unreadable pale blocks.
+// cefrColors gives the CEFR badge one neutral surface and encodes difficulty
+// by ink weight, not hue. The letter already says A1/B2/C1; a second colour
+// code on top of it was decoration, and the old green/violet pair was the
+// brightest thing in the card.
 func cefrColors(t *ui.Theme, level string) (bg, fg ui.Color) {
 	at := appTheme(t)
+	fg = at.TextMuted
 	switch {
 	case strings.HasPrefix(level, "C"):
-		// Hardest: a dusty violet, not a warning colour.
-		if t.Dark {
-			return ui.RGBA(179, 167, 230, 0.16), ui.Hex("#C3B2E8")
-		}
-		return ui.RGBA(122, 78, 158, 0.10), ui.Hex("#6B4A8A")
-	case strings.HasPrefix(level, "A"):
-		// Easiest: a quiet pine, the same family as the success ink.
-		if t.Dark {
-			return at.Success.Alpha(0.14), at.Success
-		}
-		return at.Success.Alpha(0.08), at.Success
+		fg = at.Text
+	case strings.HasPrefix(level, "B"):
+		fg = at.TextSec
 	}
-	if t.Dark {
-		return at.Accent.Alpha(0.16), ui.Hex("#93B4F5")
-	}
-	return at.Accent.Alpha(0.09), at.Accent
+	return at.SurfaceSubtle, fg
 }
 
-// memoryTipColors tints the "memory tips" card. It used to be amber in light
-// mode; the note is guidance, not a warning, so it now uses the same cool tint
-// as the source strip and leaves colour to the heading's icon.
+// memoryTipColors tints the "memory tips" card. Guidance is not a warning, so
+// it sits on the same neutral paper tint as the source strip; the heading's
+// icon carries the only emphasis.
 func memoryTipColors(t *ui.Theme) (bg, border, title, body ui.Color) {
 	at := appTheme(t)
 	return at.TintSurface, at.TintBorder, at.TextSec, at.Text
@@ -621,9 +643,9 @@ func memoryTipColors(t *ui.Theme) (bg, border, title, body ui.Color) {
 // depends on the system accent's brightness.
 func saveButtonColors(t *ui.Theme) (bg, fg, hover, press ui.Color) {
 	if t != nil && t.Dark {
-		return ui.Hex("#E2E8F0"), ui.Hex("#0F172A"), ui.Hex("#F1F5F9"), ui.Hex("#CBD5E1")
+		return ui.Hex("#E8E9EB"), ui.Hex("#121316"), ui.Hex("#F4F4F1"), ui.Hex("#D3D5D8")
 	}
-	return ui.Hex("#1E293B"), ui.Hex("#FFFFFF"), ui.Hex("#111827"), ui.Hex("#0B1220")
+	return ui.Hex("#1A1C1E"), ui.Hex("#FFFFFF"), ui.Hex("#2C2F33"), ui.Hex("#0F1113")
 }
 
 // saveButtonStyle paints the button and returns the foreground its icon and
@@ -672,25 +694,23 @@ const (
 	chipToneInk
 )
 
-// The chip's palette. One cool, low-saturation family: a blue-grey slate for
-// the ink and a single steel blue for the primary action. The surface is not
-// pure white or pure black — a trace of blue in it keeps the bar from
-// looking pasted on top of the page.
+// The chip's palette. A floating tool should look like a piece of paper laid
+// on the page: warm-neutral white, a hairline, and two inks. The old icy blue
+// surface fought every page it floated over, and the blue primary made the
+// whole bar read as a web widget instead of a desktop tool.
 const (
-	chipSurfaceLight = "#F4F8FF" // 95% 白 + 5% 冰川蓝：通透不艳俗
-	chipSurfaceDark  = "#171D28"
-	chipBorderLight  = "#D4E2FA" // 极细冰蓝框，不再灰蒙蒙
-	chipBorderDark   = "#2B394F"
-	chipInkLight     = "#3A4960"
-	chipInkDark      = "#B6C5DA"
-	chipInkHoverL    = "#1D4ED8"
-	chipInkHoverD    = "#E2ECFA"
-	chipAccentLight  = "#2563EB" // 主图标恢复明快系统蓝
-	chipAccentDark   = "#60A5FA"
-	chipTipBgLight   = "#1E293B"
-	chipTipBgDark    = "#E8EDF5"
-	chipTipFgLight   = "#F1F5F9"
-	chipTipFgDark    = "#0F172A"
+	chipSurfaceLight = "#FCFCFA"
+	chipSurfaceDark  = "#1C1D1F"
+	chipBorderLight  = "#E2E2DD"
+	chipBorderDark   = "#2E3136"
+	chipInkLight     = "#4B5057"
+	chipInkDark      = "#B4B9C0"
+	chipInkHoverL    = "#1A1C1E"
+	chipInkHoverD    = "#E8E9EB"
+	chipTipBgLight   = "#1B1D20"
+	chipTipBgDark    = "#EDEEE9"
+	chipTipFgLight   = "#F4F4F1"
+	chipTipFgDark    = "#1A1C1E"
 )
 
 // chipSurface is the pill the buttons sit on.
@@ -714,9 +734,9 @@ func chipBorderColor(t *ui.Theme) ui.Color {
 // 悬浮条渲染不再写散落色值。
 func chipShadows(t *ui.Theme) (contact, lift ui.Color) {
 	if t.Dark {
-		return ui.RGBA(0, 0, 0, 0.28), ui.RGBA(0, 0, 0, 0.40)
+		return ui.RGBA(0, 0, 0, 0.30), ui.RGBA(0, 0, 0, 0.42)
 	}
-	return ui.RGBA(15, 23, 42, 0.06), ui.RGBA(30, 58, 138, 0.10)
+	return ui.RGBA(20, 24, 28, 0.06), ui.RGBA(20, 24, 28, 0.10)
 }
 
 // chipToneColors returns the icon colour of a chip action and the wash its
@@ -728,16 +748,16 @@ func chipShadows(t *ui.Theme) (contact, lift ui.Color) {
 // button: a hover that changes hue per button was what made the row look like
 // six unrelated tools.
 func chipToneColors(t *ui.Theme, tone chipTone) (fg, wash ui.Color) {
-	if t.Dark {
-		if tone == chipTonePrimary {
-			return ui.Hex(chipAccentDark), ui.RGBA(96, 165, 250, 0.16)
-		}
-		return ui.Hex(chipInkDark), ui.RGBA(96, 165, 250, 0.12)
-	}
 	if tone == chipTonePrimary {
-		return ui.Hex(chipAccentLight), ui.RGBA(37, 99, 235, 0.11)
+		if t.Dark {
+			return t.Accent, t.Accent.Alpha(0.16)
+		}
+		return t.Accent, t.Accent.Alpha(0.10)
 	}
-	return ui.Hex(chipInkLight), ui.RGBA(37, 99, 235, 0.08)
+	if t.Dark {
+		return ui.Hex(chipInkDark), ui.RGBA(255, 255, 255, 0.08)
+	}
+	return ui.Hex(chipInkLight), ui.RGBA(26, 28, 30, 0.06)
 }
 
 // chipIconHover is the icon colour while the pointer is on the button: the ink
@@ -767,9 +787,10 @@ func chipTipColors(t *ui.Theme) (bg, fg ui.Color) {
 
 // grammarInkFor 是长难句标注的明暗色板。颜色只在这里定义。
 //
-// The roles still need to be told apart at a glance, but the old palette spent
-// eight saturated hues and turned the sentence into sticky notes. This one is
-// an editorial family: muted teal, blue, plum, violet, olive and clay.
+// This card is the one place where hue carries information: six syntactic
+// roles must be separable at a glance, so these inks stay moderately saturated
+// while every surrounding surface is neutral paper. Line shape (solid, wave,
+// double, dotted) carries the second channel, so no role depends on hue alone.
 func grammarInkFor(t *ui.Theme) grammarInk {
 	if t != nil && t.Dark {
 		return grammarInk{
@@ -780,11 +801,11 @@ func grammarInkFor(t *ui.Theme) grammarInk {
 			connector:      ui.Hex("#A8C79A"),
 			clauseTint:     ui.RGBA(168, 199, 154, 0.10),
 			clauseTint2:    ui.RGBA(168, 199, 154, 0.16),
-			clauseText:     ui.Hex("#94A3B8"),
+			clauseText:     ui.Hex("#A6ABB2"),
 			obstacle:       ui.Hex("#E5A171"),
 			obstacleBg:     ui.RGBA(229, 161, 113, 0.12),
-			body:           ui.Hex("#E4EAF1"),
-			muted:          ui.Hex("#7D8595"),
+			body:           ui.Hex("#E8E9EB"),
+			muted:          ui.Hex("#8E949C"),
 		}
 	}
 	return grammarInk{
@@ -795,11 +816,11 @@ func grammarInkFor(t *ui.Theme) grammarInk {
 		connector:      ui.Hex("#4C7A3F"),
 		clauseTint:     ui.RGBA(76, 122, 63, 0.06),
 		clauseTint2:    ui.RGBA(76, 122, 63, 0.10),
-		clauseText:     ui.Hex("#475569"),
+		clauseText:     ui.Hex("#555A61"),
 		obstacle:       ui.Hex("#B05A3C"),
 		obstacleBg:     ui.RGBA(176, 90, 60, 0.08),
-		body:           ui.Hex("#1E293B"),
-		muted:          ui.Hex("#64748B"),
+		body:           ui.Hex("#1A1C1E"),
+		muted:          ui.Hex("#666C74"),
 	}
 }
 
@@ -814,8 +835,8 @@ func grammarHeaderColors(t *ui.Theme) (bg, border, text ui.Color) {
 // clay accent, so it no longer reads as a second warning panel.
 func grammarObstacleColors(t *ui.Theme, ink grammarInk) (cardBg, cardBorder, cardTitle, badgeBg, badgeBorder, badgeText, obsText, restoreLabel, restoreText, noteLabel, noteText ui.Color) {
 	if t != nil && t.Dark {
-		return ui.Hex("#1C222B"),
-			ui.Hex("#2B3442"),
+		return ui.Hex("#1D2023"),
+			ui.Hex("#2E3136"),
 			ink.obstacle,
 			ink.obstacleBg,
 			withAlpha(ink.obstacle, 0.32),
@@ -826,10 +847,10 @@ func grammarObstacleColors(t *ui.Theme, ink grammarInk) (cardBg, cardBorder, car
 			ink.muted,
 			ink.body
 	}
-	return ui.Hex("#F7F8FA"), ui.Hex("#E3E8EF"), ui.Hex("#9A5A44"),
-		ui.Hex("#F1F5F9"), ui.Hex("#E2E8F0"), ui.Hex("#9A5A44"),
-		ui.Hex("#1E293B"), ui.Hex("#5B697A"), ui.Hex("#2F6F7A"),
-		ui.Hex("#5B697A"), ui.Hex("#334155")
+	return ui.Hex("#F7F7F4"), ui.Hex("#E6E6E1"), ui.Hex("#8A5145"),
+		ui.Hex("#EAEAE6"), ui.Hex("#DCDCD6"), ui.Hex("#8A5145"),
+		ui.Hex("#1A1C1E"), ui.Hex("#666C74"), ui.Hex("#34566F"),
+		ui.Hex("#666C74"), ui.Hex("#3A3E44")
 }
 
 // grammarToggleOnColors 是长难句卡片开关的选中态。

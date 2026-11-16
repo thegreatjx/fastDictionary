@@ -527,10 +527,10 @@ func renderGrammarVisualCardEx(c *ui.Context, t *ui.Theme, origText string, res 
 		}
 	}
 
-	ui.Box(c).FillWidth().Padding(14, 16).Radius(8).
+	ui.Box(c).FillWidth().Padding(Space3, Space4).Radius(8).
 		Background(t.Surface).Border(1, t.Border).
 		Shadow(0, 2, 8, 0, withAlpha(appTheme(t).ShadowColor, 0.67)).Children(func() {
-		ui.Column(c).FillWidth().Gap(10).Children(func() {
+		ui.Column(c).FillWidth().Gap(Space2).Children(func() {
 			// 1. Header: mode label, sentence pager and the speak button
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
 				topBg, topBorder, topText := grammarHeaderColors(t)
@@ -749,12 +749,9 @@ func renderGrammarVisualCardEx(c *ui.Context, t *ui.Theme, origText string, res 
 			// 7. Bottom action bar: [ 保存到长难句本 ]
 			ui.Row(c).FillWidth().Justify(ui.End).AlignItems(ui.Center).Children(func() {
 				if saved {
-					ui.Box(c).Height(HeightCompact).Padding(2, Space3).Radius(RadiusSM).
-						Background(t.Surface).Border(1, t.Border).Children(func() {
-						ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
-							ui.Icon(c, iconCheckSquare).Size(12, 12).TextColor(t.Success)
-							ui.Text(c, "✓ 已存入长难句本").FontSize(11).FontWeight(600).TextColor(appTheme(t).TextSec)
-						})
+					ui.Row(c).Height(HeightCompact).Gap(Space1).AlignItems(ui.Center).Children(func() {
+						ui.Icon(c, iconCheck).Size(12, 12).TextColor(appTheme(t).TextMuted)
+						ui.Text(c, "已存入长难句本").FontSize(11).FontWeight(500).TextColor(appTheme(t).TextMuted)
 					})
 					return
 				}
@@ -1111,8 +1108,9 @@ func renderGrammarWordAligned(c *ui.Context, t *ui.Theme, ink grammarInk, item G
 			weight = 600
 		}
 		ui.Box(c).Height(lineBoxH).Center().Children(func() {
-			ui.Text(c, item.Word+" ").FontSize(14).FontWeight(weight).TextColor(col).SingleLine()
+			ui.Text(c, item.Word).FontSize(14).FontWeight(weight).TextColor(col).SingleLine()
 		})
+		ui.Box(c).Height(lineBoxH).Width(4)
 		return
 	}
 
@@ -1123,10 +1121,12 @@ func renderGrammarWordAligned(c *ui.Context, t *ui.Theme, ink grammarInk, item G
 	}
 
 	displayWord := item.Word
-	if joinedNext {
-		displayWord = item.Word + " "
-	}
 	box := ui.Box(c).Height(lineBoxH).Padding(0, 1).Center().Tooltip(tooltipFor(item))
+	if joinedNext {
+		// Keep the gap inside the marked box so the underline runs through it
+		// instead of breaking at the space between two words of one phrase.
+		box.PaddingEnd(5)
+	}
 	box.Draw(func(p *ui.Painter, r ui.Rect) {
 		mh := markHeight(kind)
 		markRect := ui.Rect{X: r.X, Y: r.Y + r.H - mh, W: r.W, H: mh}
@@ -1141,9 +1141,7 @@ func renderGrammarWordAligned(c *ui.Context, t *ui.Theme, ink grammarInk, item G
 		})
 	}
 	if !joinedNext {
-		ui.Box(c).Height(lineBoxH).Center().Children(func() {
-			ui.Text(c, " ").FontSize(14).SingleLine()
-		})
+		ui.Box(c).Height(lineBoxH).Width(4)
 	}
 }
 

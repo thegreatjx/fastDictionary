@@ -90,7 +90,7 @@ func TestCurrentLanguageInSubmenuIsNamedOnTheParent(t *testing.T) {
 func TestTargetLanguageMenuIsShort(t *testing.T) {
 	a := newTestApp()
 	tt := ui.NewTester(func(c *ui.Context) {
-		applyTheme(c, "light", false)
+		applyTheme(c, "light", false, "")
 		a.pageHome(c, c.Theme(), a.store.Get())
 	}, 920, 660)
 	tt.Frame()

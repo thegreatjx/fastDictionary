@@ -54,7 +54,7 @@ func trayStatusText(cfg Config) string {
 // 搜索框不再套第二层装饰盒，退出按钮常态无底无框、不亮红。
 func (a *app) trayFlyoutView(c *ui.Context) {
 	cfg := a.store.Get()
-	applyTheme(c, cfg.ThemeMode, c.Theme().Dark)
+	applyTheme(c, cfg.ThemeMode, c.Theme().Dark, cfg.AccentTheme)
 	t := c.Theme()
 	at := appTheme(t)
 
