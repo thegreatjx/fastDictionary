@@ -133,7 +133,7 @@ func (a *app) pageHome(c *ui.Context, t *ui.Theme, cfg Config) {
 						a.homeClear()
 					}
 				}
-				if PrimaryButton(c, t, "翻译").Disabled(strings.TrimSpace(a.home.input) == "").Clicked() {
+				if PrimaryButton(c, t, "翻译", strings.TrimSpace(a.home.input) == "").Clicked() {
 					a.homeSubmit(a.home.input)
 				}
 			})

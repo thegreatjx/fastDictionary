@@ -718,7 +718,7 @@ func renderGrammarVisualCardEx(c *ui.Context, t *ui.Theme, origText string, res 
 			renderGrammarCardHeader(c, t, st)
 
 			ui.Box(c).FillWidth().Padding(12, 14).Radius(6).
-				Background(at.SurfaceSubtle).Border(1, at.TintBorder).Children(func() {
+				Background(at.SurfaceHover).Border(1, at.BorderSubtle).Children(func() {
 				ui.Column(c).FillWidth().Gap(6).Children(func() {
 					if len(res.Segments) == 0 {
 						renderGrammarFallbackSentence(c, t, origText, res, st)
@@ -925,8 +925,8 @@ func renderGrammarSegment(c *ui.Context, t *ui.Theme, at AppTheme, ink grammarIn
 	text := seg.Text
 	el := ui.Text(c, text).FontSize(14)
 	if seg.ClauseID != "" && clause != nil {
-		_, tint, _ := grammarClausePalette(t, grammarClauseLabel(*clause))
-		el.Background(tint)
+		wash, _, _ := grammarClausePalette(t, grammarClauseLabel(*clause))
+		el.Background(wash)
 	}
 
 	switch {
@@ -942,6 +942,15 @@ func renderGrammarSegment(c *ui.Context, t *ui.Theme, at AppTheme, ink grammarIn
 		el.TextColor(ink.muted)
 	case seg.Role == RoleConnector:
 		el.TextColor(ink.connector).FontWeight(500)
+	case seg.ClauseID != "" && clause != nil:
+		// The wash already groups the clause; its own content stays body ink so
+		// the reading flow does not drop to grey. Only modifiers inside it step
+		// back, which keeps the clause backbone legible at a glance.
+		if seg.Role == RoleModifier {
+			el.TextColor(ink.clauseText).FontWeight(500)
+		} else {
+			el.TextColor(ink.body).FontWeight(500)
+		}
 	default:
 		el.TextColor(ink.muted).FontWeight(500)
 	}
@@ -955,7 +964,7 @@ func renderGrammarSegment(c *ui.Context, t *ui.Theme, at AppTheme, ink grammarIn
 func renderGrammarClauseBadge(c *ui.Context, t *ui.Theme, clause ClauseInfo) ui.Element {
 	label := grammarClauseLabel(clause)
 	_, badgeBg, badgeText := grammarClausePalette(t, label)
-	el := ui.Text(c, " "+label+" ").FontSize(9).FontWeight(700).
+	el := ui.Text(c, "  "+label+"  ").FontSize(10).FontWeight(600).
 		TextColor(badgeText).Background(badgeBg).Unselectable().
 		Tooltip(grammarClauseTooltip(clause))
 	return el
@@ -1013,7 +1022,7 @@ func renderGrammarHintBar(c *ui.Context, t *ui.Theme, at AppTheme, text string) 
 		return
 	}
 	ui.Box(c).FillWidth().Height(24).Padding(3, 8).Radius(4).
-		Background(at.SurfaceSubtle).Children(func() {
+		Background(at.Surface).Border(1, at.BorderSubtle).Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
 			ui.Text(c, "·").FontSize(12).FontWeight(700).TextColor(at.Accent)
 			ui.Text(c, text).FontSize(11).FontWeight(500).TextColor(at.TextSec).
@@ -1104,25 +1113,28 @@ func renderGrammarDifficulties(c *ui.Context, t *ui.Theme, at AppTheme, points [
 	if len(points) > 3 {
 		points = points[:3]
 	}
-	ui.Box(c).FillWidth().Padding(8, 10).Radius(6).
+	ui.Box(c).FillWidth().Padding(Space3, Space4).Radius(RadiusSM).
 		Background(at.SurfaceHover).Border(1, at.BorderSubtle).Children(func() {
-		ui.Column(c).FillWidth().Gap(6).Children(func() {
-			ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
-				ui.Text(c, "语法难点").FontSize(11).FontWeight(700).TextColor(at.Warning)
+		ui.Column(c).FillWidth().Gap(Space2).Children(func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
+				ui.Icon(c, iconInfo).Size(12, 12).TextColor(at.TextMuted)
+				ui.Text(c, "语法难点").FontSize(11).FontWeight(600).TextColor(at.TextSec)
+				ui.Spacer(c).Grow(1)
 				ui.Text(c, fmt.Sprintf("%d", len(points))).Font(fontMono).
 					FontFeatures("tnum").FontSize(10).TextColor(at.TextMuted)
 			})
 			for _, point := range points {
 				ui.Column(c).FillWidth().Gap(2).Children(func() {
 					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
+						ui.Box(c).Size(4, 4).Radius(2).Background(at.Accent).Shrink(0)
 						title := point.Title
 						if title == "" {
 							title = "难点"
 						}
-						ui.Box(c).Padding(1, 6).Radius(4).
-							Background(at.Warning.Alpha(0.10)).
-							Border(1, at.Warning.Alpha(0.28)).Children(func() {
-							ui.Text(c, title).FontSize(10).FontWeight(600).TextColor(at.Warning)
+						ui.Box(c).Padding(1, 6).Radius(RadiusXS).
+							Background(at.Surface).Border(1, at.BorderSubtle).Children(func() {
+							ui.Text(c, title).FontSize(10).FontWeight(600).
+								TextColor(at.TextSec).SingleLine()
 						})
 						if point.SpanText != "" {
 							ui.Text(c, point.SpanText).FontSize(12).FontWeight(600).
@@ -1130,7 +1142,8 @@ func renderGrammarDifficulties(c *ui.Context, t *ui.Theme, at AppTheme, points [
 						}
 					})
 					if point.Explanation != "" {
-						ui.Text(c, point.Explanation).FontSize(11).TextColor(at.TextMuted).Wrap()
+						ui.Text(c, point.Explanation).FontSize(11).TextColor(at.TextMuted).
+							Wrap().MarginStart(10)
 					}
 				})
 			}
@@ -1300,19 +1313,20 @@ func grammarDefaultHint(res *SentenceAnalysisResult, prefill bool) string {
 	return "悬停句子成分，查看它的语法作用"
 }
 
-// grammarClausePalette keeps every clause in the theme accent's blue family.
-// The wash depth separates clause types without introducing a second hue; the
-// badge takes the same accent at a slightly stronger alpha with accent ink.
+// grammarClausePalette keeps every clause in the theme accent's family. The
+// wash depth separates clause types without introducing a second hue; the
+// badge takes the same accent at a deeper alpha with the deeper accent ink,
+// which is what keeps a 10px label legible on the wash.
 func grammarClausePalette(t *ui.Theme, tag string) (ui.Color, ui.Color, ui.Color) {
 	base := grammarClauseBaseColor(t)
-	wash := base.Alpha(0.12)
+	wash := base.Alpha(0.14)
 	switch {
 	case strings.Contains(tag, "状"):
-		wash = base.Alpha(0.10)
+		wash = base.Alpha(0.11)
 	case strings.Contains(tag, "定") || strings.Contains(tag, "同位"):
-		wash = base.Alpha(0.13)
+		wash = base.Alpha(0.14)
 	case strings.Contains(tag, "宾") || strings.Contains(tag, "主") || strings.Contains(tag, "表"):
-		wash = base.Alpha(0.16)
+		wash = base.Alpha(0.17)
 	}
-	return wash, base.Alpha(0.18), base
+	return wash, base.Alpha(0.30), appTheme(t).AccentPress
 }

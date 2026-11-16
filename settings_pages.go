@@ -35,12 +35,18 @@ func (a *app) pageGeneral(c *ui.Context, t *ui.Theme, cfg Config) {
 							if t.Dark {
 								swatch = choice.Dark
 							}
-							b := ui.ButtonBase(c).Width(26).Height(26).Radius(13).
+							b := ui.ButtonBase(c).Width(28).Height(28).Radius(14).
 								Background(swatch).Tooltip(choice.Label).Label(choice.Label)
 							if choice.Value == current {
-								b.Border(2, at.Text)
+								b.Border(2, at.TextSec)
+								b.Children(func() {
+									ui.Icon(c, iconCheck).Size(12, 12).TextColor(at.AccentText)
+								})
 							} else {
 								b.Border(1, at.BorderCtrl)
+								if b.Hovered() {
+									b.Border(1, at.BorderHover)
+								}
 							}
 							value := choice.Value
 							if b.Clicked() {
@@ -728,7 +734,7 @@ func (a *app) pageHotkey(c *ui.Context, t *ui.Theme, cfg Config) {
 					// Two presets, not three: the third button restored the same
 					// Alt+D / Alt+C / Alt+Q set the first one applies, and a
 					// separate "恢复默认" already sits in 生效保存 below.
-					btnP1 := PrimaryButton(c, t, "极速单手：Alt+D (划词) / Alt+C (截图) / Alt+Q (输入)").
+					btnP1 := AccentSoftButton(c, t, "极速单手：Alt+D (划词) / Alt+C (截图) / Alt+Q (输入)").
 						Tooltip("【最推荐】左手单手盲操极速触发。注意：Alt+D 在 Chrome/Edge 中会聚焦地址栏，浏览器内建议用方案二")
 					if btnP1.Clicked() {
 						a.pendingHotkeySelection = "Alt+D"

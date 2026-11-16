@@ -534,9 +534,9 @@ type writingTheme struct {
 }
 
 // writingThemeFor keeps the writing card in the same cool surface family as
-// the rest of the app. Corrections are marked by danger (removed) and the
-// theme accent (added); the "改后版本" surface is the themed soft wash, never
-// a green success block.
+// the rest of the app. Corrections are marked by a muted danger ink (removed)
+// and the deeper theme accent (added); the "改后版本" surface is the themed
+// soft wash, never a green success block.
 func writingThemeFor(t *ui.Theme) writingTheme {
 	at := newAppTheme(false, defaultAccent(false))
 	if t != nil {
@@ -544,9 +544,11 @@ func writingThemeFor(t *ui.Theme) writingTheme {
 	}
 	saveBackground := saveButtonColor(t)
 	saveText := saveButtonTextColor(t)
-	removed := at.Danger
-	if !at.Dark {
-		removed = at.Danger.Mix(ui.Hex("#000000"), 0.12)
+	removed := at.Danger.Mix(at.TextSec, 0.28)
+	added := at.AccentPress
+	if at.Dark {
+		removed = at.Danger.Mix(at.TextSec, 0.18)
+		added = at.Accent
 	}
 	return writingTheme{
 		setting:       writingTone{background: at.SurfaceHover, border: at.BorderSubtle, text: at.Text},
@@ -557,7 +559,7 @@ func writingThemeFor(t *ui.Theme) writingTheme {
 		save:          writingTone{background: saveBackground, border: saveBackground, text: saveText},
 		settingLabel:  at.TextSec,
 		removed:       removed,
-		added:         at.Accent,
+		added:         added,
 		deleted:       at.TextSec,
 		improvedTitle: at.TextSec,
 	}
@@ -601,7 +603,7 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 									ui.Text(c, ann.Text).FontSize(13).FontWeight(600).Strikethrough().TextColor(w.removed)
 									ui.Text(c, "→").FontSize(12).TextColor(t.TextMuted)
 									if ann.Fix != "" {
-										ui.Text(c, ann.Fix).FontSize(13).FontWeight(700).TextColor(w.added)
+										ui.Text(c, ann.Fix).FontSize(13).FontWeight(600).TextColor(w.added)
 									} else {
 										ui.Text(c, "(删除)").FontSize(11).TextColor(w.deleted)
 									}

@@ -235,7 +235,7 @@ func newAppTheme(dark bool, accent ui.Color) AppTheme {
 	white := ui.Hex("#FFFFFF")
 	soft, ring := accentSoftColors(accent, dark)
 	if dark {
-		danger := ui.Hex("#F87171")
+		danger := ui.Hex("#F97066")
 		return AppTheme{
 			Dark:          true,
 			Canvas:        ui.Hex("#111622"),
@@ -269,7 +269,7 @@ func newAppTheme(dark bool, accent ui.Color) AppTheme {
 			TintBorder:    ring,
 		}
 	}
-	danger := ui.Hex("#DC2626")
+	danger := ui.Hex("#B42318")
 	return AppTheme{
 		Dark:          false,
 		Canvas:        ui.Hex("#F7F9FC"),
@@ -407,8 +407,16 @@ func buttonLabel(c *ui.Context, at AppTheme, label string, color ui.Color) {
 		TextColor(color).SingleLine()
 }
 
-func PrimaryButton(c *ui.Context, t *ui.Theme, label string) ui.Element {
+func PrimaryButton(c *ui.Context, t *ui.Theme, label string, disabled ...bool) ui.Element {
 	at := appTheme(t)
+	if len(disabled) > 0 && disabled[0] {
+		b := ui.ButtonBase(c).Height(HeightControl).Radius(RadiusSM).
+			Padding(0, Space3).Gap(Space2).Center().
+			Background(at.SurfaceHover).Border(1, at.BorderSubtle).
+			TextColor(at.TextDisabled).Disabled(true).DimDisabled(false)
+		b.Children(func() { buttonLabel(c, at, label, at.TextDisabled) })
+		return b
+	}
 	b := ui.ButtonBase(c).Height(HeightControl).Radius(RadiusSM).
 		Padding(0, Space3).Gap(Space2).Center().
 		Background(at.Accent).BorderWidth(0).TextColor(at.AccentText)
@@ -456,6 +464,24 @@ func GhostButton(c *ui.Context, t *ui.Theme, label string) ui.Element {
 	if label != "" {
 		b.Children(func() { buttonLabel(c, at, label, at.TextSec) })
 	}
+	return b
+}
+
+// AccentSoftButton is the quiet form of a recommended action: it marks the
+// option inside the theme family without painting a full-width saturated
+// block. It is used for the shortcut preset, where a solid accent fill read
+// as a banner rather than a choice.
+func AccentSoftButton(c *ui.Context, t *ui.Theme, label string) ui.Element {
+	at := appTheme(t)
+	b := ui.ButtonBase(c).Height(HeightControl).Radius(RadiusSM).
+		Padding(0, Space3).Gap(Space2).Center().
+		Background(at.AccentSoft).Border(1, at.AccentRing).TextColor(at.AccentPress)
+	if b.Pressed() {
+		b.Background(at.AccentRing)
+	} else if b.Hovered() {
+		b.Background(at.Accent.Alpha(0.18)).Border(1, at.Accent)
+	}
+	b.Children(func() { buttonLabel(c, at, label, at.AccentPress) })
 	return b
 }
 
@@ -874,7 +900,7 @@ func grammarInkFor(t *ui.Theme) grammarInk {
 	return grammarInk{
 		body:          at.Text,
 		predicate:     at.Accent,
-		predicateLine: at.AccentRing,
+		predicateLine: at.Accent.Alpha(0.55),
 		muted:         at.TextMuted,
 		connector:     at.TextSec,
 		clauseTint:    at.Accent.Alpha(0.15),
@@ -903,13 +929,15 @@ func grammarClauseBaseColor(t *ui.Theme) ui.Color {
 }
 
 // grammarHeaderColors 是长难句卡片顶部「拆解」标签的底、边、字。
+// The text uses AccentPress rather than Accent: at 11px the lighter accent
+// does not reach the 4.5:1 text floor on the soft wash.
 func grammarHeaderColors(t *ui.Theme) (bg, border, text ui.Color) {
 	at := appTheme(t)
-	return at.AccentSoft, at.AccentRing, at.Accent
+	return at.AccentSoft, at.AccentRing, at.AccentPress
 }
 
 // grammarToggleOnColors 是长难句卡片开关的选中态。
 func grammarToggleOnColors(t *ui.Theme) (bg, text, border ui.Color) {
 	at := appTheme(t)
-	return at.AccentSoft, at.Accent, at.AccentRing
+	return at.AccentSoft, at.AccentPress, at.AccentRing
 }
