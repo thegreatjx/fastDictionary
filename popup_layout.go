@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"strings"
 
 	"github.com/egoist/mygo"
@@ -285,14 +286,18 @@ const (
 // A difference is returned rather than an absolute height because the window
 // is a few DIPs taller than the layout root; the caller adds it to the real
 // window height. The value is the previous frame's, so the caller applies it
-// one frame later; the tolerance keeps that from turning into a resize every
-// frame.
+// one frame later. Overflow is rounded up and never ignored: content below the
+// viewport's bottom edge is a clipped row, not noise. Only spare space is left
+// alone, since a few empty DIPs cost nothing and stop a resize every frame.
 func autofitHeight(viewportH, contentH float32) (float32, bool) {
 	if viewportH <= 0 || contentH <= 0 {
 		return 0, false
 	}
 	delta := contentH - viewportH
-	if diff := delta; diff < 4 && diff > -4 {
+	if delta > 0 {
+		return float32(math.Ceil(float64(delta))), true
+	}
+	if delta > -4 {
 		return 0, false
 	}
 	return delta, true
