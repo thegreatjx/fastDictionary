@@ -36,14 +36,12 @@ type homeState struct {
 	aiRefineGen    requestToken
 	aiRefineCancel context.CancelFunc
 
-	grammarResult         *SentenceAnalysisResult
-	grammarResultPrefill  bool
-	grammarSentIdx        int
-	grammarSaved          bool
-	onlyTrunk             bool
-	showSlashes           bool
-	filterRole            string
-	grammarHoverKnowledge string
+	grammarResult        *SentenceAnalysisResult
+	grammarResultPrefill bool
+	grammarSentIdx       int
+	grammarSaved         bool
+	onlyTrunk            bool
+	showSlashes          bool
 
 	writingResult *ImproveWritingResult
 	writingSaved  bool
@@ -413,13 +411,11 @@ func (a *app) renderHomeGrammarTab(c *ui.Context, t *ui.Theme, at AppTheme, cfg 
 	if h.grammarResult != nil {
 		sent, sentIdx, sentCount := grammarActiveSentence(h.source, h.grammarSentIdx)
 		st := grammarCardState{
-			OnlyTrunk:      h.onlyTrunk,
-			ShowSlashes:    h.showSlashes,
-			FilterRole:     h.filterRole,
-			HoverKnowledge: h.grammarHoverKnowledge,
-			Prefill:        h.grammarResultPrefill,
-			SentIdx:        sentIdx,
-			SentCount:      sentCount,
+			OnlyTrunk:   h.onlyTrunk,
+			ShowSlashes: h.showSlashes,
+			Prefill:     h.grammarResultPrefill,
+			SentIdx:     sentIdx,
+			SentCount:   sentCount,
 			OnPrevSent: func() {
 				if sentIdx > 0 {
 					a.mu.Lock()
@@ -447,18 +443,6 @@ func (a *app) renderHomeGrammarTab(c *ui.Context, t *ui.Theme, at AppTheme, cfg 
 			OnToggleSlash: func() {
 				a.mu.Lock()
 				a.home.showSlashes = !a.home.showSlashes
-				a.mu.Unlock()
-				a.settingsRefresh()
-			},
-			OnToggleRole: func(role string) {
-				a.mu.Lock()
-				if a.home.filterRole == role {
-					a.home.filterRole = ""
-					a.home.grammarHoverKnowledge = ""
-				} else {
-					a.home.filterRole = role
-					a.home.grammarHoverKnowledge = grammarExplanations[role]
-				}
 				a.mu.Unlock()
 				a.settingsRefresh()
 			},
@@ -792,7 +776,7 @@ func (a *app) homeRunGrammar(text string, fresh bool) {
 		raw = a.cachedAIResult(cacheKey)
 	}
 	if raw != "" {
-		parsed := ParseSentenceAnalysisDetailed(raw)
+		parsed := ParseSentenceAnalysisDetailed(raw, sent)
 		if parsed.Result != nil {
 			a.home.grammarResult = parsed.Result
 			a.home.grammarResultPrefill = false
@@ -835,7 +819,7 @@ func (a *app) homeRunGrammar(text string, fresh bool) {
 			a.home.errText = friendlyAIError(err)
 		} else {
 			a.home.aiText = out
-			if parsed := ParseSentenceAnalysisDetailed(out); parsed.Result != nil {
+			if parsed := ParseSentenceAnalysisDetailed(out, sent); parsed.Result != nil {
 				a.home.grammarResult = parsed.Result
 				a.home.grammarResultPrefill = false
 				a.storeAIResult(cacheKey, out)

@@ -766,7 +766,9 @@ func saveConfig(path string, cfg Config) error {
 	return atomicWriteFile(path, data, atomicWriteOptions{retries: 6})
 }
 
-// grammarSystemPromptV2 是长难句分析的当前默认 Prompt。
+// grammarSystemPromptV2 is the previous default prompt. It is kept only so
+// ensureDefaultActions can recognise an unedited V2 config and upgrade it to
+// V3; new installs use grammarSystemPromptV3.
 //
 // 旧版（grammarSystemPrompt）是三段带示例的长英文说明，模型经常把副词或介词
 // 短语标成 clause 并填上 sense，卡片上于是出现「Tonight → 时间状从」这类误标；
@@ -805,6 +807,41 @@ const grammarSystemPromptV2 = `你是一位严谨的英语语法老师。请对�
   "translation": "自然准确的中文译文"
 }`
 
+// grammarSystemPromptV3 is the segment-based long-sentence prompt.
+//
+// V2 asked the model for overlapping annotation spans and an occurrence count.
+// Models miscomputed both often enough that highlights landed on the wrong
+// word, and the deep annotation array was slow to generate. V3 instead has the
+// model cut the sentence into contiguous, verbatim slices; joining the slices
+// must restore the sentence exactly, which the parser verifies. Clauses are a
+// flat list referenced by ID, so nested clauses never require a recursive JSON
+// object that a small model can leave unclosed.
+const grammarSystemPromptV3 = `你是一位严谨的英语语法老师。请对给定的【单个英文句子】做句法拆解，只输出严格合法的 JSON（不要 Markdown 代码块，不要任何解释）。
+
+硬性规则：
+1. segments 必须按原文顺序覆盖整句：把所有 text 依次直接拼接，必须与输入原句逐字符完全一致（含大小写、空格、标点、缩略词）。不要改写、遗漏或补字；空格和标点并入相邻片段，不要输出只含空白的片段。片段按短语/意群层级切分（如 "highly confident"、"actually worked"），不要把单个副词或介词单独切开；整句通常 8~16 段。
+2. 每个片段只填一个 role：subject|predicate|object|connector|modifier|punct。predicate 只含谓语动词本身，不含宾语、表语、状语。
+3. is_backbone 只标最外层主句的主语、谓语、宾语/表语，以及连接并列主句的 and/but；从句内部、介词短语、非谓语、插入语一律 false。
+4. 只有真正的从句（有引导词或主语+谓语）才建立 clauses 条目，并在其片段的 clause_id 填该 id；嵌套时填最内层从句 id，parent_id 指向父从句。不要把单个副词或介词短语当从句。short_tag 用两字：宾从/定从/状从/主从/表从/同位。
+5. break_before 只在自然意群停顿处为 true（主谓宾大块之间、介词短语/非谓语/从句引导词前），每句 3~7 个，不要逐词切碎。
+6. note 只在修饰语、非谓语、引导词或难点处写，不超过 18 个汉字；简单主干词留空。difficulties 只列真正影响理解的难点（倒装、省略、虚拟、后置定语、插入语等），最多 3 条。
+7. backbone_summary 用一句简短中文概括主句主干；translation 给自然流畅的中文全句译文。
+
+输出 JSON 格式：
+{
+  "backbone_summary": "一句中文主干",
+  "segments": [
+    {"text": "原文连续片段", "role": "subject", "is_backbone": true, "break_before": false, "clause_id": "", "note": ""}
+  ],
+  "clauses": [
+    {"id": "c1", "parent_id": "", "type": "宾语从句", "short_tag": "宾从", "target": "作 see 的宾语"}
+  ],
+  "difficulties": [
+    {"title": "后置定语", "span_text": "原文片段", "explanation": "一句人话解释"}
+  ],
+  "translation": "中文全句译文"
+}`
+
 func DefaultCustomActions() []CustomActionConfig {
 	return []CustomActionConfig{
 		{
@@ -814,9 +851,9 @@ func DefaultCustomActions() []CustomActionConfig {
 			Icon:         "grammar",
 			ProviderID:   "magpie",
 			Model:        "",
-			SystemPrompt: grammarSystemPromptV2,
+			SystemPrompt: grammarSystemPromptV3,
 			Prompt:       "## Input\nSelection: {{selection}}\nParagraphs: {{paragraphs}}\nTarget language: {{targetLanguage}}",
-			OutputSchema: []string{"annotations", "translation"},
+			OutputSchema: []string{"segments", "clauses", "difficulties", "translation"},
 		},
 		{
 			ID:           "default-improve-writing",
@@ -906,10 +943,11 @@ func ensureDefaultActions(cfg *Config) bool {
 			if cfg.CustomActions[idx].SystemPrompt == "" {
 				cfg.CustomActions[idx].SystemPrompt = def.SystemPrompt
 			} else if def.ID == "default-sentence-analysis" &&
-				cfg.CustomActions[idx].SystemPrompt == grammarSystemPrompt {
+				(cfg.CustomActions[idx].SystemPrompt == grammarSystemPrompt ||
+					cfg.CustomActions[idx].SystemPrompt == grammarSystemPromptV2) {
 				// The old default was never edited by the user: upgrade it, or the
-				// mislabelled adverbs and the slow answer stay until they reset the app.
-				cfg.CustomActions[idx].SystemPrompt = grammarSystemPromptV2
+				// mislabelled spans and the slow answer stay until they reset the app.
+				cfg.CustomActions[idx].SystemPrompt = grammarSystemPromptV3
 				dropped = true
 			}
 			if cfg.CustomActions[idx].Prompt == "" {
@@ -917,6 +955,12 @@ func ensureDefaultActions(cfg *Config) bool {
 			}
 			if len(cfg.CustomActions[idx].OutputSchema) == 0 {
 				cfg.CustomActions[idx].OutputSchema = def.OutputSchema
+			} else if def.ID == "default-sentence-analysis" &&
+				sameStrings(cfg.CustomActions[idx].OutputSchema, []string{"annotations", "translation"}) {
+				// The schema the old prompt wrote is displayed in 指令 settings;
+				// leaving it there would document fields the new prompt never emits.
+				cfg.CustomActions[idx].OutputSchema = def.OutputSchema
+				dropped = true
 			}
 		}
 	}

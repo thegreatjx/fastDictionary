@@ -221,7 +221,7 @@ func TestApplyParsedActionKeepsPrefilledTranslation(t *testing.T) {
 	a.grammarResult = &SentenceAnalysisResult{Translation: "机器译文"}
 	a.grammarResultPrefill = true
 
-	ok := a.applyParsedAction("default-sentence-analysis", `{"annotations":[{"text":"The report","type":"subject"}]}`)
+	ok := a.applyParsedAction("default-sentence-analysis", `{"segments":[{"text":"The report","role":"subject","is_backbone":true}]}`, "The report")
 	if !ok {
 		t.Fatal("sentence analysis did not parse")
 	}

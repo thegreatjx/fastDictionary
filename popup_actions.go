@@ -708,14 +708,14 @@ func (a *app) clearAICache() {
 // applyParsedAction fills the result field that belongs to actionID and reports
 // whether a card was produced. It is the one place that maps a raw answer to a
 // card, so the streaming path and the cache-hit path cannot drift apart.
-func (a *app) applyParsedAction(actionID, raw string) bool {
+func (a *app) applyParsedAction(actionID, raw, source string) bool {
 	switch actionID {
 	case "default-dictionary":
 		res := ParseDictionaryResult(raw)
 		a.dictResult = res
 		return res != nil
 	case "default-sentence-analysis":
-		parse := ParseSentenceAnalysisDetailed(raw)
+		parse := ParseSentenceAnalysisDetailed(raw, source)
 		parsed := parse.Result
 		if parsed == nil {
 			if parse.Outcome == parseOutcomeFailed {
@@ -725,7 +725,10 @@ func (a *app) applyParsedAction(actionID, raw string) bool {
 		}
 		if parse.Outcome == parseOutcomeTranslationOnly {
 			// 只有译文时仍然出卡片，但日志里要留下痕迹，便于排查模型输出退化。
-			log.Printf("fastDictionary: grammar answer carried a translation but no annotations")
+			log.Printf("fastDictionary: grammar answer carried a translation but no segments")
+		}
+		if parse.Outcome == parseOutcomeFallbackDirect {
+			log.Printf("fastDictionary: grammar answer could not be aligned with the source sentence")
 		}
 		// Keep the machine translation when the model's answer has none: a
 		// truncated response that stops after the annotations array would
@@ -815,7 +818,7 @@ func (a *app) runAction(actionID string, text string) {
 		// The cached answer carries the translation it was produced with, so
 		// there is no machine prefill to fall back to.
 		a.grammarResultPrefill = false
-		a.applyParsedAction(actionID, raw)
+		a.applyParsedAction(actionID, raw, targetText)
 		a.mu.Unlock()
 		if a.win != nil {
 			a.win.Update(func() {})
@@ -944,7 +947,7 @@ func (a *app) runAction(actionID string, text string) {
 			// Only remember answers that parsed into a card: caching a
 			// truncated or malformed stream would replay the same broken
 			// answer on the next look, when a fresh pass might succeed.
-			if a.applyParsedAction(actionID, a.aiText) {
+			if a.applyParsedAction(actionID, a.aiText, targetText) {
 				a.storeAIResult(cacheKey, a.aiText)
 			}
 		}

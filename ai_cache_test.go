@@ -17,7 +17,7 @@ func TestAnalysisCacheKeepsOneAnswerPerText(t *testing.T) {
 		a.mu.Unlock()
 		t.Fatalf("empty cache returned %q", got)
 	}
-	a.storeAIResult(key, `{"annotations":[{"text":"She","type":"subject"}]}`)
+	a.storeAIResult(key, `{"segments":[{"text":"She","role":"subject","is_backbone":true}]}`)
 	first := a.cachedAIResult(key)
 	if first == "" {
 		a.mu.Unlock()
@@ -25,7 +25,7 @@ func TestAnalysisCacheKeepsOneAnswerPerText(t *testing.T) {
 	}
 	// A second pass over the same text overwrites rather than appending, so the
 	// cache cannot grow per look.
-	a.storeAIResult(key, `{"annotations":[{"text":"She","type":"subject"},{"text":"cooked","type":"predicate"}]}`)
+	a.storeAIResult(key, `{"segments":[{"text":"She","role":"subject","is_backbone":true},{"text":" cooked","role":"predicate","is_backbone":true}]}`)
 	second := a.cachedAIResult(key)
 	a.mu.Unlock()
 
@@ -75,7 +75,7 @@ func TestCacheHitSkipsTheModel(t *testing.T) {
 	const sentence = "She cooked the books."
 	key := aiResultCacheKey("default-sentence-analysis", model, cfg.TargetLang, sentence)
 	a.mu.Lock()
-	a.storeAIResult(key, `{"annotations":[{"text":"She","type":"subject"},{"text":"cooked","type":"predicate"}],"translation":"她做假账。"}`)
+	a.storeAIResult(key, `{"segments":[{"text":"She","role":"subject","is_backbone":true},{"text":" cooked","role":"predicate","is_backbone":true},{"text":" the books","role":"object","is_backbone":true},{"text":".","role":"punct"}],"translation":"她做假账。"}`)
 	a.mu.Unlock()
 
 	a.runAction("default-sentence-analysis", sentence)
@@ -92,8 +92,8 @@ func TestCacheHitSkipsTheModel(t *testing.T) {
 	if res.Translation != "她做假账。" {
 		t.Fatalf("translation %q, want the cached one", res.Translation)
 	}
-	if len(res.Annotations) != 2 {
-		t.Fatalf("got %d annotations, want the 2 from the cache", len(res.Annotations))
+	if len(res.Segments) != 4 {
+		t.Fatalf("got %d segments, want the 4 from the cache", len(res.Segments))
 	}
 	if busy {
 		t.Error("a cache hit still marked the card as loading")

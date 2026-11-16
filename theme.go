@@ -879,8 +879,43 @@ func grammarInkFor(t *ui.Theme) grammarInk {
 		connector:     at.TextSec,
 		clauseTint:    at.Accent.Alpha(0.10),
 		clauseText:    at.TextSec,
-		obstacle:      at.Warning,
-		obstacleBg:    at.Warning.Alpha(0.10),
+	}
+}
+
+// withAlpha scales a colour's alpha. It lives here beside the palette so the
+// grammar card keeps its shadow and washes without importing a drawing helper.
+func withAlpha(c ui.Color, a float32) ui.Color {
+	if a < 0 {
+		a = 0
+	}
+	if a > 1 {
+		a = 1
+	}
+	c.A = uint8(float32(c.A) * a)
+	return c
+}
+
+// grammarClauseBaseColor is the one hue behind a clause family. The wash and
+// badge alpha are applied by grammarClausePalette; the base lives here so the
+// UI files keep no literal colours.
+func grammarClauseBaseColor(t *ui.Theme, tag string) ui.Color {
+	dark := appTheme(t).Dark
+	switch {
+	case strings.Contains(tag, "定") || strings.Contains(tag, "同位"):
+		if dark {
+			return ui.Hex("#A78BFA")
+		}
+		return ui.Hex("#7C3AED")
+	case strings.Contains(tag, "状"):
+		if dark {
+			return ui.Hex("#FB923C")
+		}
+		return ui.Hex("#C2410C")
+	default:
+		if dark {
+			return ui.Hex("#4ADE80")
+		}
+		return ui.Hex("#16A34A")
 	}
 }
 
@@ -888,23 +923,6 @@ func grammarInkFor(t *ui.Theme) grammarInk {
 func grammarHeaderColors(t *ui.Theme) (bg, border, text ui.Color) {
 	at := appTheme(t)
 	return at.AccentSoft, at.AccentRing, at.Accent
-}
-
-// grammarObstacleColors 是「句式难点」卡片的色板：中性卡面，只有标题与
-// 徽章借用警告色，不再出现整块陶土底。
-func grammarObstacleColors(t *ui.Theme, ink grammarInk) (cardBg, cardBorder, cardTitle, badgeBg, badgeBorder, badgeText, obsText, restoreLabel, restoreText, noteLabel, noteText ui.Color) {
-	at := appTheme(t)
-	return at.SurfaceHover,
-		at.BorderSubtle,
-		at.Warning,
-		ink.obstacleBg,
-		at.Warning.Alpha(0.32),
-		at.Warning,
-		at.Text,
-		at.TextMuted,
-		at.TextSec,
-		at.TextMuted,
-		at.TextSec
 }
 
 // grammarToggleOnColors 是长难句卡片开关的选中态。

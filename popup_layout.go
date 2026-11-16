@@ -142,15 +142,33 @@ func popupContentHeight(s snapshot, w float32) float32 {
 		}
 		h += 48 // save button row
 	case modeGrammar:
-		h = 420
+		// The card draws a header, the sentence card with its one-line hint,
+		// the two switches, the translation and up to three difficulty rows.
+		// autofitHeight corrects the remainder; this keeps the first frame in
+		// the right neighbourhood instead of reserving a fixed 420 DIP.
+		h = 300
 		if s.source != "" {
 			// 只算当前这一句：卡片只渲染它，按整段估高会留下一整块空白。
-			// 行高从 16 调到 18，与渲染时 26 DIP 等高行内盒的实际行距对齐。
 			sent, _, _ := grammarActiveSentence(s.source, s.grammarSentIdx)
-			h += float32(wrappedLines(sent, w-48, 14)) * 18
+			h += float32(wrappedLines(sent, w-56, 14)) * 22
 		}
-		if cardReadyForMode(s) && s.grammarResult.Translation != "" {
-			h += float32(wrappedLines(s.grammarResult.Translation, w-48, 14)) * 16
+		if cardReadyForMode(s) {
+			gr := s.grammarResult
+			if gr.Translation != "" {
+				h += 22 + float32(wrappedLines(gr.Translation, w-56, 14))*20
+			}
+			if n := len(gr.Difficulties); n > 0 {
+				if n > 3 {
+					n = 3
+				}
+				h += 24
+				for i := 0; i < n; i++ {
+					h += 22
+					if gr.Difficulties[i].Explanation != "" {
+						h += float32(wrappedLines(gr.Difficulties[i].Explanation, w-64, 11)) * 16
+					}
+				}
+			}
 		}
 	case modeWriting:
 		// Estimate from the text that is actually rendered: a fixed 40px

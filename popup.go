@@ -167,13 +167,11 @@ type app struct {
 	// hook thread needs it to tell a click on the menu from a click outside,
 	// and asking the window for its position there would wait on the main
 	// thread. Guarded by mu; shown is false until the first frame places it.
-	moreFlyoutRect        ui.Rect
-	moreFlyoutShown       bool
-	showSlashes           bool
-	filterRole            string
-	grammarHoverKnowledge string
-	vocabCategoryIdx      int
-	vocabList             ui.ListState
+	moreFlyoutRect   ui.Rect
+	moreFlyoutShown  bool
+	showSlashes      bool
+	vocabCategoryIdx int
+	vocabList        ui.ListState
 	// vocabExpandedID is the 生词本 entry currently opened as a full word card.
 	// The card the 词典 tab used to render lives here now, so this decides
 	// which row is showing it; "" means every row is in its summary form.
@@ -304,56 +302,54 @@ type app struct {
 }
 
 type snapshot struct {
-	mode                  popupMode
-	source                string
-	target                string
-	engine                string
-	detected              string
-	errText               string
-	echoNote              string
-	notice                string
-	busy                  bool
-	elapsed               time.Duration
-	dict                  *YoudaoDict
-	gdict                 *DictResult
-	aiText                string
-	aiBusy                bool
-	inputText             string
-	inputTargetMode       popupMode
-	isWord                bool
-	pinned                bool
-	showNotes             bool
-	notes                 []NoteItem
-	notesBusy             bool
-	onlyTrunk             bool
-	grammarResult         *SentenceAnalysisResult
-	grammarSentIdx        int // which sentence the card shows; see grammarActiveSentence
-	grammarResultPrefill  bool
-	aiRefining            bool
-	aiRefineErr           string
-	activeActionID        string
-	dictResult            *DictionaryResult
-	writingResult         *ImproveWritingResult
-	actionSavedMsg        string
-	saveErr               string
-	savedDictTerm         string
-	copiedMsg             string
-	showSlashes           bool
-	filterRole            string
-	grammarHoverKnowledge string
-	notesSaved            bool
-	grammarSaved          bool
-	writingSaved          bool
-	isScreenshotMode      bool
-	snipBitmap            *ui.Bitmap
-	sourceExpanded        bool
-	snipExpanded          bool
-	notesExpanded         bool
-	ocrBusy               bool
-	ocrError              string
-	ocrText               string
-	ocrCompare            bool
-	ocrExpanded           bool
+	mode                 popupMode
+	source               string
+	target               string
+	engine               string
+	detected             string
+	errText              string
+	echoNote             string
+	notice               string
+	busy                 bool
+	elapsed              time.Duration
+	dict                 *YoudaoDict
+	gdict                *DictResult
+	aiText               string
+	aiBusy               bool
+	inputText            string
+	inputTargetMode      popupMode
+	isWord               bool
+	pinned               bool
+	showNotes            bool
+	notes                []NoteItem
+	notesBusy            bool
+	onlyTrunk            bool
+	grammarResult        *SentenceAnalysisResult
+	grammarSentIdx       int // which sentence the card shows; see grammarActiveSentence
+	grammarResultPrefill bool
+	aiRefining           bool
+	aiRefineErr          string
+	activeActionID       string
+	dictResult           *DictionaryResult
+	writingResult        *ImproveWritingResult
+	actionSavedMsg       string
+	saveErr              string
+	savedDictTerm        string
+	copiedMsg            string
+	showSlashes          bool
+	notesSaved           bool
+	grammarSaved         bool
+	writingSaved         bool
+	isScreenshotMode     bool
+	snipBitmap           *ui.Bitmap
+	sourceExpanded       bool
+	snipExpanded         bool
+	notesExpanded        bool
+	ocrBusy              bool
+	ocrError             string
+	ocrText              string
+	ocrCompare           bool
+	ocrExpanded          bool
 }
 
 // feedbackTTL is how long a copy or save confirmation stays on screen. Without
@@ -420,7 +416,7 @@ func (a *app) snap() snapshot {
 		detected: a.detected, errText: a.errText, echoNote: a.echoNote, notice: a.notice, busy: a.busy, elapsed: a.elapsed,
 		dict: a.dict, gdict: a.gdict, aiText: a.aiText, aiBusy: a.aiBusy,
 		inputText: a.inputText, inputTargetMode: a.inputTargetMode, isWord: isWord(a.source), pinned: a.pinned, showNotes: a.showNotes, notes: notes, notesBusy: a.notesBusy, onlyTrunk: a.onlyTrunk, grammarResult: a.grammarResult, grammarSentIdx: a.grammarSentIdx, grammarResultPrefill: a.grammarResultPrefill, aiRefining: a.aiRefining, aiRefineErr: a.aiRefineErr,
-		activeActionID: a.activeActionID, dictResult: a.dictResult, writingResult: a.writingResult, actionSavedMsg: actionSavedMsg, saveErr: a.saveErr, savedDictTerm: a.savedDictTerm, copiedMsg: copiedMsg, showSlashes: a.showSlashes, filterRole: a.filterRole, grammarHoverKnowledge: a.grammarHoverKnowledge, notesSaved: a.notesSaved, grammarSaved: a.grammarSaved, writingSaved: a.writingSaved,
+		activeActionID: a.activeActionID, dictResult: a.dictResult, writingResult: a.writingResult, actionSavedMsg: actionSavedMsg, saveErr: a.saveErr, savedDictTerm: a.savedDictTerm, copiedMsg: copiedMsg, showSlashes: a.showSlashes, notesSaved: a.notesSaved, grammarSaved: a.grammarSaved, writingSaved: a.writingSaved,
 		isScreenshotMode: a.isScreenshotMode, snipBitmap: a.snipBitmap, sourceExpanded: a.sourceExpanded,
 		snipExpanded: a.snipExpanded, notesExpanded: a.notesExpanded, ocrBusy: a.ocrBusy, ocrError: a.ocrError, ocrText: a.ocrText,
 		ocrCompare: a.ocrCompare, ocrExpanded: a.ocrExpanded,
@@ -592,8 +588,6 @@ func (a *app) switchMode(m popupMode) {
 func (a *app) resetPopupTransientLocked() {
 	a.onlyTrunk = false
 	a.showSlashes = false
-	a.filterRole = ""
-	a.grammarHoverKnowledge = ""
 	a.activeActionID = ""
 	a.grammarSentIdx = 0
 }

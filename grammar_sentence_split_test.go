@@ -80,46 +80,6 @@ func TestGrammarActiveSentenceClampsTheIndex(t *testing.T) {
 	}
 }
 
-func TestClauseBadgeLabelOnlyLabelsRealClauses(t *testing.T) {
-	cases := []struct {
-		name string
-		item SyntaxAnnotation
-		want string
-	}{
-		{
-			// 模型给副词填了 sense=time：没有 form=clause 就不是从句。
-			name: "an adverb with a time sense is not a clause",
-			item: SyntaxAnnotation{Text: "Tonight", Type: "adverbial", Sense: "time"},
-			want: "",
-		},
-		{
-			name: "a real adverbial clause keeps its sense label",
-			item: SyntaxAnnotation{Text: "because it rained", Type: "adverbial", Form: "clause", Sense: "cause"},
-			want: "原因状从",
-		},
-		{
-			name: "case and spaces in form do not matter",
-			item: SyntaxAnnotation{Text: "that he left", Type: "object", Form: " Clause "},
-			want: "宾语从句",
-		},
-		{
-			name: "a two word non-finite phrase gets no badge",
-			item: SyntaxAnnotation{Text: "to rest", Type: "object", Form: "infinitive"},
-			want: "",
-		},
-		{
-			name: "a long enough non-finite phrase keeps its badge",
-			item: SyntaxAnnotation{Text: "Exhausted by the long journey", Type: "adverbial", Form: "past-participle"},
-			want: "过去分词",
-		},
-	}
-	for _, tc := range cases {
-		if got := clauseBadgeLabel(tc.item); got != tc.want {
-			t.Errorf("%s: clauseBadgeLabel(%+v) = %q, want %q", tc.name, tc.item, got, tc.want)
-		}
-	}
-}
-
 // TestGrammarCardOffersASentencePager pins the UI half of the split: a
 // multi-sentence selection shows one sentence with a pager, so the reader can
 // walk the paragraph without asking the model for the whole thing at once.
@@ -127,7 +87,10 @@ func TestGrammarCardOffersASentencePager(t *testing.T) {
 	a := newTestApp()
 	a.source = "One sentence here. Two sentence here. Three sentence here."
 	res := &SentenceAnalysisResult{
-		Annotations: []SyntaxAnnotation{{Text: "One sentence here", Type: "subject"}},
+		Segments: []Segment{
+			{Text: "One sentence here", Role: RoleSubject, IsBackbone: true},
+			{Text: ".", Role: RolePunct},
+		},
 		Translation: "第一句。",
 	}
 	tt := ui.NewTester(func(c *ui.Context) {

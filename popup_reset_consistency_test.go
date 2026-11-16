@@ -10,20 +10,18 @@ func TestResetPopupTransientLocked(t *testing.T) {
 	a := &app{}
 	a.onlyTrunk = true
 	a.showSlashes = true
-	a.filterRole = "subject"
-	a.grammarHoverKnowledge = "clause"
 	a.activeActionID = "default-grammar"
 
 	a.resetPopupTransientLocked()
 
-	if a.onlyTrunk || a.showSlashes || a.filterRole != "" || a.grammarHoverKnowledge != "" || a.activeActionID != "" {
-		t.Fatalf("resetPopupTransientLocked left state behind: onlyTrunk=%v showSlashes=%v filterRole=%q hover=%q action=%q",
-			a.onlyTrunk, a.showSlashes, a.filterRole, a.grammarHoverKnowledge, a.activeActionID)
+	if a.onlyTrunk || a.showSlashes || a.activeActionID != "" {
+		t.Fatalf("resetPopupTransientLocked left state behind: onlyTrunk=%v showSlashes=%v action=%q",
+			a.onlyTrunk, a.showSlashes, a.activeActionID)
 	}
 
 	// Repeated resets must stay harmless.
 	a.resetPopupTransientLocked()
-	if a.onlyTrunk || a.showSlashes || a.filterRole != "" || a.activeActionID != "" {
+	if a.onlyTrunk || a.showSlashes || a.activeActionID != "" {
 		t.Fatal("resetPopupTransientLocked is not idempotent")
 	}
 }

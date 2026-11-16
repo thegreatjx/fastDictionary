@@ -12,44 +12,42 @@ import (
 // its own result and the source text it belongs to; restoring is refused when
 // the source has changed.
 type tabViewState struct {
-	source                string
-	target                string
-	engine                string
-	detected              string
-	errText               string
-	elapsed               time.Duration
-	dict                  *YoudaoDict
-	gdict                 *DictResult
-	aiText                string
-	aiBusy                bool
-	busy                  bool
-	ocrBusy               bool
-	grammarResult         *SentenceAnalysisResult
-	grammarSentIdx        int
-	grammarResultPrefill  bool
-	dictResult            *DictionaryResult
-	writingResult         *ImproveWritingResult
-	activeActionID        string
-	notes                 []NoteItem
-	notesBusy             bool
-	notesSaved            bool
-	grammarSaved          bool
-	writingSaved          bool
-	savedDictTerm         string
-	onlyTrunk             bool
-	showSlashes           bool
-	filterRole            string
-	grammarHoverKnowledge string
-	sourceExpanded        bool
-	notesExpanded         bool
-	isScreenshotMode      bool
-	ocrText               string
-	ocrPath               string
-	ocrError              string
-	ocrCompare            bool
-	ocrExpanded           bool
-	snipExpanded          bool
-	snipBitmap            *ui.Bitmap
+	source               string
+	target               string
+	engine               string
+	detected             string
+	errText              string
+	elapsed              time.Duration
+	dict                 *YoudaoDict
+	gdict                *DictResult
+	aiText               string
+	aiBusy               bool
+	busy                 bool
+	ocrBusy              bool
+	grammarResult        *SentenceAnalysisResult
+	grammarSentIdx       int
+	grammarResultPrefill bool
+	dictResult           *DictionaryResult
+	writingResult        *ImproveWritingResult
+	activeActionID       string
+	notes                []NoteItem
+	notesBusy            bool
+	notesSaved           bool
+	grammarSaved         bool
+	writingSaved         bool
+	savedDictTerm        string
+	onlyTrunk            bool
+	showSlashes          bool
+	sourceExpanded       bool
+	notesExpanded        bool
+	isScreenshotMode     bool
+	ocrText              string
+	ocrPath              string
+	ocrError             string
+	ocrCompare           bool
+	ocrExpanded          bool
+	snipExpanded         bool
+	snipBitmap           *ui.Bitmap
 }
 
 func (s *tabViewState) hasContent() bool {
@@ -66,44 +64,42 @@ func (a *app) saveTabLocked() {
 		a.tabStates = make(map[popupMode]*tabViewState)
 	}
 	a.tabStates[a.mode] = &tabViewState{
-		source:                a.source,
-		target:                a.target,
-		engine:                a.engine,
-		detected:              a.detected,
-		errText:               a.errText,
-		elapsed:               a.elapsed,
-		dict:                  a.dict,
-		gdict:                 a.gdict,
-		aiText:                a.aiText,
-		aiBusy:                a.aiBusy,
-		busy:                  a.busy,
-		ocrBusy:               a.ocrBusy,
-		grammarResult:         a.grammarResult,
-		grammarSentIdx:        a.grammarSentIdx,
-		grammarResultPrefill:  a.grammarResultPrefill,
-		dictResult:            a.dictResult,
-		writingResult:         a.writingResult,
-		activeActionID:        a.activeActionID,
-		notes:                 append([]NoteItem(nil), a.notes...),
-		notesBusy:             a.notesBusy,
-		notesSaved:            a.notesSaved,
-		grammarSaved:          a.grammarSaved,
-		writingSaved:          a.writingSaved,
-		savedDictTerm:         a.savedDictTerm,
-		onlyTrunk:             a.onlyTrunk,
-		showSlashes:           a.showSlashes,
-		filterRole:            a.filterRole,
-		grammarHoverKnowledge: a.grammarHoverKnowledge,
-		sourceExpanded:        a.sourceExpanded,
-		notesExpanded:         a.notesExpanded,
-		isScreenshotMode:      a.isScreenshotMode,
-		ocrText:               a.ocrText,
-		ocrPath:               a.ocrPath,
-		ocrError:              a.ocrError,
-		ocrCompare:            a.ocrCompare,
-		ocrExpanded:           a.ocrExpanded,
-		snipExpanded:          a.snipExpanded,
-		snipBitmap:            a.snipBitmap,
+		source:               a.source,
+		target:               a.target,
+		engine:               a.engine,
+		detected:             a.detected,
+		errText:              a.errText,
+		elapsed:              a.elapsed,
+		dict:                 a.dict,
+		gdict:                a.gdict,
+		aiText:               a.aiText,
+		aiBusy:               a.aiBusy,
+		busy:                 a.busy,
+		ocrBusy:              a.ocrBusy,
+		grammarResult:        a.grammarResult,
+		grammarSentIdx:       a.grammarSentIdx,
+		grammarResultPrefill: a.grammarResultPrefill,
+		dictResult:           a.dictResult,
+		writingResult:        a.writingResult,
+		activeActionID:       a.activeActionID,
+		notes:                append([]NoteItem(nil), a.notes...),
+		notesBusy:            a.notesBusy,
+		notesSaved:           a.notesSaved,
+		grammarSaved:         a.grammarSaved,
+		writingSaved:         a.writingSaved,
+		savedDictTerm:        a.savedDictTerm,
+		onlyTrunk:            a.onlyTrunk,
+		showSlashes:          a.showSlashes,
+		sourceExpanded:       a.sourceExpanded,
+		notesExpanded:        a.notesExpanded,
+		isScreenshotMode:     a.isScreenshotMode,
+		ocrText:              a.ocrText,
+		ocrPath:              a.ocrPath,
+		ocrError:             a.ocrError,
+		ocrCompare:           a.ocrCompare,
+		ocrExpanded:          a.ocrExpanded,
+		snipExpanded:         a.snipExpanded,
+		snipBitmap:           a.snipBitmap,
 	}
 }
 
@@ -137,8 +133,6 @@ func (a *app) restoreTabLocked(st *tabViewState) {
 	a.savedDictTerm = st.savedDictTerm
 	a.onlyTrunk = st.onlyTrunk
 	a.showSlashes = st.showSlashes
-	a.filterRole = st.filterRole
-	a.grammarHoverKnowledge = st.grammarHoverKnowledge
 	a.sourceExpanded = st.sourceExpanded
 	a.notesExpanded = st.notesExpanded
 	a.isScreenshotMode = st.isScreenshotMode

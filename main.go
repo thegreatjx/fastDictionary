@@ -601,28 +601,38 @@ func main() {
 			switch demoAction {
 			case "grammar":
 				a.mode = modeGrammar
-				a.source = "This is a slide from Terence Tao's 'Math 2.0' public lecture yesterday evening at Caltech. I am highly confident that, if the cure actually worked, almost any Stage 4 cancer patient would tell you that human comprehension of its mechanism is completely irrelevant to them."
+				a.source = "I am highly confident that, if the cure actually worked, almost any Stage 4 cancer patient would tell you that human comprehension of its mechanism is completely irrelevant to them."
 				a.activeActionID = "default-sentence-analysis"
 				a.grammarResult = &SentenceAnalysisResult{
-					Annotations: []SyntaxAnnotation{
-						{Text: "This", Type: "subject"},
-						{Text: "is", Type: "predicate"},
-						{Text: "I", Type: "subject"},
-						{Text: "am", Type: "predicate"},
-						{Text: "that, if the cure actually worked, almost any Stage 4 cancer patient would tell you that human comprehension of its mechanism is completely irrelevant to them", Type: "complement", Form: "clause"},
-						{Text: "that", Type: "connector"},
-						{Text: "if the cure actually worked", Type: "adverbial", Form: "clause", Sense: "condition"},
-						{Text: "if", Type: "connector"},
-						{Text: "the cure", Type: "subject"},
-						{Text: "worked", Type: "predicate"},
-						{Text: "almost any Stage 4 cancer patient", Type: "subject"},
-						{Text: "would tell", Type: "predicate"},
-						{Text: "you", Type: "object"},
-						{Text: "that human comprehension of its mechanism is completely irrelevant to them", Type: "object", Form: "clause"},
-						{Text: "human comprehension of its mechanism", Type: "subject"},
-						{Text: "is", Type: "predicate"},
+					BackboneSummary: "我十分确信：几乎任何一位四期癌症患者都会告诉你，人类是否理解其机制对他们无关紧要。",
+					Segments: []Segment{
+						{Text: "I", Role: RoleSubject, IsBackbone: true},
+						{Text: " am", Role: RolePredicate, IsBackbone: true},
+						{Text: " highly confident", Role: RoleObject, IsBackbone: true, BreakBefore: true, Note: "形容词短语作表语"},
+						{Text: " that,", Role: RoleConnector, ClauseID: "c1", Note: "引导宾语从句"},
+						{Text: " if", Role: RoleConnector, BreakBefore: true, ClauseID: "c2", Note: "条件状从，修饰 would tell"},
+						{Text: " the cure", Role: RoleSubject, ClauseID: "c2"},
+						{Text: " actually worked", Role: RolePredicate, ClauseID: "c2"},
+						{Text: ",", Role: RolePunct, ClauseID: "c1"},
+						{Text: " almost any Stage 4 cancer patient", Role: RoleSubject, BreakBefore: true, ClauseID: "c1"},
+						{Text: " would tell", Role: RolePredicate, ClauseID: "c1"},
+						{Text: " you", Role: RoleObject, ClauseID: "c1"},
+						{Text: " that", Role: RoleConnector, BreakBefore: true, ClauseID: "c3", Note: "引导第二层宾语从句"},
+						{Text: " human comprehension of its mechanism", Role: RoleSubject, ClauseID: "c3"},
+						{Text: " is", Role: RolePredicate, ClauseID: "c3"},
+						{Text: " completely irrelevant to them", Role: RoleObject, ClauseID: "c3", Note: "表语，说明 comprehension"},
+						{Text: ".", Role: RolePunct},
 					},
-					Translation: "这是陶哲轩昨晚在加州理工学院举办的“数学 2.0”公开讲座中的一张幻灯片。我十分确信，如果这种疗法真的有效，几乎任何一位四期癌症患者都会告诉你：人类是否理解其背后的机制，对他们而言根本无关紧要。",
+					Clauses: []ClauseInfo{
+						{ID: "c1", Type: "宾语从句", ShortTag: "宾从", Target: "作 confident 的宾语"},
+						{ID: "c2", ParentID: "c1", Type: "条件状语从句", ShortTag: "状从", Target: "修饰 would tell"},
+						{ID: "c3", ParentID: "c1", Type: "宾语从句", ShortTag: "宾从", Target: "作 tell 的宾语"},
+					},
+					Difficulties: []DifficultyPoint{
+						{Title: "三层嵌套", SpanText: "that, if ..., almost any ... would tell you that ...", Explanation: "宾语从句里套条件状语从句，再套一层宾语从句；先抓每层的主谓，再补修饰。"},
+						{Title: "分隔", SpanText: "that, if the cure actually worked,", Explanation: "that 与真正的主干被条件从句隔开，阅读时要先跳过插入的条件。"},
+					},
+					Translation: "我十分确信，如果这种疗法真的有效，几乎任何一位四期癌症患者都会告诉你：人类是否理解其背后的机制，对他们而言根本无关紧要。",
 				}
 			case "writing":
 				a.mode = modeWriting

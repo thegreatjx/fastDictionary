@@ -37,23 +37,28 @@ func TestParseDictionaryResult(t *testing.T) {
 }
 
 func TestParseSentenceAnalysisStructured(t *testing.T) {
-	rawJSON := `{"annotations":[{"text":"The report","type":"subject"},{"text":"surprised","type":"predicate","form":"clause"},{"text":"many readers","type":"object"}],"translation":"这份报告让许多读者感到惊讶。"}`
-	res := ParseSentenceAnalysis(rawJSON)
+	rawJSON := `{"segments":[{"text":"The report","role":"subject","is_backbone":true},{"text":" surprised","role":"predicate","is_backbone":true},{"text":" many readers","role":"object","is_backbone":true}],"translation":"这份报告让许多读者感到惊讶。"}`
+	const sentence = "The report surprised many readers"
+	res := ParseSentenceAnalysis(rawJSON, sentence)
 	if res == nil {
 		t.Fatal("failed to parse sentence analysis")
 	}
-	if len(res.Annotations) != 3 {
-		t.Errorf("expected 3 annotations, got %d", len(res.Annotations))
+	if len(res.Segments) != 3 {
+		t.Errorf("expected 3 segments, got %d", len(res.Segments))
+	}
+	if concatSegments(res.Segments) != sentence {
+		t.Errorf("segments do not restore the sentence: %q", concatSegments(res.Segments))
 	}
 	if res.Translation != "这份报告让许多读者感到惊讶。" {
 		t.Errorf("unexpected translation: %s", res.Translation)
 	}
 
-	// Test string-serialized annotations format ($1 / $2)
-	serialized := `{"$1":"[{\"text\":\"Only then\",\"type\":\"adverbial\",\"obstacle\":\"fronting\"},{\"text\":\"did\",\"type\":\"predicate\",\"obstacle\":\"inversion\"}]","$2":"直到那时她才拒绝了这个提议。"}`
-	sRes := ParseSentenceAnalysis(serialized)
-	if sRes == nil || len(sRes.Annotations) != 2 || sRes.Translation == "" {
-		t.Fatalf("failed to parse serialized annotations: %+v", sRes)
+	// Without a source the slices are accepted as-is: the caller may only have
+	// the model answer, and alignment cannot be checked.
+	noSource := `{"segments":[{"text":"Only then","role":"modifier"},{"text":" did she realize","role":"predicate"}],"translation":"直到那时她才意识到。"}`
+	sRes := ParseSentenceAnalysis(noSource)
+	if sRes == nil || len(sRes.Segments) != 2 || sRes.Translation == "" {
+		t.Fatalf("failed to parse segments without a source: %+v", sRes)
 	}
 }
 

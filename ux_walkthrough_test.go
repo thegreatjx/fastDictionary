@@ -59,9 +59,12 @@ func TestGrammarObstaclesDarkThemeAdaptive(t *testing.T) {
 	a := newTestApp()
 	a.mode = modeGrammar
 	res := &SentenceAnalysisResult{
-		Annotations: []SyntaxAnnotation{
-			{Text: "Only then", Type: "adverbial", Obstacle: "fronting"},
-			{Text: "did she realize", Type: "predicate", Obstacle: "inversion", Restore: "she realized"},
+		Segments: []Segment{
+			{Text: "Only then", Role: RoleModifier, BreakBefore: true, Note: "副词短语前置"},
+			{Text: " did she realize", Role: RolePredicate, IsBackbone: true},
+		},
+		Difficulties: []DifficultyPoint{
+			{Title: "倒装", SpanText: "Only then did she realize", Explanation: "否定副词置于句首，助动词 did 提到主语前。"},
 		},
 		Translation: "直到那时她才意识到。",
 	}
@@ -75,7 +78,7 @@ func TestGrammarObstaclesDarkThemeAdaptive(t *testing.T) {
 
 	texts := ttDark.Texts()
 	joined := strings.Join(texts, " ")
-	for _, expected := range []string{"句式难点", "语序", "还原语序：", "she realized"} {
+	for _, expected := range []string{"语法难点", "倒装", "助动词"} {
 		if !strings.Contains(joined, expected) {
 			t.Errorf("grammar card in dark mode missing text %q: %v", expected, texts)
 		}
@@ -87,9 +90,11 @@ func TestGrammarCardSaveStateFeedback(t *testing.T) {
 	a.source = "Only then did she realize what happened"
 	a.mode = modeGrammar
 	a.grammarResult = &SentenceAnalysisResult{
-		Annotations: []SyntaxAnnotation{
-			{Text: "Only then", Type: "adverbial"},
-			{Text: "did she realize", Type: "predicate"},
+		Segments: []Segment{
+			{Text: "Only then", Role: RoleModifier, BreakBefore: true},
+			{Text: " did she realize", Role: RolePredicate, IsBackbone: true},
+			{Text: " what happened", Role: RoleObject, IsBackbone: true},
+			{Text: ".", Role: RolePunct},
 		},
 		Translation: "直到那时她才明白发生了什么。",
 	}
