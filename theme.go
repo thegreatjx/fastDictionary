@@ -921,11 +921,76 @@ func withAlpha(c ui.Color, a float32) ui.Color {
 	return c
 }
 
-// grammarClauseBaseColor is the one hue behind every clause family: the
-// current theme accent. Clause types differ only in wash depth, never in hue,
-// so the card stays inside the selected light-blue atmosphere.
-func grammarClauseBaseColor(t *ui.Theme) ui.Color {
-	return appTheme(t).Accent
+// grammarClauseColors is the three-layer clause treatment: the wash behind the
+// clause text, the deeper badge behind its tag, and the badge ink. Named
+// fields, not three positional returns, so a call site cannot paint the badge
+// colour where the wash belongs.
+type grammarClauseColors struct {
+	wash      ui.Color
+	badgeBg   ui.Color
+	badgeText ui.Color
+}
+
+// grammarClausePalette keeps every clause in the theme accent's family. The
+// clause type changes only the wash depth, never the hue, so the card stays
+// inside the selected atmosphere. The badge is deliberately deeper than the
+// wash; that is the contrast the reader uses to spot the tag.
+func grammarClausePalette(t *ui.Theme, tag string) grammarClauseColors {
+	at := appTheme(t)
+	wash := at.Accent.Alpha(0.14)
+	switch {
+	case strings.Contains(tag, "状"):
+		wash = at.Accent.Alpha(0.11)
+	case strings.Contains(tag, "定") || strings.Contains(tag, "同位"):
+		wash = at.Accent.Alpha(0.14)
+	case strings.Contains(tag, "宾") || strings.Contains(tag, "主") || strings.Contains(tag, "表"):
+		wash = at.Accent.Alpha(0.17)
+	}
+	// AccentPress alone reaches only 4.35:1 on the 30% sky badge at 10px.
+	// Mixing away from the badge — toward body ink on light, toward white on
+	// dark — keeps the badge in the accent family while clearing the
+	// small-text floor in both modes.
+	badgeText := at.AccentPress.Mix(at.Text, 0.40)
+	if at.Dark {
+		badgeText = at.AccentPress.Mix(ui.Hex("#FFFFFF"), 0.50)
+	}
+	return grammarClauseColors{
+		wash:      wash,
+		badgeBg:   at.Accent.Alpha(0.30),
+		badgeText: badgeText,
+	}
+}
+
+// grammarDifficultyColors is the neutral reading aid under the sentence. A
+// difficulty is information, not a warning: no Warning amber, no Danger red.
+type grammarDifficultyColors struct {
+	surface    ui.Color
+	border     ui.Color
+	heading    ui.Color
+	icon       ui.Color
+	count      ui.Color
+	chipBg     ui.Color
+	chipBorder ui.Color
+	chipText   ui.Color
+	dot        ui.Color
+	span       ui.Color
+	note       ui.Color
+}
+
+func grammarDifficultyPalette(at AppTheme) grammarDifficultyColors {
+	return grammarDifficultyColors{
+		surface:    at.SurfaceHover,
+		border:     at.BorderSubtle,
+		heading:    at.TextSec,
+		icon:       at.TextMuted,
+		count:      at.TextMuted,
+		chipBg:     at.Surface,
+		chipBorder: at.BorderSubtle,
+		chipText:   at.TextSec,
+		dot:        at.Accent,
+		span:       at.Text,
+		note:       at.TextSec,
+	}
 }
 
 // grammarHeaderColors 是长难句卡片顶部「拆解」标签的底、边、字。

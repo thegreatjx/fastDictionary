@@ -925,8 +925,7 @@ func renderGrammarSegment(c *ui.Context, t *ui.Theme, at AppTheme, ink grammarIn
 	text := seg.Text
 	el := ui.Text(c, text).FontSize(14)
 	if seg.ClauseID != "" && clause != nil {
-		wash, _, _ := grammarClausePalette(t, grammarClauseLabel(*clause))
-		el.Background(wash)
+		el.Background(grammarClausePalette(t, grammarClauseLabel(*clause)).wash)
 	}
 
 	switch {
@@ -962,10 +961,15 @@ func renderGrammarSegment(c *ui.Context, t *ui.Theme, at AppTheme, ink grammarIn
 }
 
 func renderGrammarClauseBadge(c *ui.Context, t *ui.Theme, clause ClauseInfo) ui.Element {
-	label := grammarClauseLabel(clause)
-	_, badgeBg, badgeText := grammarClausePalette(t, label)
+	raw := grammarClauseLabel(clause)
+	colors := grammarClausePalette(t, raw)
+	// A RichText span breaks Chinese between any two characters. Two-character
+	// clause tags then split across lines ("宾" at the end of one, "从" at the
+	// start of the next). U+2060 WORD JOINER tells the line breaker not to
+	// break here, so the tag stays one chip.
+	label := strings.Join(strings.Split(raw, ""), "\u2060")
 	el := ui.Text(c, "  "+label+"  ").FontSize(10).FontWeight(600).
-		TextColor(badgeText).Background(badgeBg).Unselectable().
+		TextColor(colors.badgeText).Background(colors.badgeBg).Unselectable().
 		Tooltip(grammarClauseTooltip(clause))
 	return el
 }
@@ -981,9 +985,10 @@ func renderGrammarFoldMarker(c *ui.Context, t *ui.Theme, clause *ClauseInfo, run
 	if clause != nil {
 		label = "[" + grammarClauseLabel(*clause) + " …]"
 		tip = grammarFoldNote(clause, runText)
-		_, badgeBg, badgeText := grammarClausePalette(t, grammarClauseLabel(*clause))
+		colors := grammarClausePalette(t, grammarClauseLabel(*clause))
 		return ui.Text(c, prefix+label).FontSize(12).FontWeight(600).
-			TextColor(badgeText).Background(badgeBg).Unselectable().Tooltip(tip)
+			TextColor(colors.badgeText).Background(colors.badgeBg).
+			Unselectable().Tooltip(tip)
 	}
 	return ui.Text(c, prefix+label).FontSize(13).FontWeight(600).
 		TextColor(appTheme(t).TextSec).Unselectable().Tooltip(tip)
@@ -1113,36 +1118,37 @@ func renderGrammarDifficulties(c *ui.Context, t *ui.Theme, at AppTheme, points [
 	if len(points) > 3 {
 		points = points[:3]
 	}
+	d := grammarDifficultyPalette(at)
 	ui.Box(c).FillWidth().Padding(Space3, Space4).Radius(RadiusSM).
-		Background(at.SurfaceHover).Border(1, at.BorderSubtle).Children(func() {
+		Background(d.surface).Border(1, d.border).Children(func() {
 		ui.Column(c).FillWidth().Gap(Space2).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
-				ui.Icon(c, iconInfo).Size(12, 12).TextColor(at.TextMuted)
-				ui.Text(c, "语法难点").FontSize(11).FontWeight(600).TextColor(at.TextSec)
+				ui.Icon(c, iconInfo).Size(12, 12).TextColor(d.icon)
+				ui.Text(c, "语法难点").FontSize(11).FontWeight(600).TextColor(d.heading)
 				ui.Spacer(c).Grow(1)
 				ui.Text(c, fmt.Sprintf("%d", len(points))).Font(fontMono).
-					FontFeatures("tnum").FontSize(10).TextColor(at.TextMuted)
+					FontFeatures("tnum").FontSize(10).TextColor(d.count)
 			})
 			for _, point := range points {
 				ui.Column(c).FillWidth().Gap(2).Children(func() {
 					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
-						ui.Box(c).Size(4, 4).Radius(2).Background(at.Accent).Shrink(0)
+						ui.Box(c).Size(4, 4).Radius(2).Background(d.dot).Shrink(0)
 						title := point.Title
 						if title == "" {
 							title = "难点"
 						}
 						ui.Box(c).Padding(1, 6).Radius(RadiusXS).
-							Background(at.Surface).Border(1, at.BorderSubtle).Children(func() {
+							Background(d.chipBg).Border(1, d.chipBorder).Children(func() {
 							ui.Text(c, title).FontSize(10).FontWeight(600).
-								TextColor(at.TextSec).SingleLine()
+								TextColor(d.chipText).SingleLine()
 						})
 						if point.SpanText != "" {
 							ui.Text(c, point.SpanText).FontSize(12).FontWeight(600).
-								TextColor(at.Text).SingleLine().Tooltip(point.SpanText).Grow(1)
+								TextColor(d.span).SingleLine().Tooltip(point.SpanText).Grow(1)
 						}
 					})
 					if point.Explanation != "" {
-						ui.Text(c, point.Explanation).FontSize(11).TextColor(at.TextMuted).
+						ui.Text(c, point.Explanation).FontSize(11).TextColor(d.note).
 							Wrap().MarginStart(10)
 					}
 				})
@@ -1311,22 +1317,4 @@ func grammarDefaultHint(res *SentenceAnalysisResult, prefill bool) string {
 		return fmt.Sprintf("共 %d 处从句，悬停句子成分查看语法作用", len(res.Clauses))
 	}
 	return "悬停句子成分，查看它的语法作用"
-}
-
-// grammarClausePalette keeps every clause in the theme accent's family. The
-// wash depth separates clause types without introducing a second hue; the
-// badge takes the same accent at a deeper alpha with the deeper accent ink,
-// which is what keeps a 10px label legible on the wash.
-func grammarClausePalette(t *ui.Theme, tag string) (ui.Color, ui.Color, ui.Color) {
-	base := grammarClauseBaseColor(t)
-	wash := base.Alpha(0.14)
-	switch {
-	case strings.Contains(tag, "状"):
-		wash = base.Alpha(0.11)
-	case strings.Contains(tag, "定") || strings.Contains(tag, "同位"):
-		wash = base.Alpha(0.14)
-	case strings.Contains(tag, "宾") || strings.Contains(tag, "主") || strings.Contains(tag, "表"):
-		wash = base.Alpha(0.17)
-	}
-	return wash, base.Alpha(0.30), appTheme(t).AccentPress
 }

@@ -169,9 +169,9 @@
 - **谓语核心**：当前主题 `Accent`，只保留 **一条极细柔和底线**（`Accent` 55% 透明）。
 - **普通修饰语**（定语、状语、同位语、无标注词）：降灰 `TextMuted`，常规字重；从句内部的主干文字保持 `TextPrimary`，只有修饰语用 `TextSecondary`，让色块里的内容可读。
 - **连接词**：`TextSecondary` / 600，不加线。
-- **从句**：仅用当前主题色的柔和半透明底色块 + 徽章区分；不同从句类型用同一色相的 11%–17% 色深区分，不用第二色相或彩色下划线。徽章 10px / 600，底色 30%，文字用深一档的 `AccentPress`，保证小字对比度。
+- **从句**：仅用当前主题色的柔和半透明底色块 + 徽章区分；不同从句类型用同一色相的 11%–17% 色深区分，不用第二色相或彩色下划线。徽章 10px / 600，底色 30%，文字在浅色用深一档 `AccentPress` 混入正文墨色、深色混入白色，保证小字对比度；徽章内用 U+2060 禁止两个汉字之间断行。
 - **阅读纸**：中性 `SurfaceHover` + `BorderSubtle`；提示条是白底（深色为 `Surface`）中性描边，只在句首保留一个主题色圆点。
-- **句式难点**：中性卡面（`SurfaceHover` + `BorderSubtle`）。标题「语法难点」用 `TextSecondary` + info 图标；每条难点前缀一个 4px 主题色圆点，标题胶囊白底中性描边。不使用琥珀、棕色或彩色底。
+- **句式难点**：中性卡面（`SurfaceHover` + `BorderSubtle`）。标题「语法难点」用 `TextSecondary` + info 图标；每条难点前缀一个 4px 主题色圆点，标题胶囊白底中性描边，说明文字用 `TextSecondary`（11px 在暗色下不能降到 `TextMuted`）。不使用琥珀、棕色或彩色底。
 - 角色过滤、tooltip 和「只看主干」保留；筛选时非目标词降为 `TextMuted`。
 
 ### 写作卡
@@ -209,8 +209,10 @@
 ## 10. 验证
 
 - 主文字与次要文字 ≥ 4.5:1；图标与大字号 ≥ 3:1；`TextMuted` 只用于弱提示与角标。
+- 语义角色用 `go test -run 'TestGrammarPaletteContrastAcrossThemes|TestGrammarClauseWashHierarchy|TestGrammarDifficultyStaysNeutral'` 覆盖四套强调色 × 明暗。
 - 浅色与深色都要实机截图检查：词卡、长难句卡、写作卡、设置页、悬浮条。
 - 四套主题各切换一次，确认原文区微底、选中胶囊与焦点边框同步变化。
 - 复制成功后小勾 2 秒内为 `#10B981`，随后恢复；不出现顶部绿色横幅。
 - `gofmt`、`go vet ./...`、`go build ./...`、`go test ./...` 全部通过。
 - 原生控件树用 `mygo-automation snapshot -i` 检查，视觉用 `screenshot` 检查；`impeccable detect` 不覆盖 Go 原生 UI，不能替代截图。
+- 统一用 `.\scripts\ui-evidence.ps1` 取证：隔离 `%APPDATA%\fastDictionary-uiverify`，输出 `manifest.json`（commit/exe SHA256/配置/主题）、`screenshot.png` 与 `control-tree.txt`。身份对不上的截图不算验证；流程见 `.claude/skills/fastdictionary-ui-verify/SKILL.md`。

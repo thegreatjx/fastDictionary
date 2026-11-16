@@ -981,6 +981,7 @@ func ensureDefaultActions(cfg *Config) bool {
 			cfg.CustomActions = append(cfg.CustomActions, def)
 		} else {
 			// Backfill missing critical prompt fields if empty
+			grammarPromptUpgraded := false
 			if cfg.CustomActions[idx].SystemPrompt == "" {
 				cfg.CustomActions[idx].SystemPrompt = def.SystemPrompt
 			} else if def.ID == "default-sentence-analysis" &&
@@ -991,10 +992,12 @@ func ensureDefaultActions(cfg *Config) bool {
 				// one-sentence pager and the slow per-sentence answers stay until
 				// they reset the app.
 				cfg.CustomActions[idx].SystemPrompt = grammarSystemPromptV4
+				grammarPromptUpgraded = true
 				dropped = true
 			} else if def.ID == "default-sentence-analysis" &&
 				legacyGrammarAnnotationsPrompt(cfg.CustomActions[idx].SystemPrompt) {
 				cfg.CustomActions[idx].SystemPrompt = grammarSystemPromptV4
+				grammarPromptUpgraded = true
 				dropped = true
 			}
 			if cfg.CustomActions[idx].Prompt == "" {
@@ -1003,9 +1006,12 @@ func ensureDefaultActions(cfg *Config) bool {
 			if len(cfg.CustomActions[idx].OutputSchema) == 0 {
 				cfg.CustomActions[idx].OutputSchema = def.OutputSchema
 			} else if def.ID == "default-sentence-analysis" &&
-				sameStrings(cfg.CustomActions[idx].OutputSchema, []string{"annotations", "translation"}) {
+				(sameStrings(cfg.CustomActions[idx].OutputSchema, []string{"annotations", "translation"}) ||
+					(grammarPromptUpgraded && sameStrings(cfg.CustomActions[idx].OutputSchema, []string{"segments", "clauses", "translation"}))) {
 				// The schema the old prompt wrote is displayed in 指令 settings;
 				// leaving it there would document fields the new prompt never emits.
+				// V3's schema is upgraded only when its prompt was just migrated;
+				// a user who paired a V4 prompt with their own schema keeps it.
 				cfg.CustomActions[idx].OutputSchema = def.OutputSchema
 				dropped = true
 			}

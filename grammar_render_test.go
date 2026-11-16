@@ -94,8 +94,8 @@ func TestGrammarUsesOneInkLadder(t *testing.T) {
 	if ink.clauseTint.A >= ink.body.A {
 		t.Errorf("从句底色必须是半透明微底，得到 %+v", ink.clauseTint)
 	}
-	if tint, badgeBg, _ := grammarClausePalette(th, "宾从"); tint.A >= badgeBg.A || badgeBg.A >= 255 {
-		t.Errorf("从句底色与徽章底色必须分层：tint=%+v badge=%+v", tint, badgeBg)
+	if colors := grammarClausePalette(th, "宾从"); colors.wash.A >= colors.badgeBg.A || colors.badgeBg.A >= 255 {
+		t.Errorf("从句底色与徽章底色必须分层：wash=%+v badge=%+v", colors.wash, colors.badgeBg)
 	}
 }
 
