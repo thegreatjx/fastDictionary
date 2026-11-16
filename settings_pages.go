@@ -24,18 +24,10 @@ func (a *app) pageGeneral(c *ui.Context, t *ui.Theme, cfg Config) {
 					SegmentedOption[string]{Value: "dark", Label: "深色"},
 				)
 			})
-			SettingRow(c, t, "主题色", "只改变交互强调色，纸面、墨色与状态色保持不变。", func() {
+			SettingRow(c, t, "主题色", "同时改变主色、原文区淡色底与焦点边框；四套氛围一眼可分。", func() {
 				at := appTheme(t)
-				current := cfg.AccentTheme
-				if current == "" {
-					current = "slate"
-				}
-				currentLabel := "黛青"
-				for _, choice := range accentChoices {
-					if choice.Value == current {
-						currentLabel = choice.Label
-					}
-				}
+				current := accentThemeChoice(cfg.AccentTheme).Value
+				currentLabel := accentThemeChoice(cfg.AccentTheme).Label
 				ui.Row(c).Gap(Space3).AlignItems(ui.Center).Children(func() {
 					ui.Row(c).Gap(Space2).AlignItems(ui.Center).Children(func() {
 						for _, choice := range accentChoices {
@@ -58,7 +50,7 @@ func (a *app) pageGeneral(c *ui.Context, t *ui.Theme, cfg Config) {
 						}
 					})
 					ui.Text(c, currentLabel).Font(fontUI).FontSize(FontHelper).
-						TextColor(at.TextMuted).Width(36).SingleLine()
+						TextColor(at.TextMuted).Width(48).SingleLine()
 				})
 			})
 			op := cfg.WindowOpacity

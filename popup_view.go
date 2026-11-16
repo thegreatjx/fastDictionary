@@ -18,6 +18,9 @@ func renderIconButton(c *ui.Context, icon *ui.SVG, tip string, size, iconSize fl
 	b := ui.Button(c, "").Size(size, size).Padding(0, 0).Radius(RadiusSM).Center().Tooltip(tip).Label(tip)
 	bg := ui.Color{}
 	fg := at.TextSec
+	if icon == iconCheck {
+		fg = at.Success
+	}
 	if active {
 		bg = at.AccentSoft
 		fg = at.Accent
@@ -26,7 +29,9 @@ func renderIconButton(c *ui.Context, icon *ui.SVG, tip string, size, iconSize fl
 		if !active {
 			bg = at.SurfaceHover
 		}
-		fg = at.Text
+		if icon != iconCheck {
+			fg = at.Text
+		}
 	}
 	if b.Pressed() {
 		bg = at.SurfacePress

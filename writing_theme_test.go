@@ -30,11 +30,11 @@ func writingContrastRatio(foreground, background ui.Color) float64 {
 
 // writingThemeForTest builds the app's real theme, not the framework default:
 // the writing card's "added" ink follows the user's accent, and the framework
-// default accent is a bright system blue that is not used by this app.
+// default accent is not part of this app's palettes.
 func writingThemeForTest(dark bool) *ui.Theme {
 	var got *ui.Theme
 	tt := ui.NewTester(func(c *ui.Context) {
-		applyTheme(c, themeModeFor(dark), dark, "slate")
+		applyTheme(c, themeModeFor(dark), dark, "sky")
 		got = c.Theme()
 	}, 40, 20)
 	tt.Frame()

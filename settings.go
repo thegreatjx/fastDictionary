@@ -192,7 +192,7 @@ func (a *app) settingsNavItem(c *ui.Context, t *ui.Theme, at AppTheme, item sett
 	textCol := at.TextSec
 	weight := 500
 	if active {
-		iconCol, textCol, weight = at.Accent, at.Text, 600
+		iconCol, textCol, weight = at.Accent, at.Accent, 600
 	}
 	// 生词本后面直接带数量：侧栏是唯一能看到「存了多少」的地方。
 	label := item.label

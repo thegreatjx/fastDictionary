@@ -249,6 +249,9 @@ type app struct {
 	// chipTip is the label that names the button under the pointer. It has
 	// its own lock, so the render pass never waits on app.mu for it.
 	chipTip chipTipState
+	// chipClose is the small X that floats over the chip's top-right corner
+	// while the pointer is on the "more" button.
+	chipClose chipCloseState
 	// gestureGate drops a gesture that repeats the one just accepted. It is
 	// what keeps a scrollbar drag or a stutter from raising the chip twice.
 	gestureGate gestureGate
@@ -356,7 +359,7 @@ type snapshot struct {
 // feedbackTTL is how long a copy or save confirmation stays on screen. Without
 // an expiry the banner stayed until the next popup was opened, which looked
 // like a stuck notification rather than a confirmation of one action.
-const feedbackTTL = 3 * time.Second
+const feedbackTTL = 2 * time.Second
 
 // noteFeedbackLocked records when the current banner text first appeared. The
 // popup renders from a snapshot, so the clock has to live next to the text.

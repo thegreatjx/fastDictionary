@@ -19,22 +19,21 @@ func renderHome(t *testing.T, a *app) []string {
 	return tt.Texts()
 }
 
-// TestHomeReadyStateShowsTheBackgroundState 是首页空态的验收：用户打开主窗口
-// 时，第一眼要知道"软件在跑、划词可用、快捷键是什么"，而不是看到一张空白。
-func TestHomeReadyStateShowsTheBackgroundState(t *testing.T) {
+// TestHomeReadyStateKeepsTheInputAndAIHint 是首页空态的验收：输入框和语种
+// 提示要在，但侧栏已经常驻的监听状态不应在工作台里再重复一张卡片。
+func TestHomeReadyStateKeepsTheInputAndAIHint(t *testing.T) {
 	a := newTestApp()
 	texts := strings.Join(renderHome(t, a), "")
 	for _, want := range []string{
 		"查词与翻译",
-		"后台划词监听已就绪",
-		"划词翻译",
-		"截图翻译",
-		"快捷浮窗",
 		"支持自动检测语种",
 	} {
 		if !strings.Contains(texts, want) {
 			t.Errorf("首页空态缺少 %q，实际渲染 %q", want, texts)
 		}
+	}
+	if strings.Contains(texts, "后台划词监听已就绪") {
+		t.Errorf("首页仍在重复侧栏的监听状态：%q", texts)
 	}
 	// 默认配置没有配 AI 服务时，引导必须写出来，否则长难句和润色点了没反应。
 	a.store.Update(func(c *Config) { c.AIEnabled = false })

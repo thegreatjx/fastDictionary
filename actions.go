@@ -533,45 +533,33 @@ type writingTheme struct {
 	improvedTitle ui.Color
 }
 
-// writingThemeFor keeps the writing card in the same paper-and-ink family as
-// the rest of the app. Corrections are marked by clay (removed) and the single
-// accent (added), never by a green success block or a red/green pair; the
-// "改后版本" surface is neutral paper.
+// writingThemeFor keeps the writing card in the same cool surface family as
+// the rest of the app. Corrections are marked by danger (removed) and the
+// theme accent (added); the "改后版本" surface is the themed soft wash, never
+// a green success block.
 func writingThemeFor(t *ui.Theme) writingTheme {
-	saveBackground := saveButtonColor(t)
-	saveText := ui.Hex("#FFFFFF")
-	accent := defaultAccent(false)
+	at := newAppTheme(false, defaultAccent(false))
 	if t != nil {
-		saveText = saveButtonTextColor(t)
-		accent = t.Accent
+		at = appTheme(t)
 	}
-	if t != nil && t.Dark {
-		return writingTheme{
-			setting:       writingTone{background: ui.Hex("#1D2023"), border: ui.Hex("#2E3136"), text: ui.Hex("#E8E9EB")},
-			tag:           writingTone{background: ui.Hex("#222528"), border: ui.Hex("#2E3136"), text: ui.Hex("#A6ABB2")},
-			success:       writingTone{background: ui.Hex("#1D2023"), border: ui.Hex("#2E3136"), text: ui.Hex("#A6ABB2")},
-			improved:      writingTone{background: ui.Hex("#1D2023"), border: ui.Hex("#2E3136"), text: ui.Hex("#E8E9EB")},
-			copy:          writingTone{background: ui.Hex("#222528"), border: ui.Hex("#2E3136"), text: ui.Hex("#A6ABB2")},
-			save:          writingTone{background: saveBackground, border: saveBackground, text: saveText},
-			settingLabel:  ui.Hex("#8E949C"),
-			removed:       ui.Hex("#D9A79E"),
-			added:         accent,
-			deleted:       ui.Hex("#A0A6AE"),
-			improvedTitle: ui.Hex("#8E949C"),
-		}
+	saveBackground := saveButtonColor(t)
+	saveText := saveButtonTextColor(t)
+	removed := at.Danger
+	if !at.Dark {
+		removed = at.Danger.Mix(ui.Hex("#000000"), 0.12)
 	}
 	return writingTheme{
-		setting:       writingTone{background: ui.Hex("#F2F2EF"), border: ui.Hex("#E2E2DD"), text: ui.Hex("#1A1C1E")},
-		tag:           writingTone{background: ui.Hex("#F7F7F4"), border: ui.Hex("#E6E6E1"), text: ui.Hex("#555A61")},
-		success:       writingTone{background: ui.Hex("#F7F7F4"), border: ui.Hex("#E6E6E1"), text: ui.Hex("#555A61")},
-		improved:      writingTone{background: ui.Hex("#F7F7F4"), border: ui.Hex("#E6E6E1"), text: ui.Hex("#1A1C1E")},
-		copy:          writingTone{background: ui.Hex("#FFFFFF"), border: ui.Hex("#D8D8D2"), text: ui.Hex("#555A61")},
+		setting:       writingTone{background: at.SurfaceHover, border: at.BorderSubtle, text: at.Text},
+		tag:           writingTone{background: at.SurfaceHover, border: at.BorderSubtle, text: at.TextSec},
+		success:       writingTone{background: at.TintSurface, border: at.TintBorder, text: at.TextSec},
+		improved:      writingTone{background: at.TintSurface, border: at.TintBorder, text: at.Text},
+		copy:          writingTone{background: at.Surface, border: at.BorderCtrl, text: at.TextSec},
 		save:          writingTone{background: saveBackground, border: saveBackground, text: saveText},
-		settingLabel:  ui.Hex("#666C74"),
-		removed:       ui.Hex("#8A4A42"),
-		added:         accent,
-		deleted:       ui.Hex("#5B6169"),
-		improvedTitle: ui.Hex("#666C74"),
+		settingLabel:  at.TextSec,
+		removed:       removed,
+		added:         at.Accent,
+		deleted:       at.TextSec,
+		improvedTitle: at.TextSec,
 	}
 }
 

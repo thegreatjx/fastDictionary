@@ -27,16 +27,19 @@ func TestDesignSystemScale(t *testing.T) {
 	}
 }
 
-// TestAppThemeDerivesBothPalettes 确认明暗两套色板都给出显式灰阶与半透明
-// 状态色，禁用态和 hover 不用容器 Opacity 顶替。
+// TestAppThemeDerivesBothPalettes 确认明暗两套色板都给出显式色阶与主题微底，
+// 禁用态和 hover 不用容器 Opacity 顶替。
 func TestAppThemeDerivesBothPalettes(t *testing.T) {
 	for _, dark := range []bool{false, true} {
 		at := newAppTheme(dark, defaultAccent(dark))
 		if at.Dark != dark {
 			t.Errorf("dark=%v 得到 Dark=%v", dark, at.Dark)
 		}
-		if at.AccentSoft.A >= at.Accent.A {
-			t.Errorf("dark=%v AccentSoft 没有变浅", dark)
+		if at.AccentSoft == at.Accent {
+			t.Errorf("dark=%v AccentSoft 没有独立微底", dark)
+		}
+		if at.AccentRing == at.AccentSoft {
+			t.Errorf("dark=%v AccentRing 没有独立描边", dark)
 		}
 		if at.DangerHoverBg.A >= at.Danger.A {
 			t.Errorf("dark=%v DangerHoverBg 没有变浅", dark)
@@ -44,8 +47,8 @@ func TestAppThemeDerivesBothPalettes(t *testing.T) {
 		if at.TextDisabled.A >= at.Text.A {
 			t.Errorf("dark=%v TextDisabled 没有给出灰阶", dark)
 		}
-		if at.BorderSubtle.A >= at.BorderCtrl.A {
-			t.Errorf("dark=%v 细边框没有比控件边框更淡", dark)
+		if at.BorderSubtle == at.BorderCtrl {
+			t.Errorf("dark=%v 细边框与控件边框同色", dark)
 		}
 	}
 }
@@ -166,9 +169,9 @@ func TestSegmentedControlGeometry(t *testing.T) {
 	}
 }
 
-// TestChipPaletteNeutralPaper 防止悬浮条退回彩色贴片：底色必须是中性纸面，
-// 只有主图标允许一点低饱和黛青，hover 微底必须可见。
-func TestChipPaletteNeutralPaper(t *testing.T) {
+// TestChipPaletteCoolSurface 防止悬浮条退回暖色纸面：底色必须是冷白或
+// 深海蓝，允许的色相只能是冷调；只有主图标使用主题色，hover 微底必须可见。
+func TestChipPaletteCoolSurface(t *testing.T) {
 	for _, dark := range []bool{false, true} {
 		th := ui.Theme{Dark: dark, Accent: defaultAccent(dark)}
 		surf := chipSurface(&th)
@@ -179,10 +182,13 @@ func TestChipPaletteNeutralPaper(t *testing.T) {
 			t.Fatalf("dark=%v: 悬浮条颜色塌缩", dark)
 		}
 		if primFg.B <= primFg.R {
-			t.Fatalf("dark=%v: 主图标应偏冷黛青，得到 %+v", dark, primFg)
+			t.Fatalf("dark=%v: 主图标应偏冷色，得到 %+v", dark, primFg)
 		}
 		if primWash.A <= 0 {
 			t.Fatalf("dark=%v: 主图标 hover 微底不可见", dark)
+		}
+		if surf.R > surf.B {
+			t.Fatalf("dark=%v: 悬浮条底色带暖色，得到 %+v", dark, surf)
 		}
 		maxc, minc := surf.R, surf.R
 		for _, v := range []uint8{surf.G, surf.B} {
@@ -193,8 +199,8 @@ func TestChipPaletteNeutralPaper(t *testing.T) {
 				minc = v
 			}
 		}
-		if maxc-minc > 4 {
-			t.Fatalf("dark=%v: 悬浮条底色带了明显色相，得到 %+v", dark, surf)
+		if maxc-minc > 48 {
+			t.Fatalf("dark=%v: 悬浮条底色过于饱和，得到 %+v", dark, surf)
 		}
 	}
 }

@@ -148,7 +148,7 @@ func TestSelectionChipPrimaryActions(t *testing.T) {
 	if strings.Contains(texts, "词典") {
 		t.Errorf("selection chip still offers the retired 词典 action: %q", texts)
 	}
-	if got, want := selectionChipWidth(2), 222; got != want {
+	if got, want := selectionChipWidth(2), 189; got != want {
 		t.Fatalf("default chip width = %d, want %d", got, want)
 	}
 }

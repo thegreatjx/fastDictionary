@@ -130,11 +130,13 @@ func (a *app) renderOcrParagraphPairs(c *ui.Context, t *ui.Theme, s snapshot) {
 // card. The pair view now gets its own copy of that row.
 func (a *app) renderScreenshotPairActions(c *ui.Context, t *ui.Theme, cfg Config, s snapshot) {
 	ui.Row(c).FillWidth().Gap(Space1).AlignItems(ui.Center).Children(func() {
+		copyIcon := iconCopy
 		copyTip := "复制译文"
 		if s.copiedMsg != "" {
+			copyIcon = iconCheck
 			copyTip = "译文已复制"
 		}
-		if renderIconButton(c, iconCopy, copyTip, 28, 14, false).Clicked() {
+		if renderIconButton(c, copyIcon, copyTip, 28, 14, false).Clicked() {
 			a.copyToClipboard(s.target)
 		}
 		spText, spLang, spTip := primarySpeechTarget(s.source, s.target)

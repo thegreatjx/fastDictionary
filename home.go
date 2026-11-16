@@ -151,7 +151,7 @@ func (a *app) pageHome(c *ui.Context, t *ui.Theme, cfg Config) {
 		h.tab = "translate"
 	}
 
-	// 保存/复制的反馈条：与浮窗共用一份文案和三秒时限。以前这些文案只写进
+	// 保存/复制的反馈条：与浮窗共用一份文案和两秒时限。以前这些文案只写进
 	// actionSavedMsg，主窗口却从不渲染它们，保存失败也就无声无息。
 	a.mu.Lock()
 	a.noteFeedbackLocked()
@@ -213,50 +213,24 @@ func (a *app) pageHome(c *ui.Context, t *ui.Theme, cfg Config) {
 }
 
 func (a *app) renderHomeReadyState(c *ui.Context, t *ui.Theme, at AppTheme, cfg Config, h homeState) {
-	SurfaceCard(c, t).Children(func() {
-		ui.Column(c).FillWidth().Gap(Space3).Children(func() {
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
-				paused := !a.selectionPausedUntil().IsZero()
-				dotCol := at.Success
-				statusTitle := "后台划词监听已就绪"
-				if cfg.SelectionTrigger == "hotkey" {
-					statusTitle = "当前为仅快捷键划词模式"
-				}
-				if paused {
-					dotCol = at.Warning
-					statusTitle = "划词触发已暂停"
-				}
-				ui.Box(c).Size(8, 8).Radius(RadiusXS).Background(dotCol).Shrink(0)
-				ui.Text(c, statusTitle).Font(fontUI).FontSize(FontControl).FontWeight(600).TextColor(at.Text)
-				ui.Spacer(c).Grow(1)
-				if GhostButton(c, t, "划词设置 →").Clicked() {
-					a.page = "selection"
-					a.settingsRefresh()
-				}
-			})
-
-			ui.Row(c).FillWidth().Wrap().Gap(Space2).AlignItems(ui.Center).Children(func() {
-				a.homeShortcutChip(c, t, at, "划词翻译", cfg.HotkeySelection)
-				a.homeShortcutChip(c, t, at, "截图翻译", cfg.HotkeyScreenshot)
-				a.homeShortcutChip(c, t, at, "快捷浮窗", cfg.HotkeyInput)
-			})
-
-			if prob := cfg.AISetupProblem(); prob != "" {
-				ui.Box(c).FillWidth().Padding(Space2, Space3).Radius(RadiusSM).
-					Background(at.TintSurface).Border(1, at.TintBorder).Children(func() {
-					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
-						ui.Icon(c, iconSparkles).Size(IconSize, IconSize).TextColor(at.Accent)
-						ui.Text(c, "配置 AI 服务后可解锁 AI 精翻、长难句拆解与写作润色（当前："+prob+"）").
-							Font(fontUI).FontSize(FontHelper).TextColor(at.TextSec).Wrap().Grow(1)
-						if SecondaryButton(c, t, "去配置").Clicked() {
-							a.page = "ai"
-							a.settingsRefresh()
-						}
-					})
+	// 监听状态常驻在侧栏底部，工作台不再重复一遍；这里只保留真正需要
+	// 用户处理的 AI 配置提示。
+	if prob := cfg.AISetupProblem(); prob != "" {
+		SurfaceCard(c, t).Children(func() {
+			ui.Box(c).FillWidth().Padding(Space2, Space3).Radius(RadiusSM).
+				Background(at.TintSurface).Border(1, at.TintBorder).Children(func() {
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
+					ui.Icon(c, iconSparkles).Size(IconSize, IconSize).TextColor(at.Accent)
+					ui.Text(c, "配置 AI 服务后可解锁 AI 精翻、长难句拆解与写作润色（当前："+prob+"）").
+						Font(fontUI).FontSize(FontHelper).TextColor(at.TextSec).Wrap().Grow(1)
+					if SecondaryButton(c, t, "去配置").Clicked() {
+						a.page = "ai"
+						a.settingsRefresh()
+					}
 				})
-			}
+			})
 		})
-	})
+	}
 
 	// 最近查询快捷词条
 	recent := h.recent
@@ -293,19 +267,6 @@ func (a *app) renderHomeReadyState(c *ui.Context, t *ui.Theme, at AppTheme, cfg 
 			})
 		})
 	}
-}
-
-func (a *app) homeShortcutChip(c *ui.Context, t *ui.Theme, at AppTheme, label, hk string) {
-	if strings.TrimSpace(hk) == "" {
-		hk = "未设置"
-	}
-	ui.Box(c).Padding(Space1, Space2).Radius(RadiusSM).
-		Background(at.SurfaceSubtle).Border(1, at.BorderSubtle).Children(func() {
-		ui.Row(c).Gap(Space2).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, label).Font(fontUI).FontSize(FontHelper).TextColor(at.TextSec).SingleLine()
-			KeycapBadge(c, t, hk)
-		})
-	})
 }
 
 func (a *app) renderHomeTranslateTab(c *ui.Context, t *ui.Theme, at AppTheme, cfg Config, h homeState) {

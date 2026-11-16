@@ -58,7 +58,16 @@ const (
 	// chipTipWarm is how soon after a label goes the next one shows at once,
 	// so sweeping the pointer along the row moves the plate with it.
 	chipTipWarm = 400 * time.Millisecond
+
+	// chipCloseSize is the diameter of the close badge that floats at the
+	// chip's top-right corner while the pointer is on the "more" button.
+	chipCloseSize = 18
 )
+
+// chipMoreLabel names the button that opens the more menu. The close badge
+// belongs to it: the dot menu is where a user looks for "get this out of the
+// way", and a permanent sixth button made the row wider for everyone.
+const chipMoreLabel = "复制与更多功能"
 
 // selState is the chip's state, guarded by app.mu.
 type selState struct {
@@ -112,6 +121,22 @@ type chipTipState struct {
 	geom chipGeom
 }
 
+// chipCloseState is the floating close badge's state. It is a flyout of its
+// own because the chip window is clipped to the pill: an overlay inside it
+// covered the ellipsis glyph and could not extend past the rounded corner.
+// rect is the badge's box in the chip's content area, kept so the pointer
+// hook can keep the badge alive while the pointer is on the part that hangs
+// outside the chip.
+type chipCloseState struct {
+	mu    sync.Mutex
+	win   *mygo.Window
+	shown bool
+	rect  ui.Rect
+	// gen invalidates a raise already in flight, exactly as chipTipState.gen
+	// does: the pointer can leave before the flyout's ShowInactive lands.
+	gen uint64
+}
+
 // chipGeom is the display snapshot a chip appearance is placed with.
 type chipGeom struct {
 	displays []geomDisplay
@@ -132,17 +157,18 @@ var (
 )
 
 // selectionChipWidth keeps the toolbar compact and proportional.
-// Buttons: translate, speak, screenshot, more, close (5) plus enabled actions.
-// Two 1px dividers separate the tools from "more" and "more" from "close".
+// Base buttons: translate, speak, screenshot, more (4 buttons). Every item is
+// chipButtonSize wide, one 1px divider separates the tools from "more", and
+// the row carries a gap between each pair of neighbours. The close badge is a
+// flyout over the pill's corner, so it costs no row width.
 func selectionChipWidth(enabledActions int) int {
 	if enabledActions < 0 {
 		enabledActions = 0
 	}
-	buttons := 5 + enabledActions
-	// One gap between every neighbouring element: the buttons plus the two
-	// dividers, which are elements of their own.
-	gaps := buttons + 1
-	return 2*chipPadH + buttons*chipButtonSize + 2 + gaps*chipRowGap
+	items := 4 + enabledActions
+	// One gap between each neighbouring item, the divider included.
+	gaps := items
+	return 2*chipPadH + items*chipButtonSize + 1 + gaps*chipRowGap
 }
 
 func (a *app) currentSelectionChipWidth() int {
@@ -472,6 +498,7 @@ func (a *app) hideSelIcon() {
 	// Before the tip: from here on no pointer move is the chip's business.
 	disarmChipHover()
 	a.hideChipTip()
+	a.hideChipClose()
 	if more != nil && !more.IsDestroyed() {
 		more.Close()
 	}
@@ -530,6 +557,12 @@ func (a *app) onChipPointer(px, py int32) {
 	// fresh read: mygo.Screen answers on the main thread, and a pointer move
 	// must not wait for it.
 	dx, dy := a.chipTip.chipToDIP(px, py)
+	// The badge hangs over the pill's top-right corner, so the pointer on it
+	// is outside the chip's hit boxes. Leaving the row for the badge is not
+	// leaving the chip: keep the hover state and the badge while it is on it.
+	if a.chipCloseContains(dx, dy) {
+		return
+	}
 	t := &a.chipTip
 	t.mu.Lock()
 	label, inside := t.hitAt(dx, dy, originX, originY)
@@ -545,10 +578,14 @@ func (a *app) onChipPointer(px, py int32) {
 		if was && win != nil && !win.IsDestroyed() {
 			win.Hide()
 		}
+		a.hideChipClose()
 		return
 	}
 	if t.key == label && t.shown {
 		t.mu.Unlock()
+		if label != chipMoreLabel {
+			a.hideChipClose()
+		}
 		return
 	}
 	now := time.Now()
@@ -572,6 +609,9 @@ func (a *app) onChipPointer(px, py int32) {
 		}
 		t.timer = time.AfterFunc(remaining, func() { a.onChipPointer(px, py) })
 		t.mu.Unlock()
+		if label != chipMoreLabel {
+			a.hideChipClose()
+		}
 		return
 	}
 	if t.timer != nil {
@@ -581,6 +621,14 @@ func (a *app) onChipPointer(px, py int32) {
 	t.shown = true
 	anchor := t.anchorFor(label)
 	t.mu.Unlock()
+	if label == chipMoreLabel {
+		// The badge takes this button's place instead of joining its label:
+		// the X sits exactly where the label's lower-right corner would, and
+		// two floating plates over one 28px button read as clutter.
+		a.showChipClose(anchor)
+		return
+	}
+	a.hideChipClose()
 	a.raiseChipTip(label, anchor)
 }
 
@@ -742,6 +790,153 @@ func (a *app) hideChipTip() {
 	if win != nil && !win.IsDestroyed() {
 		win.Hide()
 	}
+}
+
+// chipCloseRect places the badge centred on the pill's top-right corner. It
+// overlaps the rounded corner and hangs outside the chip, clear of the
+// ellipsis glyph.
+func chipCloseRect(more ui.Rect) ui.Rect {
+	cx := more.X + more.W - 1
+	return ui.Rect{
+		X: cx - chipCloseSize/2,
+		Y: -chipCloseSize / 2,
+		W: chipCloseSize,
+		H: chipCloseSize,
+	}
+}
+
+// showChipClose raises the badge. It is a flyout of the chip rather than a
+// child of its window: the chip is clipped to the pill, and an overlay inside
+// it sat on top of the ellipsis glyph. A flyout may extend past its parent and
+// draws on its own transparent surface.
+func (a *app) showChipClose(more ui.Rect) {
+	a.mu.Lock()
+	chipShown, chipWin := a.sel.shown, a.sel.win
+	a.mu.Unlock()
+	if !chipShown || chipWin == nil || chipWin.IsDestroyed() {
+		return
+	}
+	rect := chipCloseRect(more)
+	// Anchor the flyout on the chip's top edge, its right edge on the badge's.
+	// The negative gap lifts half the badge above that edge, so its centre
+	// lands exactly on the pill corner.
+	anchor := mygo.Rectangle{
+		X: int(rect.X), Y: 0, Width: chipCloseSize, Height: 1,
+	}
+
+	s := &a.chipClose
+	s.mu.Lock()
+	s.shown = true
+	s.rect = rect
+	gen := s.gen
+	win := s.win
+	s.mu.Unlock()
+
+	if win == nil || win.IsDestroyed() {
+		win = mygo.NewFlyout(mygo.FlyoutOptions{
+			Parent:    chipWin,
+			Anchor:    anchor,
+			Placement: mygo.PlacementTopEnd,
+			Gap:       -chipCloseSize / 2,
+			Width:     chipCloseSize,
+			Height:    chipCloseSize,
+			// The badge must not take the keyboard from the page, and its
+			// surface is already transparent: no shadow window is needed.
+			Focusable: false,
+			Shadow:    false,
+			Content:   ui.View(safeView("chipClose", a.chipCloseView)),
+		})
+		s.mu.Lock()
+		s.win = win
+		s.mu.Unlock()
+	} else {
+		win.SetAnchor(anchor)
+		win.SetSize(chipCloseSize, chipCloseSize)
+		win.SetAnchor(anchor)
+	}
+
+	// Same race as the hover plate: the pointer can leave while this show is
+	// on its way to the main thread.
+	s.mu.Lock()
+	stale := s.gen != gen || !s.shown
+	s.mu.Unlock()
+	if stale {
+		return
+	}
+	win.ShowInactive()
+	mygo.RunOnMain(func() {
+		s.mu.Lock()
+		stale := s.gen != gen || !s.shown
+		s.mu.Unlock()
+		if stale {
+			win.Hide()
+			return
+		}
+		win.SetAnchor(anchor)
+		win.SetSize(chipCloseSize, chipCloseSize)
+		win.SetAnchor(anchor)
+	})
+	win.Update(func() {})
+}
+
+// hideChipClose takes the badge away.
+func (a *app) hideChipClose() {
+	s := &a.chipClose
+	s.mu.Lock()
+	was := s.shown
+	s.shown = false
+	s.gen++
+	win := s.win
+	s.mu.Unlock()
+	if !was || win == nil || win.IsDestroyed() {
+		return
+	}
+	win.Hide()
+}
+
+// chipCloseContains reports whether a point in the chip's content area is on
+// the badge. It has slack like the button hit boxes, so the pointer does not
+// lose the badge on the single pixel where the flyout's window starts.
+func (a *app) chipCloseContains(x, y int) bool {
+	s := &a.chipClose
+	s.mu.Lock()
+	shown, r := s.shown, s.rect
+	s.mu.Unlock()
+	if !shown {
+		return false
+	}
+	const slack = 2
+	return float32(x) >= r.X-slack && float32(x) <= r.X+r.W+slack &&
+		float32(y) >= r.Y-slack && float32(y) <= r.Y+r.H+slack
+}
+
+// chipCloseView draws the badge: a small surface disc with a hairline and an
+// X, the same materials as the pill it sits on.
+func (a *app) chipCloseView(c *ui.Context) {
+	cfg := a.store.Get()
+	applyTheme(c, cfg.ThemeMode, c.Theme().Dark, cfg.AccentTheme)
+	t := c.Theme()
+	c.Root().Background(ui.Transparent)
+
+	btn := ui.Button(c, "").Label("关闭").
+		Size(chipCloseSize, chipCloseSize).Padding(0, 0).Radius(chipCloseSize / 2).
+		Center().Cursor(ui.CursorPointer)
+	surface := chipSurface(t)
+	bg := surface
+	fg := t.TextMuted
+	if btn.Hovered() {
+		bg = surface.Mix(t.Text, 0.06)
+		fg = t.Text
+	}
+	if btn.Pressed() {
+		bg = surface.Mix(t.Text, 0.12)
+		fg = t.Text
+	}
+	btn.Background(bg).Border(1, chipBorderColor(t)).
+		OnClick(func() { a.hideSelIcon() })
+	btn.Children(func() {
+		ui.Icon(c, iconClose).Size(9, 9).TextColor(fg)
+	})
 }
 
 // chipTipWidth sizes the label plate to its text, with a minimum so a short
@@ -1152,6 +1347,14 @@ func (a *app) onGlobalMouseDown(px, py int32) {
 	if a.selIconContains(px, py) {
 		return // a click on the chip itself: let it through
 	}
+	// The close badge is a flyout of its own and hangs over the pill's
+	// corner, so a press on it is outside the chip's window. Let its button
+	// handle the click; hiding the chip on the press would tear the badge
+	// down before the release.
+	dx, dy := a.chipTip.chipToDIP(px, py)
+	if a.chipCloseContains(dx, dy) {
+		return
+	}
 	// A click on the "更多" menu is not a click elsewhere. Hiding the chip
 	// closes the owned menu window, and doing that on the press would kill
 	// the item the user is in the middle of choosing.
@@ -1298,9 +1501,7 @@ func (a *app) selIconView(c *ui.Context) {
 				})
 			}
 			ui.Box(c).Width(1).Height(14).Background(chipBorderColor(t))
-			a.chipIconButton(c, t, iconMore, chipToneInk, "复制与更多功能", func() { a.toggleMoreFlyout() })
-			ui.Box(c).Width(1).Height(14).Background(chipBorderColor(t))
-			a.chipCloseButton(c, t)
+			a.chipIconButton(c, t, iconMore, chipToneInk, chipMoreLabel, func() { a.toggleMoreFlyout() })
 		})
 }
 
@@ -1346,29 +1547,6 @@ func (a *app) chipIconButton(c *ui.Context, t *ui.Theme, icon *ui.SVG, tone chip
 			iconEl.Scale(0.88, 0.88)
 		}
 		iconEl.TextColor(iconEl.AnimateColor("fg", fg, chipHoverMotion))
-	})
-}
-
-// chipCloseButton dismisses the chip without acting on the selection. It keeps
-// the same 28px hit area as the other commands but draws a smaller circled X,
-// so the row still reads as tools plus one quiet escape hatch.
-func (a *app) chipCloseButton(c *ui.Context, t *ui.Theme) {
-	at := appTheme(t)
-	btn := ui.Button(c, "").Label("关闭").
-		Size(chipButtonSize, chipButtonSize).Padding(0, 0).Radius(7).Center().
-		Cursor(ui.CursorPointer)
-	fg := at.TextMuted
-	if btn.Hovered() {
-		fg = at.Text
-	}
-	btn.Background(ui.Transparent).Border(0, ui.Transparent).
-		OnClick(func() { a.hideSelIcon() })
-	a.recordChipHit(btn, "关闭")
-	btn.Children(func() {
-		ui.Box(c).Size(20, 20).Radius(10).Background(t.Surface).
-			Border(1, chipBorderColor(t)).Center().Children(func() {
-			ui.Icon(c, iconClose).Size(11, 11).TextColor(fg)
-		})
 	})
 }
 

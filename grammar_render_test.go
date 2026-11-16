@@ -1,7 +1,6 @@
 package main
 
 import (
-	"math"
 	"strings"
 	"testing"
 
@@ -86,75 +85,40 @@ func TestTrunkToggleFoldsTheSentence(t *testing.T) {
 // subject, blue predicate, green object — so the sentence read as a row of
 // sticky notes. Roles are now distinguished by the kind of line under the word
 // plus a quiet colour, and the palette stays cool and low-chroma.
-// TestGrammarRolesAreDistinctAndSaturated guards the grammar card's palette.
-//
-// This card is a teaching aid, so its job is the opposite of the selection
-// chip's: eight roles have to tell themselves apart at a glance, and the
-// muted greys the chip uses cannot do that. The check is therefore that every
-// role colour is distinguishable from every other, not that it is quiet.
-//
-// The chip stays quiet (see selicon_palette_test.go); the two palettes answer
-// different questions and must not be collapsed into one rule.
-func TestGrammarRolesAreDistinctAndSaturated(t *testing.T) {
-	ink := grammarInkFor(grammarThemeForTest(t))
-	colors := map[string]ui.Color{
-		"subject":    ink.subjectLine,
-		"predicate":  ink.predicateLine,
-		"object":     ink.objectLine,
-		"complement": ink.complementLine,
-		"connector":  ink.connector,
-		"obstacle":   ink.obstacle,
+// TestGrammarUsesOneInkLadder pins the redesigned palette: the trunk keeps
+// body ink, the predicate alone takes the theme accent and a fine underline,
+// modifiers drop to muted grey, and clauses use a 10% accent wash instead of a
+// second hue.
+func TestGrammarUsesOneInkLadder(t *testing.T) {
+	th := grammarThemeForTest(t)
+	ink := grammarInkFor(th)
+	at := appTheme(th)
+	if ink.body != at.Text {
+		t.Errorf("主干文字应使用 Text，得到 %+v", ink.body)
 	}
-	// Every pair must differ enough to be told apart at a glance. The eye
-	// separates hue far better than brightness, so the distance is measured in
-	// RGB with a floor well above "slightly different grey".
-	names := make([]string, 0, len(colors))
-	for n := range colors {
-		names = append(names, n)
+	if ink.predicate != at.Accent {
+		t.Errorf("谓语应使用当前主题 Accent，得到 %+v", ink.predicate)
 	}
-	for i := 0; i < len(names); i++ {
-		for j := i + 1; j < len(names); j++ {
-			a, b := colors[names[i]], colors[names[j]]
-			d := colorDistance(a, b)
-			if d < 60 {
-				t.Errorf("%s %#v and %s %#v are only %.0f apart; roles must be distinguishable",
-					names[i], a, names[j], b, d)
-			}
+	if ink.muted != at.TextMuted {
+		t.Errorf("修饰语应降为 TextMuted，得到 %+v", ink.muted)
+	}
+	if ink.connector != at.TextSec {
+		t.Errorf("连接词应使用 TextSec，得到 %+v", ink.connector)
+	}
+	if ink.clauseTint.A >= ink.body.A {
+		t.Errorf("从句底色必须是半透明微底，得到 %+v", ink.clauseTint)
+	}
+	for _, role := range []string{"subject", "predicate", "object", "complement", "connector"} {
+		_, _, marked := markForRole(role, ink)
+		if marked != (role == "predicate") {
+			t.Errorf("%s 的线条状态 = %v，只有谓语允许一条底线", role, marked)
 		}
 	}
 }
 
-// colorDistance is the plain RGB euclidean distance, which is enough to catch
-// two roles sharing a colour.
-func colorDistance(a, b ui.Color) float64 {
-	dr := float64(a.R) - float64(b.R)
-	dg := float64(a.G) - float64(b.G)
-	db := float64(a.B) - float64(b.B)
-	return math.Sqrt(dr*dr + dg*dg + db*db)
-}
-
-// TestGrammarRolesDifferInKindNotOnlyHue checks the second channel: a reader
-// who cannot separate the hues must still see which part is which, so the line
-// styles have to be distinct.
-func TestGrammarRolesDifferInKindNotOnlyHue(t *testing.T) {
-	ink := grammarInkFor(grammarThemeForTest(t))
-	roles := []string{"subject", "predicate", "object", "complement"}
-	seen := map[markKind]string{}
-	for _, role := range roles {
-		kind, _, _ := markForRole(role, ink)
-		if prev, dup := seen[kind]; dup {
-			t.Errorf("%s and %s share the %v line style; each role needs its own",
-				prev, role, kind)
-		}
-		seen[kind] = role
-	}
-	if len(seen) != len(roles) {
-		t.Fatalf("%d roles mapped onto %d line styles", len(roles), len(seen))
-	}
-}
-
-// TestGrammarWordRendersItsRoleMark checks that each role draws the line the
-// redesign promises, rather than only a colour.
+// TestGrammarWordRendersItsRoleMark checks that a role word still renders as
+// its own styled node rather than a bare string, so its ink and tooltip
+// survive the palette change.
 func TestGrammarWordRendersItsRoleMark(t *testing.T) {
 	cases := []struct {
 		role string

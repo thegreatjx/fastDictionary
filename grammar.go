@@ -796,6 +796,12 @@ type GrammarToken struct {
 	SpanEnd   int
 	// SpanIndex distinguishes two annotations that cover identical text.
 	SpanIndex int
+	// InClause marks a word inside a clause span. The renderer gives it the
+	// 10% accent wash; ClauseStart and ClauseEnd keep the rounded ends at the
+	// real boundaries instead of rounding every word.
+	InClause    bool
+	ClauseStart bool
+	ClauseEnd   bool
 }
 
 type clauseSpan struct {
@@ -936,6 +942,24 @@ func buildGrammarTokens(origText string, res *SentenceAnalysisResult) []GrammarT
 				clauseEmitted[cIdx] = true
 			}
 		}
+		if len(clauses) > 0 {
+			// Nested clauses overlap, so the wash follows the union of their
+			// coverage: a word at the end of an inner clause is still inside the
+			// outer one and must not break the block with an untinted gap.
+			covered := func(pos int) bool {
+				for _, c := range clauses {
+					if pos >= c.start && pos < c.end {
+						return true
+					}
+				}
+				return false
+			}
+			if covered(absStart) {
+				tok.InClause = true
+				tok.ClauseStart = !covered(absStart - 1)
+				tok.ClauseEnd = !covered(absEnd)
+			}
+		}
 
 		// Check role overlap. The token records the whole span it belongs to,
 		// not just its own bounds, so the renderer can tell a span's first
@@ -970,35 +994,21 @@ func buildGrammarTokens(origText string, res *SentenceAnalysisResult) []GrammarT
 
 // grammarInk is the grammar card's palette.
 //
-// Unlike the selection chip, which is a passive affordance and stays quiet,
-// this card is a teaching aid: its whole job is to make eight grammatical roles
-// tell themselves apart at a glance, and muted greys cannot do that. The hues
-// follow read-frog's grammar card (layout-engine presets.js: --rf-sa-blue
-// #2a57c4, --rf-sa-green #177a53, --rf-sa-red #c43d27, --rf-sa-faded #8c94a3),
-// which is what a reader of that tool already recognises.
-//
-// Each role is distinguished by KIND as well as hue, so the card still works
-// for a reader who cannot separate the colours:
-//
-//	subject     solid underline, slate
-//	predicate   wavy underline, blue        (the verb is what the sentence turns on)
-//	object      double underline, ink       (heavier than subject: the receiver)
-//	complement  dotted underline, grey      (a predicate about the subject)
-//	connector   no line, green bold         (a joint, not a part)
-//	clause      green tint block, deeper per nesting level
+// The card used to need six saturated role colours because the sentence had
+// to be decodable from hue alone. It now uses one ink ladder: trunk words in
+// bold body ink, the predicate in the theme accent with a single fine
+// underline, modifiers in muted grey, and clauses in a 10% accent wash with a
+// micro badge. Role still survives in the tooltip and in the filter chips.
 type grammarInk struct {
-	subjectLine    ui.Color
-	predicateLine  ui.Color
-	objectLine     ui.Color
-	complementLine ui.Color
-	connector      ui.Color
-	clauseTint     ui.Color
-	clauseTint2    ui.Color
-	clauseText     ui.Color
-	obstacle       ui.Color
-	obstacleBg     ui.Color
-	body           ui.Color
-	muted          ui.Color
+	body          ui.Color
+	predicate     ui.Color
+	predicateLine ui.Color
+	muted         ui.Color
+	connector     ui.Color
+	clauseTint    ui.Color
+	clauseText    ui.Color
+	obstacle      ui.Color
+	obstacleBg    ui.Color
 }
 
 // renderGrammarSpans draws the marked-up sentence.
@@ -1038,17 +1048,17 @@ func renderGrammarSpansWithState(c *ui.Context, t *ui.Theme, origText string, re
 
 			if showSlashes && item.OpenClause != "" && item.IsCore {
 				ui.Box(c).Height(lineBoxH).Padding(0, 4, 0, 2).Center().Children(func() {
-					ui.Text(c, "/").FontSize(14).FontWeight(700).TextColor(ink.connector).SingleLine()
+					ui.Text(c, "/").FontSize(14).FontWeight(700).TextColor(ink.muted).SingleLine()
 				})
 			}
 
 			// The clause badge sits before the word that opens the clause: a small
-			// label in the clause's tint, so nesting reads as depth.
+			// label in the clause's accent wash, so nesting reads as depth.
 			if item.OpenClause != "" {
 				ui.Box(c).Height(lineBoxH).Padding(0, 4, 0, 0).Center().Children(func() {
-					ui.Box(c).Padding(1, 5).Radius(3).Background(ink.clauseTint).
+					ui.Box(c).Padding(1, 5).Radius(4).Background(ink.clauseTint).
 						Tooltip(grammarClauseTooltip(item.OpenClause)).Children(func() {
-						ui.Text(c, item.OpenClause).FontSize(9).FontWeight(700).TextColor(ink.connector).SingleLine()
+						ui.Text(c, item.OpenClause).FontSize(9).FontWeight(700).TextColor(ink.predicate).SingleLine()
 					})
 				})
 			}
@@ -1088,52 +1098,50 @@ func renderGrammarSpansWithState(c *ui.Context, t *ui.Theme, origText string, re
 // filterRole dims every word that is not the role chosen in the legend. The
 // legend used to look interactive and change nothing.
 func renderGrammarWordAligned(c *ui.Context, t *ui.Theme, ink grammarInk, item GrammarToken, lineBoxH float32, joinedNext bool, filterRole string) {
-	kind, colour, ok := markForRole(item.Role, ink)
 	filteredOut := filterRole != "" && item.Role != filterRole
-	if filteredOut {
-		ok = false
-	}
-	if !ok {
-		col := ink.body
-		if filteredOut {
-			col = ink.muted
-		} else if !item.IsCore {
-			col = t.Text
-		}
-		weight := 400
-		// The connector is drawn as coloured text rather than marked; it has no
-		// underline of its own, so it must not read as plain body text.
-		if item.Role == "connector" && !filteredOut {
-			col = ink.connector
-			weight = 600
-		}
-		ui.Box(c).Height(lineBoxH).Center().Children(func() {
-			ui.Text(c, item.Word).FontSize(14).FontWeight(weight).TextColor(col).SingleLine()
-		})
-		ui.Box(c).Height(lineBoxH).Width(4)
-		return
+	colour := ink.muted
+	weight := 400
+	switch {
+	case filteredOut:
+	case item.Role == "predicate":
+		colour = ink.predicate
+		weight = 700
+	case item.Role == "subject" || item.Role == "object" || item.Role == "complement":
+		colour = ink.body
+		weight = 600
+	case item.Role == "connector":
+		colour = ink.connector
+		weight = 600
 	}
 
 	seed := int64(item.Start*7919 + item.End*104729 + 1)
-	weight := 600
-	if item.Role == "predicate" {
-		weight = 700
-	}
-
-	displayWord := item.Word
 	box := ui.Box(c).Height(lineBoxH).Padding(0, 1).Center().Tooltip(tooltipFor(item))
+	if item.InClause {
+		box.Background(ink.clauseTint)
+		if item.ClauseStart || item.ClauseEnd {
+			box.Radius(3)
+		}
+		if item.ClauseStart {
+			box.PaddingStart(3)
+		}
+		if item.ClauseEnd {
+			box.PaddingEnd(3)
+		}
+	}
 	if joinedNext {
 		// Keep the gap inside the marked box so the underline runs through it
 		// instead of breaking at the space between two words of one phrase.
 		box.PaddingEnd(5)
 	}
-	box.Draw(func(p *ui.Painter, r ui.Rect) {
-		mh := markHeight(kind)
-		markRect := ui.Rect{X: r.X, Y: r.Y + r.H - mh, W: r.W, H: mh}
-		drawMark(p, markRect, kind, colour, seed)
-	})
+	if item.Role == "predicate" && !filteredOut {
+		box.Draw(func(p *ui.Painter, r ui.Rect) {
+			mh := markHeight(markUnderline)
+			markRect := ui.Rect{X: r.X, Y: r.Y + r.H - mh, W: r.W, H: mh}
+			drawMark(p, markRect, markUnderline, ink.predicateLine, seed)
+		})
+	}
 	box.Children(func() {
-		ui.Text(c, displayWord).FontSize(14).FontWeight(weight).TextColor(ink.body).SingleLine()
+		ui.Text(c, item.Word).FontSize(14).FontWeight(weight).TextColor(colour).SingleLine()
 	})
 	if item.Obstacle != "" {
 		ui.Box(c).Height(lineBoxH).Center().Children(func() {
@@ -1141,22 +1149,16 @@ func renderGrammarWordAligned(c *ui.Context, t *ui.Theme, ink grammarInk, item G
 		})
 	}
 	if !joinedNext {
-		ui.Box(c).Height(lineBoxH).Width(4)
+		gap := ui.Box(c).Height(lineBoxH).Width(4)
+		if item.InClause && !item.ClauseEnd {
+			gap.Background(ink.clauseTint)
+		}
 	}
 }
 
 func markForRole(role string, ink grammarInk) (markKind, ui.Color, bool) {
-	switch role {
-	case "subject":
-		return markUnderline, ink.subjectLine, true
-	case "predicate":
-		return markWavy, ink.predicateLine, true
-	case "object":
-		return markDouble, ink.objectLine, true
-	case "complement":
-		return markDotted, ink.complementLine, true
-	case "connector":
-		return markUnderline, ink.connector, false // drawn as coloured text
+	if role == "predicate" {
+		return markUnderline, ink.predicateLine, true
 	}
 	return markUnderline, ink.muted, false
 }
@@ -1200,28 +1202,27 @@ func grammarToggle(c *ui.Context, t *ui.Theme, label string, on bool, tip string
 	return btn
 }
 
-// grammarLegend draws one role as a legend chip, in the same mark the sentence
-// uses: a line of the role's colour under the role's name.
+// grammarLegend draws one role as a legend chip. The selected chip takes the
+// themed soft background; the predicate label keeps the same fine underline
+// the sentence uses, and no other role spends a second hue.
 func grammarLegend(c *ui.Context, t *ui.Theme, ink grammarInk, role, label, active string, onClick func(role string)) {
+	at := appTheme(t)
 	bg := ui.Transparent
-	border := t.Border
+	border := at.BorderSubtle
+	text := at.TextSec
 	if active == role {
-		bg = ink.clauseTint
-		border = ink.subjectLine
+		bg = at.AccentSoft
+		border = at.AccentRing
+		text = at.Accent
+	} else if role == "predicate" {
+		text = at.Accent
 	}
 	btn := ui.Button(c, "").Height(22).Padding(1, 6).Radius(4).
 		Background(bg).Border(1, border).Tooltip("点击在句中高亮所有" + label)
 	btn.Children(func() {
-		switch role {
-		case "predicate":
-			ui.Text(c, label).FontSize(11).FontWeight(600).
-				WavyUnderline().DecorationColor(ink.predicateLine).TextColor(ink.body)
-		case "object":
-			ui.Text(c, label).FontSize(11).FontWeight(600).
-				Underline().DecorationColor(ink.objectLine).TextColor(ink.body)
-		default:
-			ui.Text(c, label).FontSize(11).FontWeight(600).
-				Underline().DecorationColor(ink.subjectLine).TextColor(ink.body)
+		labelEl := ui.Text(c, label).FontSize(11).FontWeight(600).TextColor(text)
+		if role == "predicate" {
+			labelEl.Underline().DecorationColor(ink.predicateLine)
 		}
 	})
 	if btn.Clicked() {
