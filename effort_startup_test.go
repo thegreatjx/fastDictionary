@@ -6,12 +6,6 @@ import (
 	"testing"
 )
 
-// TestModelLevelsAreLearnedAtStartup guards a silent failure: 快速 resolves to
-// the model's own lowest reasoning level, which only exists after
-// FetchAvailableModels has run. When the only caller was showSettings, the
-// first translation after launch used whichever model the user had configured
-// without knowing its levels, so it sent no reasoning field at all — the slow
-// path for a model that reasons by default.
 func TestModelLevelsAreLearnedAtStartup(t *testing.T) {
 	src, err := os.ReadFile("main.go")
 	if err != nil {
@@ -21,8 +15,6 @@ func TestModelLevelsAreLearnedAtStartup(t *testing.T) {
 	if !strings.Contains(body, "a.loadAIModels()") {
 		t.Fatal("main.go never loads the model list, so 快速 cannot resolve a level before the settings page opens")
 	}
-	// The startup call must sit in the startup path, before the app reports
-	// itself ready, not inside a settings-only branch.
 	ready := strings.Index(body, "fastDictionary: ready")
 	call := strings.Index(body, "a.loadAIModels()")
 	if ready < 0 || call < 0 || call > ready {

@@ -9,12 +9,6 @@ import (
 	"time"
 )
 
-// The settings page has two asynchronous results: a connection probe and a
-// model list. Each is a small explicit state machine with the configuration
-// snapshot it belongs to. A result whose source no longer matches is not
-// "stale" in a fuzzy sense; it is simply not shown, and it cannot overwrite a
-// newer result because the generation is checked before the write.
-
 type aiProbePhase uint8
 
 const (
@@ -51,9 +45,6 @@ type aiModelsState struct {
 	gen    requestToken
 }
 
-// defaultMagpieModels keeps the old gateway's common routes selectable while
-// the gateway is down. They are only used for Magpie: a direct provider must
-// never inherit these names.
 var defaultMagpieModels = []string{
 	magpieDefaultModel,
 	"group/auto-deepseek-v4-1-flash",
@@ -67,13 +58,8 @@ var defaultMagpieModels = []string{
 
 var fetchAvailableModelsFunc = FetchAvailableModels
 
-// aiProbeFunc is a variable so the probe's stale-result rules can be tested
-// against a function that blocks instead of a live gateway.
 var aiProbeFunc = StreamAI
 
-// testAIConnection probes the current service with a minimal request. The
-// snapshot is captured before the goroutine starts; if the user edits the
-// service while it runs, the result belongs to the old source and is dropped.
 func (a *app) testAIConnection() {
 	cfg := a.store.Get()
 	source := aiProbeSource(cfg)
@@ -138,8 +124,6 @@ func (a *app) testAIConnection() {
 	}()
 }
 
-// aiProbeStatus returns the probe state only when it belongs to cfg. A copy is
-// returned so the caller never holds the lock while rendering.
 func (a *app) aiProbeStatus(cfg Config) aiProbeState {
 	source := aiProbeSource(cfg)
 	a.mu.Lock()
@@ -152,8 +136,6 @@ func (a *app) aiProbeStatus(cfg Config) aiProbeState {
 	return state
 }
 
-// loadAIModels 在设置页打开和服务商切换后加载完整模型列表。Magpie 是本机
-// 网关，随时可拉；直连服务只在配置就绪时拉，避免未完成配置就花请求。
 func (a *app) loadAIModels() {
 	cfg := a.store.Get()
 	if !cfg.IsMagpie() && cfg.AISetupProblem() != "" {
@@ -248,15 +230,10 @@ func (a *app) aiModelsStatus(cfg Config) aiModelsState {
 	return state
 }
 
-// getAIModels 返回模型选择器显示的清单。Magpie 有旧网关的兜底清单；
-// 带 ModelOptions 的服务（目前是 Gemini）不联网也能先显示官方模型清单；
-// 其他直连服务只保留当前模型，避免把别家的模型名当成默认值。
 func (a *app) getAIModels(cfg Config) []string {
 	return aiModelsForState(cfg, a.aiModelsStatus(cfg))
 }
 
-// aiModelsForState 是模型状态的唯一读取口：拉取成功优先用实时列表，
-// 否则用服务预设的离线清单。设置页传进来的状态和这里用的是同一个值。
 func aiModelsForState(cfg Config, state aiModelsState) []string {
 	if state.phase == aiModelsReady {
 		return append([]string(nil), state.models...)
@@ -273,15 +250,11 @@ func aiModelsForState(cfg Config, state aiModelsState) []string {
 	return nil
 }
 
-// resetAIStatus 只清当次探测的瞬时状态；按来源缓存的模型列表保留，切换
-// 服务商再切回来时不需要重新点「获取模型」。
 func (a *app) resetAIStatus() {
 	a.mu.Lock()
 	if a.aiProbe.cancel != nil {
 		a.aiProbe.cancel()
 	}
-	// Bump both generations before clearing. Keeping the counter monotonic
-	// means an old goroutine cannot match the zero state by accident.
 	a.aiProbe.gen++
 	probeGen := a.aiProbe.gen
 	a.aiProbe = aiProbeState{gen: probeGen}

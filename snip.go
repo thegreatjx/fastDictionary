@@ -15,15 +15,8 @@ import (
 	"github.com/egoist/mygo"
 )
 
-// snipOCRScale is how much the crop is enlarged before Windows.Media.Ocr reads
-// it. 2x is measured as the best value: small type becomes legible, and larger
-// factors start losing accuracy again (the engine's own detection struggles
-// with very large glyphs).
 const snipOCRScale = 2
 
-// maxOCRSide is OcrEngine.MaxImageDimension. A crop scaled past it makes the
-// engine throw instead of returning text, so an enormous selection stays at 1x
-// rather than failing outright.
 const maxOCRSide = 10000
 
 var (
@@ -112,7 +105,6 @@ type msgW struct {
 	LPrivate uint32
 }
 
-// captureScreenArea takes a snapshot of a screen rectangle using GDI BitBlt
 func captureScreenArea(x, y, w, h int32) (*image.RGBA, error) {
 	hInputDesk, _, _ := procOpenInputDesktop.Call(0, 0, 0x01FF)
 	if hInputDesk != 0 {
@@ -151,16 +143,15 @@ func captureScreenArea(x, y, w, h int32) (*image.RGBA, error) {
 		return nil, fmt.Errorf("BitBlt failed: %v", errBlt)
 	}
 
-	// Must deselect bitmap before calling GetDIBits
 	procSelectObject.Call(hdcMem, oldBmp)
 
 	bih := bitmapInfoHeader{
 		BiSize:        uint32(unsafe.Sizeof(bitmapInfoHeader{})),
 		BiWidth:       w,
-		BiHeight:      -h, // top-down
+		BiHeight:      -h,
 		BiPlanes:      1,
 		BiBitCount:    32,
-		BiCompression: 0, // BI_RGB
+		BiCompression: 0,
 	}
 
 	img := image.NewRGBA(image.Rect(0, 0, int(w), int(h)))
@@ -171,7 +162,6 @@ func captureScreenArea(x, y, w, h int32) (*image.RGBA, error) {
 		0,
 	)
 
-	// BGRA -> RGBA swap
 	for i := 0; i < len(img.Pix); i += 4 {
 		img.Pix[i], img.Pix[i+2] = img.Pix[i+2], img.Pix[i]
 		img.Pix[i+3] = 255
@@ -182,16 +172,12 @@ func captureScreenArea(x, y, w, h int32) (*image.RGBA, error) {
 
 type snipSession struct {
 	vx, vy, vw, vh int32
-	hdcMem         uintptr // holds the full-screen frozen snapshot
+	hdcMem         uintptr
 	hbm            uintptr
 	oldBmp         uintptr
-	hdcDark        uintptr // 1x1 black DC for AlphaBlend
+	hdcDark        uintptr
 	hbmDark        uintptr
 	oldDarkBmp     uintptr
-	// The frame is composed here and blitted to the window in one go. Drawing
-	// straight onto the window DC let the dim bands and the border reach the
-	// screen while the base snapshot was still being copied, which is what
-	// made a drag flicker.
 	hdcBuf         uintptr
 	hbmBuf         uintptr
 	oldBufBmp      uintptr
@@ -205,15 +191,13 @@ type snipSession struct {
 }
 
 var (
+	// 同时只能有一个截图 overlay。
 	currentSnip   *snipSession
 	snipMu        sync.Mutex
 	snipClassOnce sync.Once
 	snipAtom      uintptr
 )
 
-// beginSnipSessionLocked 声明这次框选会话的全局单例。调用方必须持有 snipMu。
-// 已有会话在进行时返回 false，调用方应放弃本次启动，避免两个消息循环共用
-// 一个 currentSnip、各自置 nil 并乱序触发回调。
 func beginSnipSessionLocked(s *snipSession) bool {
 	if currentSnip != nil {
 		return false
@@ -222,8 +206,6 @@ func beginSnipSessionLocked(s *snipSession) bool {
 	return true
 }
 
-// endSnipSessionLocked 只在全局单例仍属于 s 时才清空。调用方必须持有 snipMu。
-// 身份判断避免一次迟到的清理把后来启动的新会话误清掉。
 func endSnipSessionLocked(s *snipSession) {
 	if currentSnip == s {
 		currentSnip = nil
@@ -233,12 +215,12 @@ func endSnipSessionLocked(s *snipSession) {
 func registerSnipClass() {
 	snipClassOnce.Do(func() {
 		className, _ := syscall.UTF16PtrFromString("FastDictSnipOverlay")
-		cursor, _, _ := procLoadCursorW.Call(0, uintptr(32515)) // IDC_CROSS = 32515
+		cursor, _, _ := procLoadCursorW.Call(0, uintptr(32515))
 		wndProc := syscall.NewCallback(snipWndProc)
 
 		wc := wndClassExW{
 			CbSize:        uint32(unsafe.Sizeof(wndClassExW{})),
-			Style:         3, // CS_HREDRAW | CS_VREDRAW
+			Style:         3,
 			LpfnWndProc:   wndProc,
 			HCursor:       cursor,
 			LpszClassName: className,
@@ -268,7 +250,7 @@ func snipWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	snipMu.Unlock()
 
 	switch msg {
-	case 0x0201: // WM_LBUTTONDOWN
+	case 0x0201:
 		if s != nil {
 			s.selecting = true
 			s.startX = int32(int16(lParam & 0xFFFF))
@@ -280,7 +262,7 @@ func snipWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			return 0
 		}
 
-	case 0x0200: // WM_MOUSEMOVE
+	case 0x0200:
 		if s != nil && s.selecting {
 			s.curX = int32(int16(lParam & 0xFFFF))
 			s.curY = int32(int16((lParam >> 16) & 0xFFFF))
@@ -288,7 +270,7 @@ func snipWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			return 0
 		}
 
-	case 0x0202: // WM_LBUTTONUP
+	case 0x0202:
 		if s != nil && s.selecting {
 			s.selecting = false
 			procReleaseCapture.Call()
@@ -311,7 +293,7 @@ func snipWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			return 0
 		}
 
-	case 0x0204, 0x0205: // WM_RBUTTONDOWN, WM_RBUTTONUP (Right click cancels)
+	case 0x0204, 0x0205:
 		if s != nil && s.selecting {
 			s.selecting = false
 			procReleaseCapture.Call()
@@ -319,8 +301,8 @@ func snipWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		procDestroyWindow.Call(hwnd)
 		return 0
 
-	case 0x0100: // WM_KEYDOWN
-		if wParam == 0x1B { // VK_ESCAPE
+	case 0x0100:
+		if wParam == 0x1B {
 			if s != nil && s.selecting {
 				s.selecting = false
 				procReleaseCapture.Call()
@@ -329,24 +311,18 @@ func snipWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			return 0
 		}
 
-	case 0x0014: // WM_ERASEBKGND
-		// Nothing to erase: every pixel of this window is painted in WM_PAINT.
-		// Letting the default handler fill the background first is the flash
-		// the user sees between frames.
+	case 0x0014:
 		return 1
 
-	case 0x000F: // WM_PAINT
+	case 0x000F:
 		var ps paintStruct
 		hdc, _, _ := procBeginPaint.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
 		if hdc != 0 && s != nil {
 			const srccopy = 0x00CC0020
-			// Compose on the offscreen surface when there is one, then copy it
-			// over in a single operation.
 			target := hdc
 			if s.hdcBuf != 0 {
 				target = s.hdcBuf
 			}
-			// 1. Blit base frozen screen snapshot
 			procBitBlt.Call(target, 0, 0, uintptr(s.vw), uintptr(s.vh), s.hdcMem, 0, 0, srccopy)
 
 			blendDim := func(x, y, w, h int32, alpha byte) {
@@ -367,13 +343,11 @@ func snipWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				y1 := minI32(s.startY, s.curY)
 				y2 := maxI32(s.startY, s.curY)
 
-				// Dim 4 rectangles outside selection (~35% dark = alpha 90)
 				blendDim(0, 0, s.vw, y1, 90)
 				blendDim(0, y2, s.vw, s.vh-y2, 90)
 				blendDim(0, y1, x1, y2-y1, 90)
 				blendDim(x2, y1, s.vw-x2, y2-y1, 90)
 
-				// Draw 2px selection border (#2563EB Royal Blue, BGR: 0x00EB6325)
 				blueBrush, _, _ := procCreateSolidBrush.Call(0x00EB6325)
 				rSel := winRect{x1, y1, x2, y2}
 				procFrameRect.Call(target, uintptr(unsafe.Pointer(&rSel)), blueBrush)
@@ -381,7 +355,6 @@ func snipWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				procFrameRect.Call(target, uintptr(unsafe.Pointer(&rSelInner)), blueBrush)
 				procDeleteObject.Call(blueBrush)
 			} else {
-				// Gentle dim across screen (~14% dark = alpha 35) to indicate snipping overlay active
 				blendDim(0, 0, s.vw, s.vh, 35)
 			}
 
@@ -392,7 +365,7 @@ func snipWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			return 0
 		}
 
-	case 0x0002: // WM_DESTROY
+	case 0x0002:
 		procPostQuitMessage.Call(0)
 		return 0
 	}
@@ -401,10 +374,6 @@ func snipWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	return r
 }
 
-// snipCacheDir is where the cropped screenshot lands before OCR reads it.
-// mygo's cache path is preferred; %APPDATA% is the fallback for the rare
-// machine where the framework path is unavailable, and an empty APPDATA
-// (a service account) must not turn into \Dictionary\cache silently.
 func snipCacheDir() (string, error) {
 	if dir, err := mygo.App.Path(mygo.PathCache); err == nil && dir != "" {
 		return dir, nil
@@ -415,16 +384,12 @@ func snipCacheDir() (string, error) {
 	return "", fmt.Errorf("no cache directory available")
 }
 
-// StartNativeSnip launches the native instant screen snipping overlay.
-// onError is invoked when the crop cannot be saved, so the caller can tell
-// the user instead of the overlay just vanishing.
 func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError func(err error)) {
 	go func() {
 		defer recoverLog("snip.go:StartNativeSnip")
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 
-		// 1. Ensure thread desktop is attached to active user input desktop
 		hInputDesk, _, _ := procOpenInputDesktop.Call(0, 0, 0x01FF)
 		if hInputDesk != 0 {
 			procSetThreadDesktop.Call(hInputDesk)
@@ -433,7 +398,6 @@ func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError f
 
 		registerSnipClass()
 
-		// 2. Metrics for virtual multi-monitor screen
 		vx, _, _ := procGetSystemMetrics.Call(76)
 		vy, _, _ := procGetSystemMetrics.Call(77)
 		vw, _, _ := procGetSystemMetrics.Call(78)
@@ -443,7 +407,6 @@ func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError f
 			vh, _, _ = procGetSystemMetrics.Call(1)
 		}
 
-		// 3. Capture screen directly to GDI memory DC
 		hwndDesk, _, _ := procGetDesktopWindow.Call()
 		hdcScreen, _, _ := procGetDC.Call(hwndDesk)
 		if hdcScreen == 0 {
@@ -479,7 +442,6 @@ func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError f
 			return
 		}
 
-		// 4. Create 1x1 black bitmap memory DC for fast AlphaBlend dimming
 		hdcDark, _, _ := procCreateCompatibleDC.Call(hdcScreen)
 		hbmDark, _, _ := procCreateCompatibleBitmap.Call(hdcScreen, 1, 1)
 		oldDarkBmp, _, _ := procSelectObject.Call(hdcDark, hbmDark)
@@ -487,8 +449,6 @@ func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError f
 		defer procDeleteObject.Call(hbmDark)
 		defer procSelectObject.Call(hdcDark, oldDarkBmp)
 
-		// The offscreen frame buffer. Deferred in reverse creation order: put
-		// the old bitmap back, delete the bitmap, then the DC.
 		hdcBuf, _, _ := procCreateCompatibleDC.Call(hdcScreen)
 		hbmBuf, _, _ := procCreateCompatibleBitmap.Call(hdcScreen, uintptr(vw), uintptr(vh))
 		var oldBufBmp uintptr
@@ -532,15 +492,12 @@ func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError f
 			return
 		}
 		snipMu.Unlock()
-		// 早退（建窗失败、GDI 失败、裁剪写盘失败）也要清掉全局单例；
-		// 正常路径在消息循环结束后已置 nil，这里的 defer 兜底为 no-op。
 		defer func() {
 			snipMu.Lock()
 			endSnipSessionLocked(session)
 			snipMu.Unlock()
 		}()
 
-		// 5. Create full-screen topmost popup overlay window
 		className, _ := syscall.UTF16PtrFromString("FastDictSnipOverlay")
 		const (
 			wsPopup        = 0x80000000
@@ -563,10 +520,9 @@ func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError f
 			return
 		}
 
-		procShowWindow.Call(hwnd, 5) // SW_SHOW
+		procShowWindow.Call(hwnd, 5)
 		procUpdateWindow.Call(hwnd)
 
-		// 6. Message loop
 		var msg msgW
 		for {
 			r, _, _ := procGetMessageW.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
@@ -582,7 +538,6 @@ func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError f
 		currentSnip = nil
 		snipMu.Unlock()
 
-		// 7. Crop the selected region if valid
 		if s != nil && s.cropDone {
 			cropW := s.cropRect.Right - s.cropRect.Left
 			cropH := s.cropRect.Bottom - s.cropRect.Top
@@ -595,13 +550,12 @@ func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError f
 
 			procBitBlt.Call(cropHdc, 0, 0, uintptr(cropW), uintptr(cropH), s.hdcMem, uintptr(srcX), uintptr(srcY), srccopy)
 
-			// Deselect before calling GetDIBits
 			procSelectObject.Call(cropHdc, oldCropBmp)
 
 			bih := bitmapInfoHeader{
 				BiSize:        uint32(unsafe.Sizeof(bitmapInfoHeader{})),
 				BiWidth:       cropW,
-				BiHeight:      -cropH, // top-down
+				BiHeight:      -cropH,
 				BiPlanes:      1,
 				BiBitCount:    32,
 				BiCompression: 0,
@@ -617,15 +571,11 @@ func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError f
 			procDeleteDC.Call(cropHdc)
 			procDeleteObject.Call(cropHbm)
 
-			// BGRA -> RGBA swap
 			for i := 0; i < len(cropImg.Pix); i += 4 {
 				cropImg.Pix[i], cropImg.Pix[i+2] = cropImg.Pix[i+2], cropImg.Pix[i]
 				cropImg.Pix[i+3] = 255
 			}
 
-			// Every failure path reports back: a user who finished the crop
-			// and saw the overlay close with nothing happening had no way to
-			// know the cache dir was unwritable.
 			cacheDir, dirErr := snipCacheDir()
 			if dirErr != nil {
 				log.Printf("fastDictionary: snip cache dir: %v", dirErr)
@@ -651,10 +601,6 @@ func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError f
 				}
 				return
 			}
-			// This file exists only to be read back by the OCR pass, so the
-			// cheapest lossless setting is the right one: a full-screen crop
-			// at the default level spends hundreds of milliseconds compressing
-			// data that is decoded again immediately.
 			enc := png.Encoder{CompressionLevel: png.BestSpeed}
 			if err := enc.Encode(f, cropImg); err != nil {
 				f.Close()

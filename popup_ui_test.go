@@ -33,13 +33,9 @@ func TestNotesEnabledByDefault(t *testing.T) {
 	}
 }
 
-// TestNotesMigrationTurnsOldConfigOn covers the users who had already run a
-// build that defaulted show_notes to false: their file says false, so changing
-// the default alone would never reach them.
 func TestNotesMigrationTurnsOldConfigOn(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
-	// A file from before the marker existed, with the card switched off.
 	old := DefaultConfig()
 	old.ShowNotes = false
 	old.NotesMigrated = 0
@@ -56,8 +52,6 @@ func TestNotesMigrationTurnsOldConfigOn(t *testing.T) {
 	}
 }
 
-// TestNotesMigrationRunsOnce keeps a deliberate choice: someone who turns the
-// card off after the migration must not find it back on after a restart.
 func TestNotesMigrationRunsOnce(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
@@ -144,7 +138,6 @@ func TestSelectionChipPrimaryActions(t *testing.T) {
 			t.Errorf("selection chip clips %q: bounds %+v, width %d", want, r, width)
 		}
 	}
-	// 词典 is not a popup tab any more, so the chip must not offer it either.
 	if strings.Contains(texts, "词典") {
 		t.Errorf("selection chip still offers the retired 词典 action: %q", texts)
 	}
@@ -174,8 +167,6 @@ func TestSelectionChipWidthFollowsEnabledActions(t *testing.T) {
 func TestPopupSystemThemeFollowsNativeTheme(t *testing.T) {
 	a := newTestApp()
 	a.store.Update(func(c *Config) { c.ThemeMode = "system" })
-	// applyTheme must receive the native system state, not merely compare the
-	// string "system" with "dark". Both callers now pass c.Theme().Dark.
 	for _, dark := range []bool{false, true} {
 		tt := ui.NewTester(func(c *ui.Context) {
 			base := ui.LightTheme()
@@ -193,8 +184,6 @@ func TestPopupSystemThemeFollowsNativeTheme(t *testing.T) {
 }
 
 func TestPrimarySpeechTargetAvoidsRecitingChinese(t *testing.T) {
-	// Case 1: Looking up English text translated to Chinese
-	// Must pronounce English source, NOT Chinese target.
 	text, lang, tip := primarySpeechTarget("Hello world", "你好世界")
 	if text != "Hello world" || tip != "朗读原文" {
 		t.Errorf("English source lookup: got (%q, %q), want ('Hello world', '朗读原文')", text, tip)
@@ -204,8 +193,6 @@ func TestPrimarySpeechTargetAvoidsRecitingChinese(t *testing.T) {
 			"the voice picker uses it and an empty one reads as English anyway", lang)
 	}
 
-	// Case 2: Looking up Chinese text translated to English
-	// Must pronounce English target.
 	text, lang, tip = primarySpeechTarget("你好", "Hello")
 	if text != "Hello" || tip != "朗读英文译文" {
 		t.Errorf("Chinese to English translation: got (%q, %q), want ('Hello', '朗读英文译文')", text, tip)
@@ -214,8 +201,6 @@ func TestPrimarySpeechTargetAvoidsRecitingChinese(t *testing.T) {
 		t.Errorf("English target must carry an English tag, got %q", lang)
 	}
 
-	// Case 3: The tag must follow the text, not the source. A French
-	// sentence translated to Chinese is read in French.
 	text, lang, tip = primarySpeechTarget("Il fait beau aujourd'hui", "今天天气很好")
 	if text != "Il fait beau aujourd'hui" || tip != "朗读原文" {
 		t.Errorf("French source: got (%q, %q)", text, tip)
@@ -225,9 +210,6 @@ func TestPrimarySpeechTargetAvoidsRecitingChinese(t *testing.T) {
 	}
 }
 
-// TestNotesMigrationIsPersisted covers the write-back: the marker has to reach
-// the file, or the next launch sees NotesMigrated == 0 again and re-applies the
-// default over a choice the user has since made.
 func TestNotesMigrationIsPersisted(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
@@ -259,11 +241,6 @@ func TestNotesMigrationIsPersisted(t *testing.T) {
 	}
 }
 
-// TestNotesMigrationHandlesFileWithoutTheKey is the case that actually ships:
-// a config written by an older build has no notes_migrated key at all. Decoding
-// into DefaultConfig() leaves absent keys at their default, and the default
-// carries the marker, so the presence of the key in the JSON is what has to be
-// tested — not the decoded number.
 func TestNotesMigrationHandlesFileWithoutTheKey(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")

@@ -188,7 +188,6 @@ func TestExtractNotesDropsLateResultAfterCardChange(t *testing.T) {
 		return a.notesBusy
 	})
 
-	// Simulate a newer card taking over without cancelling the old request.
 	a.mu.Lock()
 	a.notesGen++
 	a.notesBusy = false
@@ -203,7 +202,6 @@ func TestExtractNotesDropsLateResultAfterCardChange(t *testing.T) {
 		t.Fatal("timed out waiting for the old note request")
 	}
 
-	// The old goroutine must not write its answer into the new card.
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(deadline) {
 		a.mu.Lock()

@@ -2,9 +2,6 @@ package main
 
 import "testing"
 
-// TestAutofitLockReleasesWhenContentGrows is the regression: once the loop
-// detected an oscillation it stayed locked until fitHeight ran at the end of a
-// stream, so a growing answer never grew the window while it streamed.
 func TestAutofitLockReleasesWhenContentGrows(t *testing.T) {
 	l := autofitLoop{locked: true, lockContent: 100}
 

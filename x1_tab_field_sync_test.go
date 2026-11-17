@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-// tabFieldFuncBody 从源码里切出一个函数的函数体文本，用于源码级契约断言。
 func tabFieldFuncBody(t *testing.T, src, sig string) string {
 	t.Helper()
 	start := strings.Index(src, sig)
@@ -21,8 +20,6 @@ func tabFieldFuncBody(t *testing.T, src, sig string) string {
 	return rest[:end]
 }
 
-// filledAppForTabSync 造一个字段填满非零值的 app；两个副本共用同一个 store，
-// 这样 reflect.DeepEqual 比较两个 app 时不会因为 store 指针不同而误判。
 func filledAppForTabSync(s *store) *app {
 	return &app{
 		store:                s,
@@ -64,9 +61,6 @@ func filledAppForTabSync(s *store) *app {
 	}
 }
 
-// TestClearTabMatchesZeroValueRestore 是委托改动的合法性证明：
-// clearTabLocked() 与 restoreTabLocked(&tabViewState{}) 对同一个填满值的 app
-// 产生逐字段完全相同的结果，才允许把前者收口成后者。
 func TestClearTabMatchesZeroValueRestore(t *testing.T) {
 	s := newMemoryStore()
 	cleared := filledAppForTabSync(s)
@@ -78,7 +72,6 @@ func TestClearTabMatchesZeroValueRestore(t *testing.T) {
 	if !reflect.DeepEqual(cleared, restored) {
 		t.Fatal("clearTabLocked 与零值 restoreTabLocked 结果不一致，不能合并清单")
 	}
-	// 顺带钉住两条容易被合并掉的设计：source 保留、取消回调归零。
 	if cleared.source != "hello world" {
 		t.Fatalf("清理后 source 不应被改：%q", cleared.source)
 	}
@@ -87,10 +80,6 @@ func TestClearTabMatchesZeroValueRestore(t *testing.T) {
 	}
 }
 
-// TestTabFieldListsAreSynced 把「三份字段清单靠人肉同步」变成可执行契约：
-// saveTabLocked 保存 tabViewState 每个字段、restoreTabLocked 写回除 source 外的
-// 每个字段、snap() 填充 snapshot 每个字段，且 snapshot 与 tabViewState 同名字段
-// 类型一致。以后加字段忘了改任一处，测试立刻红。
 func TestTabFieldListsAreSynced(t *testing.T) {
 	tabs := readSourceFile(t, "popup_tabs.go")
 	pop := readSourceFile(t, "popup.go")
@@ -122,8 +111,6 @@ func TestTabFieldListsAreSynced(t *testing.T) {
 	}
 }
 
-// TestClearTabDelegatesToRestore 驱动清单合并：clearTabLocked 不再自己维护
-// 一份逐字段清零清单，而是委托 restore 复用同一份清单。
 func TestClearTabDelegatesToRestore(t *testing.T) {
 	tabs := readSourceFile(t, "popup_tabs.go")
 	body := tabFieldFuncBody(t, tabs, "func (a *app) clearTabLocked()")

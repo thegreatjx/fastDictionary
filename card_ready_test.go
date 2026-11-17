@@ -2,9 +2,6 @@ package main
 
 import "testing"
 
-// cardGuardCases 固定「卡片就绪」的旧判定。渲染、窗口高度、快捷保存三处
-// 原先各写一份 s.grammarResult / s.dictResult / s.writingResult != nil，
-// 批次 2c 统一换成 cardReadyForMode(s)。这组表在切换前后必须逐字不变。
 func cardGuardCases() []struct {
 	name  string
 	s     snapshot
@@ -42,8 +39,6 @@ func TestCardReadyForModeMatchesLegacyChecks(t *testing.T) {
 	}
 }
 
-// TestCardReadyMatchesClassifyAIView 保证渲染与布局、快捷保存共用同一判定：
-// 智能体以后只需改 cardReadyForMode 一处，不必追三个文件里的 != nil。
 func TestCardReadyMatchesClassifyAIView(t *testing.T) {
 	for _, tc := range cardGuardCases() {
 		t.Run(tc.name, func(t *testing.T) {
@@ -55,8 +50,6 @@ func TestCardReadyMatchesClassifyAIView(t *testing.T) {
 	}
 }
 
-// TestPopupContentHeightCardGuardBaseline 录下批次 2c 改前的窗口高度。
-// 切换只改判断形式、不改判断结果；want 逐字不变才算零行为变化。
 func TestPopupContentHeightCardGuardBaseline(t *testing.T) {
 	cases := []struct {
 		name string

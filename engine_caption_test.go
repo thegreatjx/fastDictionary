@@ -7,10 +7,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// TestEngineCaptionNamesTheSourceLanguage: the caption used to print the raw
-// detection tag (检测 en), which answers "what language was this?" in a form a
-// reader has to decode. Grok's 翻译自 西班牙语 is the shape people are used to,
-// and it is the same amount of space.
 func TestEngineCaptionNamesTheSourceLanguage(t *testing.T) {
 	s := snapshot{engine: "微软", detected: "en"}
 	got := translationEngineCaption(s, "zh-Hans")
@@ -25,8 +21,6 @@ func TestEngineCaptionNamesTheSourceLanguage(t *testing.T) {
 	}
 }
 
-// TestEngineCaptionStaysQuietWhenSourceIsTheTarget keeps the caption from
-// saying "翻译自 简体中文" above text that was already Chinese.
 func TestEngineCaptionStaysQuietWhenSourceIsTheTarget(t *testing.T) {
 	got := translationEngineCaption(snapshot{engine: "微软", detected: "zh-Hans"}, "zh-Hans")
 	if strings.Contains(got, "翻译自") {
@@ -37,9 +31,6 @@ func TestEngineCaptionStaysQuietWhenSourceIsTheTarget(t *testing.T) {
 	}
 }
 
-// TestEngineCaptionKeepsEngineAndTiming: the caption still has to say where the
-// text came from and how long it took, or the 精翻 fix (which labelled the
-// footer with the real source) would be undone for the in-card caption.
 func TestEngineCaptionKeepsEngineAndTiming(t *testing.T) {
 	got := translationEngineCaption(snapshot{engine: "AI 精翻", detected: "es"}, "zh-Hans")
 	if !strings.Contains(got, "AI 精翻") {
@@ -50,10 +41,6 @@ func TestEngineCaptionKeepsEngineAndTiming(t *testing.T) {
 	}
 }
 
-// TestLangDisplayNameHandlesEngineTags: each engine reports its own shape of
-// tag. A prefix match keeps "es-419" and "EN" readable; an unknown tag is
-// echoed rather than blanked, so the caption never claims a language it does
-// not know.
 func TestLangDisplayNameHandlesEngineTags(t *testing.T) {
 	cases := map[string]string{
 		"en":      "英语",
@@ -72,8 +59,6 @@ func TestLangDisplayNameHandlesEngineTags(t *testing.T) {
 	}
 }
 
-// TestTranslateCardShowsTheCaptionRendered is the wiring test: the function can
-// be perfect and still not be on screen.
 func TestTranslateCardShowsTheCaptionRendered(t *testing.T) {
 	a := newTestApp()
 	a.store.Update(func(c *Config) { c.ShowEngineTag = true; c.TargetLang = "zh-Hans" })

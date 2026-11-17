@@ -5,10 +5,6 @@ import (
 	"testing"
 )
 
-// TestParseGrammarToleratesReorderedSegments is the 1.4.4 case as a fixture:
-// the model listed "before the meeting" before the main clause, filed the main
-// clause as a clause, and tagged only the first half of the subordinate clause.
-// The parser must still rebuild a structured card from the source's own words.
 func TestParseGrammarToleratesReorderedSegments(t *testing.T) {
 	const source = "She carefully opened a sealed letter before the meeting began."
 	const raw = `{
@@ -57,9 +53,6 @@ func TestParseGrammarToleratesReorderedSegments(t *testing.T) {
 	}
 }
 
-// TestParseGrammarRejectsRewrittenSource keeps the strict-output half of the
-// contract: if the model's slices cannot be mapped back to the source, the
-// card must not show the model's invented words.
 func TestParseGrammarRejectsRewrittenSource(t *testing.T) {
 	const source = "The quick brown fox jumps over the lazy dog."
 	const raw = `{"segments":[{"text":"A fast dark wolf leaps above a sleepy canine.","role":"subject"}],"translation":"一只敏捷的黑狼越过一只困倦的犬。"}`
@@ -98,10 +91,6 @@ func grammarAction(cfg *Config) *CustomActionConfig {
 	return nil
 }
 
-// TestEnsureDefaultActionsMigratesLegacyGrammarPrompts is the 1.4.2 case:
-// the saved prompt and the parser disagreed, the card silently fell back to
-// "sentence + translation", and every test used the new prompt. Migration is
-// now exercised from each legacy shape, and it must be idempotent.
 func TestEnsureDefaultActionsMigratesLegacyGrammarPrompts(t *testing.T) {
 	legacyAnnotations := `请输出严格 JSON：{"annotations":[{"text":"x","type":"subject"}],"translation":"译文"}`
 	cases := []struct {
@@ -140,9 +129,6 @@ func TestEnsureDefaultActionsMigratesLegacyGrammarPrompts(t *testing.T) {
 	}
 }
 
-// TestEnsureDefaultActionsPreservesEditedGrammarPrompt keeps the other side of
-// the migration: a prompt the user wrote against the current protocol is not
-// theirs to lose.
 func TestEnsureDefaultActionsPreservesEditedGrammarPrompt(t *testing.T) {
 	const edited = `我的自定义分段指令：只输出 {"segments":[],"translation":""}`
 	cfg := DefaultConfig()

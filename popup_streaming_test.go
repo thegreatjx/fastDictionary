@@ -7,15 +7,12 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// TestStreamingDoesNotDumpJson is the regression test for the user's "生成过程会
-// 显示很多json" report. While the model streams, the three AI modes must show an
-// indicator, never the raw, still-arriving payload.
 func TestStreamingDoesNotDumpJson(t *testing.T) {
 	a := newTestApp()
 	for _, mode := range []popupMode{modeDictionary, modeGrammar, modeWriting} {
 		a.mode = mode
 		a.aiBusy = true
-		a.aiText = `{"term":"seize","phonetic":"/siː` // the leak looked like this
+		a.aiText = `{"term":"seize","phonetic":"/siː`
 		tt := ui.NewTester(a.popupView, 500, 620)
 		for _, leaked := range []string{"term", "phonetic", "{", "seize"} {
 			if tt.HasText(leaked) {
@@ -25,9 +22,6 @@ func TestStreamingDoesNotDumpJson(t *testing.T) {
 	}
 }
 
-// TestFailedParseExplainsItself covers what happens after the stream ends with
-// something unparseable: showing the braces is what the user complained about,
-// so the body says what happened instead.
 func TestFailedParseExplainsItself(t *testing.T) {
 	a := newTestApp()
 	a.mode = modeDictionary
@@ -42,9 +36,6 @@ func TestFailedParseExplainsItself(t *testing.T) {
 	}
 }
 
-// TestProseAnswerIsStillShown keeps the other half of the rule. A model that
-// answers in sentences has produced something readable, and withholding it
-// would throw away the only result there is.
 func TestProseAnswerIsStillShown(t *testing.T) {
 	a := newTestApp()
 	a.mode = modeDictionary
@@ -59,10 +50,6 @@ func TestProseAnswerIsStillShown(t *testing.T) {
 	}
 }
 
-// TestStreamingShowsSingleIndicator guards against the busy state being drawn
-// twice. It used to be: a banner at the top naming the pass plus a second
-// spinner and an indeterminate progress bar in the body. One spinner in the
-// body, next to one short message, is the whole indicator now.
 func TestStreamingShowsSingleIndicator(t *testing.T) {
 	a := newTestApp()
 	a.mode = modeDictionary
@@ -82,9 +69,6 @@ func TestStreamingShowsSingleIndicator(t *testing.T) {
 	}
 }
 
-// TestSavedDictionaryButtonStopsOfferingAgain is the second half of "保存到笔记本
-// 根本点不了": once the entry is in the notebook the card must say so rather
-// than inviting a click that would add it twice.
 func TestSavedDictionaryButtonStopsOfferingAgain(t *testing.T) {
 	a := newTestApp()
 	a.mode = modeDictionary
@@ -96,9 +80,6 @@ func TestSavedDictionaryButtonStopsOfferingAgain(t *testing.T) {
 	}
 }
 
-// TestDictionarySaveSuccessNeedsNoBanner pins the report that opened this
-// change: the card already turns the save button into 已保存, so a second
-// green strip repeating the sentence is noise, not confirmation.
 func TestDictionarySaveSuccessNeedsNoBanner(t *testing.T) {
 	a := newTestApp()
 	a.mode = modeDictionary
@@ -110,8 +91,6 @@ func TestDictionarySaveSuccessNeedsNoBanner(t *testing.T) {
 	}
 }
 
-// TestDictionarySaveFailureAppearsBelowTheCard keeps the other half: a write
-// that failed must still say why. Only success loses its banner.
 func TestDictionarySaveFailureAppearsBelowTheCard(t *testing.T) {
 	a := newTestApp()
 	a.mode = modeDictionary
@@ -123,9 +102,6 @@ func TestDictionarySaveFailureAppearsBelowTheCard(t *testing.T) {
 	}
 }
 
-// TestDictionarySaveButtonIsReachable is the geometry half. The button used to
-// land past the bottom of a fixed 460px card, so the click never reached it.
-// This test clicks it through the real layout instead of merely finding it.
 func TestDictionarySaveButtonIsReachable(t *testing.T) {
 	a := newTestApp()
 	a.mode = modeDictionary
@@ -144,8 +120,6 @@ func TestDictionarySaveButtonIsReachable(t *testing.T) {
 	a.savedDictTerm = ""
 	tt := ui.NewTester(a.popupView, 500, 900)
 	tt.Click("保存到生词本")
-	// Add() merges entries by term, so the notebook count cannot prove the
-	// click landed; the recorded term can.
 	if a.savedDictTerm != "seize" {
 		t.Fatalf("the save button did not fire: savedDictTerm = %q, texts %q", a.savedDictTerm, tt.Texts())
 	}

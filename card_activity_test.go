@@ -28,8 +28,6 @@ func TestCardActivityPrecedence(t *testing.T) {
 }
 
 func TestCardPendingWorkMatchesLegacyFlags(t *testing.T) {
-	// The old readers each spelled the OR out by hand. Exhaust all 32
-	// combinations to prove the single predicate is exactly equivalent.
 	for mask := 0; mask < 32; mask++ {
 		s := snapshot{
 			busy:       mask&1 != 0,
@@ -62,9 +60,6 @@ func TestCardActivityString(t *testing.T) {
 	}
 }
 
-// TestRequestTokenIsNamedType guards the compile-time half of C6: the four
-// generation counters used to be plain uint64, so a token from one kind could
-// be compared with another without the compiler noticing.
 func TestRequestTokenIsNamedType(t *testing.T) {
 	var tok requestToken = 1
 	if tok != 1 {

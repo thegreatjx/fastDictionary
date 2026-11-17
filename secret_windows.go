@@ -10,9 +10,6 @@ import (
 	"unsafe"
 )
 
-// DPAPI ties the encrypted key to the current Windows account. A config file
-// copied to another account or machine cannot be decrypted, which is the
-// point: it is better to ask for the key again than to leave it readable.
 var (
 	dpapiCrypt32           = syscall.NewLazyDLL("crypt32.dll")
 	dpapiKernel32          = syscall.NewLazyDLL("kernel32.dll")
@@ -28,6 +25,7 @@ type dataBlob struct {
 	data *byte
 }
 
+// DPAPI 绑定当前 Windows 用户；换用户或机器无法解密。
 func protectSecret(plain string) (string, error) {
 	if plain == "" {
 		return "", nil

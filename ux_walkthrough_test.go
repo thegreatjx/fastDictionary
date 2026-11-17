@@ -25,26 +25,22 @@ func TestWritingCardSaveStateFeedback(t *testing.T) {
 		Summary:  "注意副词修饰动词的位置。",
 	}
 
-	// Before save: should show "保存到笔记本"
 	ttBefore := ui.NewTester(a.popupView, 480, 500)
 	if !ttBefore.HasText("保存到笔记本") || ttBefore.HasText("已存入笔记本") {
 		t.Errorf("expected unsaved state to show '保存到笔记本', got: %v", ttBefore.Texts())
 	}
 
-	// Trigger save
 	a.saveWritingToVocab(a.writingResult)
 
 	if !a.writingSaved {
 		t.Fatal("saveWritingToVocab failed to set writingSaved")
 	}
 
-	// After save: should show "已存入笔记本"
 	ttAfter := ui.NewTester(a.popupView, 480, 500)
 	if !ttAfter.HasText("已存入笔记本") {
 		t.Errorf("expected saved state to show '已存入笔记本', got: %v", ttAfter.Texts())
 	}
 
-	// Tab switch persistence: should restore writingSaved
 	a.switchMode(modeTranslate)
 	if a.mode != modeTranslate {
 		t.Fatalf("expected modeTranslate, got %v", a.mode)
@@ -69,7 +65,6 @@ func TestGrammarObstaclesDarkThemeAdaptive(t *testing.T) {
 		Translation: "直到那时她才意识到。",
 	}
 
-	// Test Dark Mode rendering
 	ttDark := ui.NewTester(func(c *ui.Context) {
 		applyTheme(c, "dark", true, "")
 		a.renderGrammarVisualCard(c, c.Theme(), "Only then did she realize", res, false, nil)
@@ -99,25 +94,21 @@ func TestGrammarCardSaveStateFeedback(t *testing.T) {
 		Translation: "直到那时她才明白发生了什么。",
 	}
 
-	// Before save: should show "保存到长难句本"
 	ttBefore := ui.NewTester(a.popupView, 480, 500)
 	if !ttBefore.HasText("保存到长难句本") || ttBefore.HasText("已存入长难句本") {
 		t.Errorf("expected unsaved grammar state to show '保存到长难句本', got: %v", ttBefore.Texts())
 	}
 
-	// Save
 	a.saveGrammarToVocab(a.grammarResult)
 	if !a.grammarSaved {
 		t.Fatal("saveGrammarToVocab failed to set grammarSaved")
 	}
 
-	// After save: should show static badge "已存入长难句本"
 	ttAfter := ui.NewTester(a.popupView, 480, 500)
 	if !ttAfter.HasText("已存入长难句本") {
 		t.Errorf("expected saved grammar state to show '已存入长难句本', got: %v", ttAfter.Texts())
 	}
 
-	// Tab switch persistence
 	a.switchMode(modeTranslate)
 	a.switchMode(modeGrammar)
 	if !a.grammarSaved {
@@ -135,10 +126,8 @@ func TestDictionaryTabPersistenceSavedTerm(t *testing.T) {
 		Definition: "意外发现珍奇事物的本领",
 	}
 
-	// Tab switch to translate and back
 	a.switchMode(modeTranslate)
 	if a.savedDictTerm != "" && a.mode == modeTranslate {
-		// in translate mode
 	}
 	a.switchMode(modeDictionary)
 	if a.savedDictTerm != "serendipity" {
@@ -162,7 +151,6 @@ func TestWordSaveButtonFeedback(t *testing.T) {
 		t.Errorf("expected unsaved word button to say '保存生词', got: %v", ttBefore.Texts())
 	}
 
-	// Mark as saved
 	a.savedDictTerm = "apple"
 	ttAfter := ui.NewTester(a.popupView, 480, 500)
 	if !ttAfter.HasText("已保存") {
@@ -186,7 +174,6 @@ func TestNonWordVocabCardDoesNotShowExpandWordCard(t *testing.T) {
 	}, 600, 500)
 	tt.Frame()
 
-	// Should not have "词卡" button for grammar sentence
 	texts := tt.Texts()
 	for _, txt := range texts {
 		if txt == "词卡" {
@@ -278,7 +265,6 @@ func TestAnkiExportCardFormatAndStyling(t *testing.T) {
 		t.Fatalf("expected 6 total lines in TSV, got %d", len(lines))
 	}
 
-	// Row 1: word entry
 	rowWord := strings.Split(lines[3], "\t")
 	if len(rowWord) != 4 {
 		t.Fatalf("expected 4 columns in word card row, got %d", len(rowWord))
@@ -296,7 +282,6 @@ func TestAnkiExportCardFormatAndStyling(t *testing.T) {
 		t.Errorf("expected tags to include fastDictionary and CEFR-C1, got: %q", rowWord[3])
 	}
 
-	// Row 2: grammar entry
 	rowGrammar := strings.Split(lines[4], "\t")
 	if !strings.Contains(rowGrammar[0], "长难句拆解") {
 		t.Errorf("grammar card front missing '长难句拆解': %s", rowGrammar[0])
@@ -305,7 +290,6 @@ func TestAnkiExportCardFormatAndStyling(t *testing.T) {
 		t.Errorf("grammar card tags missing '长难句': %s", rowGrammar[3])
 	}
 
-	// Row 3: writing entry
 	rowWriting := strings.Split(lines[5], "\t")
 	if !strings.Contains(rowWriting[0], "写作批改") {
 		t.Errorf("writing card front missing '写作批改': %s", rowWriting[0])
@@ -452,28 +436,24 @@ func TestPopupKeyboardShortcuts(t *testing.T) {
 	tt := ui.NewTester(a.popupView, 480, 500)
 	tt.Frame()
 
-	// 1. Switch to Grammar mode via Ctrl+2
 	tt.Key(ui.Ctrl, ui.Key2)
 	tt.Frame()
 	if a.mode != modeGrammar {
 		t.Errorf("expected Ctrl+2 to switch to modeGrammar, got %v", a.mode)
 	}
 
-	// 2. Switch to Writing mode via Ctrl+3
 	tt.Key(ui.Ctrl, ui.Key3)
 	tt.Frame()
 	if a.mode != modeWriting {
 		t.Errorf("expected Ctrl+3 to switch to modeWriting, got %v", a.mode)
 	}
 
-	// 3. Switch back to Translate mode via Ctrl+1
 	tt.Key(ui.Ctrl, ui.Key1)
 	tt.Frame()
 	if a.mode != modeTranslate {
 		t.Errorf("expected Ctrl+1 to switch to modeTranslate, got %v", a.mode)
 	}
 
-	// 4. Test Ctrl+S quick save for word
 	if a.savedDictTerm != "" {
 		t.Fatal("savedDictTerm should be empty initially")
 	}
@@ -485,7 +465,6 @@ func TestPopupKeyboardShortcuts(t *testing.T) {
 }
 
 func TestHighlightTermInContextEntitySafety(t *testing.T) {
-	// 1. amp should not match inside &amp;
 	res := highlightTermInContext("Tom & Jerry", "amp")
 	if strings.Contains(res, "<b class=\"fd-hl\">amp</b>") {
 		t.Errorf("corrupted entity &amp; found in: %s", res)
@@ -494,25 +473,21 @@ func TestHighlightTermInContextEntitySafety(t *testing.T) {
 		t.Errorf("expected 'Tom &amp; Jerry', got %q", res)
 	}
 
-	// 2. & should be highlighted as <b class="fd-hl">&amp;</b>
 	resAmp := highlightTermInContext("Tom & Jerry", "&")
 	if !strings.Contains(resAmp, "<b class=\"fd-hl\">&amp;</b>") {
 		t.Errorf("expected '&amp;' to be highlighted: %s", resAmp)
 	}
 
-	// 3. lt should not match inside &lt;
 	resLt := highlightTermInContext("a < b", "lt")
 	if strings.Contains(resLt, "<b class=\"fd-hl\">lt</b>") {
 		t.Errorf("corrupted entity &lt; found in: %s", resLt)
 	}
 
-	// 4. Quotation marks should remain valid HTML entities
 	resQuote := highlightTermInContext("He said \"hello\"", "hello")
 	if !strings.Contains(resQuote, "<b class=\"fd-hl\">hello</b>") || !strings.Contains(resQuote, "&#34;") {
 		t.Errorf("quotes or term improperly escaped: %s", resQuote)
 	}
 
-	// 5. Script tag escaping
 	resScript := highlightTermInContext("<script>alert(1)</script>", "<script>")
 	if strings.Contains(resScript, "<script>") {
 		t.Errorf("unescaped script tag found: %s", resScript)
@@ -571,17 +546,14 @@ func TestExportHTMLFullSearchAndStyling(t *testing.T) {
 	}
 	page := string(data)
 
-	// .fd-hl CSS class must be defined
 	if !strings.Contains(page, ".fd-hl, .hl") {
 		t.Errorf("ExportHTML missing .fd-hl class definition: %s", page)
 	}
 
-	// #noResult empty state must be present
 	if !strings.Contains(page, "id=\"noResult\"") {
 		t.Errorf("ExportHTML missing #noResult element")
 	}
 
-	// data-text must include example sentence and memory tips for search
 	if !strings.Contains(page, "pure serendipity") || !strings.Contains(page, "塞伦迪普三王子") {
 		t.Errorf("ExportHTML card data-text missing context or tips: %s", page)
 	}
@@ -596,7 +568,6 @@ func TestInputTargetModeFlow(t *testing.T) {
 	tt := ui.NewTester(a.popupView, 480, 500)
 	tt.Frame()
 
-	// 1. Click "键盘输入长句" in Grammar mode
 	if !tt.HasText("键盘输入长句") {
 		t.Fatalf("missing '键盘输入长句' button")
 	}
@@ -610,14 +581,11 @@ func TestInputTargetModeFlow(t *testing.T) {
 		t.Errorf("expected inputTargetMode modeGrammar, got %v", a.inputTargetMode)
 	}
 
-	// Check active tab indicator stays on Grammar (index 1)
 	if idx := popupModeIndex(a.mode, a.inputTargetMode); idx != 1 {
 		t.Errorf("expected tab index 1 (Grammar), got %d", idx)
 	}
 
-	// 2. Submit text in TextArea
 	a.inputText = "Although it was raining, they went out for a walk."
-	// Trigger Enter on TextArea
 	ttSubmit := ui.NewTester(a.popupView, 480, 500)
 	ttSubmit.Frame()
 	ttSubmit.Key(0, ui.KeyEnter)
@@ -637,7 +605,6 @@ func TestQuickSaveDictionaryAndSentence(t *testing.T) {
 
 	a := newTestApp()
 
-	// 1. Test quick save in dictionary mode
 	a.mode = modeDictionary
 	a.dictResult = &DictionaryResult{
 		Term:       "ephemeral",
@@ -652,12 +619,10 @@ func TestQuickSaveDictionaryAndSentence(t *testing.T) {
 		t.Errorf("expected dictionary entry to be saved to store")
 	}
 
-	// 2. Test quick save in translation mode for a full sentence
 	a.mode = modeTranslate
 	a.source = "Knowledge is power."
 	a.target = "知识就是力量。"
 	a.handleQuickSave(a.snap())
-	// Let background goroutine execute
 	time.Sleep(50 * time.Millisecond)
 
 	foundSentence := false
@@ -673,37 +638,31 @@ func TestQuickSaveDictionaryAndSentence(t *testing.T) {
 }
 
 func TestHotkeyConflictDetection(t *testing.T) {
-	// 1. Conflict between Selection and Input
 	msg1 := checkHotkeyConflict("Alt+D", "alt+d", "Alt+C")
 	if !strings.Contains(msg1, "划词快捷键与输入快捷键相同") {
 		t.Errorf("expected conflict between sel and inp, got: %q", msg1)
 	}
 
-	// 2. Conflict between Selection and Screenshot
 	msg2 := checkHotkeyConflict("Ctrl+Alt+S", "Ctrl+Alt+I", "ctrl+alt+s")
 	if !strings.Contains(msg2, "划词快捷键与截图快捷键相同") {
 		t.Errorf("expected conflict between sel and ocr, got: %q", msg2)
 	}
 
-	// 3. Conflict between Input and Screenshot
 	msg3 := checkHotkeyConflict("Alt+D", "Alt+Q", "alt + q")
 	if !strings.Contains(msg3, "输入快捷键与截图快捷键相同") {
 		t.Errorf("expected conflict between inp and ocr, got: %q", msg3)
 	}
 
-	// 3b. Modifier permutation conflict (Ctrl+Alt+S vs Alt+Ctrl+S)
 	msgPerm := checkHotkeyConflict("Ctrl+Alt+S", "Alt+Ctrl+S", "Alt+C")
 	if !strings.Contains(msgPerm, "划词快捷键与输入快捷键相同") {
 		t.Errorf("expected permutation conflict between Ctrl+Alt+S and Alt+Ctrl+S, got: %q", msgPerm)
 	}
 
-	// 4. Distinct keys have no conflict
 	msg4 := checkHotkeyConflict("Alt+D", "Alt+Q", "Alt+C")
 	if msg4 != "" {
 		t.Errorf("expected no conflict, got: %q", msg4)
 	}
 
-	// 5. Test applyHotkeys blocks conflict and preserves previous configuration
 	a := newTestApp()
 	a.initHotkeyDrafts()
 	a.pendingHotkeySelection = "Alt+D"
@@ -714,13 +673,11 @@ func TestHotkeyConflictDetection(t *testing.T) {
 	if !strings.Contains(a.hotkeyMsg, "快捷键冲突") {
 		t.Errorf("expected a.hotkeyMsg to contain conflict error, got: %q", a.hotkeyMsg)
 	}
-	// Config should not have applied the duplicate hotkey
 	cfg := a.store.Get()
 	if cfg.HotkeyInput == "Alt+D" {
 		t.Errorf("conflicting hotkey should not be persisted to config")
 	}
 
-	// 6. Test UI banner rendering in pageHotkey
 	tt := ui.NewTester(func(c *ui.Context) {
 		a.pageHotkey(c, c.Theme(), a.store.Get())
 	}, 600, 600)
@@ -736,13 +693,11 @@ func TestHotkeyResetToDefault(t *testing.T) {
 	defer func() { registerHotkeysFunc = orig }()
 
 	a := newTestApp()
-	// Set custom hotkeys first
 	a.pendingHotkeySelection = "Ctrl+Shift+1"
 	a.pendingHotkeyScreenshot = "Ctrl+Shift+2"
 	a.pendingHotkeyInput = "Ctrl+Shift+3"
 	a.applyHotkeys()
 
-	// Reset to default
 	a.resetHotkeysToDefault()
 	cfg := a.store.Get()
 	def := DefaultConfig()
@@ -761,16 +716,13 @@ func TestHotkeyDraftBackspaceFix(t *testing.T) {
 	a := newTestApp()
 	a.initHotkeyDrafts()
 
-	// User selects all and presses backspace to clear the field
 	a.pendingHotkeySelection = ""
 
-	// Next frame renders pageHotkey
 	tt := ui.NewTester(func(c *ui.Context) {
 		a.pageHotkey(c, c.Theme(), a.store.Get())
 	}, 600, 600)
 	tt.Frame()
 
-	// Crucial fix: empty pending string must NOT be overwritten by initHotkeyDrafts!
 	if a.pendingHotkeySelection != "" {
 		t.Errorf("pendingHotkeySelection was aggressively overwritten by initHotkeyDrafts, got %q", a.pendingHotkeySelection)
 	}
@@ -788,7 +740,6 @@ func TestVocabSingleItemDeleteAccidentalPrevention(t *testing.T) {
 
 	a := newTestApp()
 
-	// 1. First render: should have "删除", but NOT "确认删除"
 	tt := ui.NewTester(func(c *ui.Context) {
 		a.pageVocabulary(c, c.Theme(), a.store.Get())
 	}, 600, 500)
@@ -801,7 +752,6 @@ func TestVocabSingleItemDeleteAccidentalPrevention(t *testing.T) {
 		t.Fatalf("initial state should NOT show '确认删除'")
 	}
 
-	// 2. Click "删除" -> transitions into confirmation mode, DOES NOT delete entry
 	tt.Click("删除")
 	tt.Frame()
 
@@ -812,7 +762,6 @@ func TestVocabSingleItemDeleteAccidentalPrevention(t *testing.T) {
 		t.Errorf("expected vocabConfirmDeleteID to be 'test-entry-1', got %q", a.vocabConfirmDeleteID)
 	}
 
-	// Re-render tester with confirmation state
 	ttConfirm := ui.NewTester(func(c *ui.Context) {
 		a.pageVocabulary(c, c.Theme(), a.store.Get())
 	}, 600, 500)
@@ -822,7 +771,6 @@ func TestVocabSingleItemDeleteAccidentalPrevention(t *testing.T) {
 		t.Fatalf("expected confirmation state to show '确认删除' and '取消'")
 	}
 
-	// 3. Click "取消" -> dismisses confirmation, entry is preserved
 	ttConfirm.Click("取消")
 	ttConfirm.Frame()
 
@@ -833,7 +781,6 @@ func TestVocabSingleItemDeleteAccidentalPrevention(t *testing.T) {
 		t.Fatalf("entry should remain in store after cancelling")
 	}
 
-	// 4. Click "删除" again -> click "确认删除" -> entry is removed!
 	ttConfirm.Click("删除")
 	ttConfirm.Frame()
 	ttConfirm.Click("确认删除")
@@ -851,26 +798,21 @@ func TestSelectionChipScreenEdgeAvoidance(t *testing.T) {
 	wa := mygo.Rectangle{X: 0, Y: 0, Width: 1920, Height: 1040}
 	width := 200
 
-	// 1. Extreme left edge: cursor at X=0
 	xLeft, _ := clampChip(0, 500, wa, width)
 	if xLeft < chipGap {
 		t.Errorf("xLeft=%d, must be at least chipGap (%d) from left edge", xLeft, chipGap)
 	}
 
-	// 2. Extreme right edge: cursor at X=1919
 	xRight, _ := clampChip(1919, 500, wa, width)
 	if xRight+width+chipGap > wa.X+wa.Width {
 		t.Errorf("xRight=%d with width %d escapes right boundary (wa.Width=%d)", xRight, width, wa.Width)
 	}
 
-	// 3. Extreme top edge: cursor at Y=0
 	_, yTop := clampChip(500, 0, wa, width)
 	if yTop < chipGap {
 		t.Errorf("yTop=%d, must be at least chipGap (%d) from top edge", yTop, chipGap)
 	}
 
-	// 4. Extreme bottom edge (e.g. mouse up on taskbar at Y=1060)
-	// Must flip above AND bottom edge must not exceed WorkArea.Height - chipGap
 	_, yBottom := clampChip(500, 1060, wa, width)
 	if yBottom+selIconHeight+chipGap > wa.Y+wa.Height {
 		t.Errorf("yBottom=%d (+%d) escapes work area height %d with chipGap %d", yBottom, selIconHeight, wa.Height, chipGap)
@@ -883,7 +825,7 @@ func TestSelectionChipScreenEdgeAvoidance(t *testing.T) {
 func TestOcrParagraphMismatchAdaptivePairing(t *testing.T) {
 	a := newTestApp()
 	a.source = "First paragraph here.\n\nSecond paragraph here.\n\nThird paragraph here."
-	a.target = "第一段在这里。\n\n第二段在这里。" // 3 source vs 2 target
+	a.target = "第一段在这里。\n\n第二段在这里。"
 	a.ocrCompare = true
 
 	tt := ui.NewTester(func(c *ui.Context) {
@@ -891,25 +833,21 @@ func TestOcrParagraphMismatchAdaptivePairing(t *testing.T) {
 	}, 500, 600)
 	tt.Frame()
 
-	// 1. Must show adaptive pairing explanation
 	if !tt.HasText("识别到 3 段原文、2 段译文（部分段落已自适应对齐对照）") {
 		t.Errorf("missing adaptive pairing explanation: %v", tt.Texts())
 	}
 
-	// 2. Must show § 1, § 2, and § 3!
 	for _, sec := range []string{"§ 1", "§ 2", "§ 3"} {
 		if !tt.HasText(sec) {
 			t.Errorf("expected paragraph card for %s, got texts: %v", sec, tt.Texts())
 		}
 	}
 
-	// 3. Third source paragraph must NOT be discarded
 	joined := strings.Join(tt.Texts(), " ")
 	if !strings.Contains(joined, "Third paragraph here.") {
 		t.Errorf("third source paragraph was lost: %s", joined)
 	}
 
-	// 4. Test empty boundary case
 	a.source = ""
 	a.target = ""
 	ttEmpty := ui.NewTester(func(c *ui.Context) {
@@ -968,7 +906,6 @@ func TestBlockedAppNameSanitization(t *testing.T) {
 		}
 	}
 
-	// Verify path-pasted blocked app successfully triggers appIsBlocked
 	a := newTestApp()
 	a.newBlockedApp = `"C:\Tools\SpecialSnip.EXE"`
 	tt := ui.NewTester(func(c *ui.Context) {
@@ -997,7 +934,6 @@ func TestVocabSingleItemDeleteUndo(t *testing.T) {
 
 	a := newTestApp()
 
-	// 1. Render vocabulary page and click "删除"
 	tt := ui.NewTester(func(c *ui.Context) {
 		a.pageVocabulary(c, c.Theme(), a.store.Get())
 	}, 600, 500)
@@ -1015,7 +951,6 @@ func TestVocabSingleItemDeleteUndo(t *testing.T) {
 		t.Fatalf("expected lastDeletedVocab to hold 'ephemeral', got: %v", a.lastDeletedVocab)
 	}
 
-	// 2. The action bar must now display the Undo button
 	ttUndo := ui.NewTester(func(c *ui.Context) {
 		a.pageVocabulary(c, c.Theme(), a.store.Get())
 	}, 600, 500)
@@ -1025,7 +960,6 @@ func TestVocabSingleItemDeleteUndo(t *testing.T) {
 		t.Fatalf("expected undo button '↩ 撤销删除「ephemeral」', got texts: %v", ttUndo.Texts())
 	}
 
-	// 3. Click Undo button -> restores entry to store!
 	ttUndo.Click("↩ 撤销删除「ephemeral」")
 	ttUndo.Frame()
 
@@ -1051,7 +985,6 @@ func TestMultiLineTextAreaShiftEnterDoesNotSubmit(t *testing.T) {
 	tt := ui.NewTester(a.popupView, 480, 500)
 	tt.Frame()
 
-	// 1. Shift+Enter should NOT submit translation
 	tt.Key(ui.Shift, ui.KeyEnter)
 	tt.Frame()
 
@@ -1059,7 +992,6 @@ func TestMultiLineTextAreaShiftEnterDoesNotSubmit(t *testing.T) {
 		t.Fatalf("Shift+Enter must not submit translation in popup TextArea, mode changed to: %v", a.mode)
 	}
 
-	// 2. Plain Enter should submit translation
 	tt.Key(0, ui.KeyEnter)
 	tt.Frame()
 
@@ -1087,9 +1019,6 @@ func TestOcrParagraphCopyAllHeaderButton(t *testing.T) {
 	}
 }
 
-// TestHotkeyRollbackFailureIsReported: when the new set fails and the old
-// set cannot be re-registered either, the user must learn that shortcuts
-// are now dead instead of seeing only the new-key error.
 func TestHotkeyRollbackFailureIsReported(t *testing.T) {
 	orig := registerHotkeysFunc
 	registerHotkeysFunc = func(sel, inp, ocr string, a *app) string {

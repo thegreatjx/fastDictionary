@@ -7,10 +7,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// startVocabReview snapshots the due words into a queue. The queue holds IDs,
-// not entry copies: grading one card must not hide edits made elsewhere, and a
-// word deleted while the session is open has to disappear rather than keep its
-// stale text on screen.
 func (a *app) startVocabReview() {
 	due := GetVocabularyStore().DueEntries(time.Now())
 	ids := make([]string, 0, len(due))
@@ -33,8 +29,6 @@ func (a *app) endVocabReview() {
 	a.settingsRefresh()
 }
 
-// openVocabReview is the tray entry point: it opens the settings window on the
-// notebook page and starts a session in one action.
 func (a *app) openVocabReview() {
 	a.page = "vocabulary"
 	a.showSettings()
@@ -54,9 +48,6 @@ func (a *app) gradeVocabReview(grade reviewGrade) {
 	a.settingsRefresh()
 }
 
-// pageVocabReview is the flashcard surface. It replaces the list while a
-// session is active, so the grade buttons are never mixed up with the list's
-// delete and expand controls.
 func (a *app) pageVocabReview(c *ui.Context, t *ui.Theme) {
 	total := len(a.vocabReviewIDs)
 	if a.vocabReviewIdx >= total {
@@ -65,8 +56,6 @@ func (a *app) pageVocabReview(c *ui.Context, t *ui.Theme) {
 	}
 
 	store := GetVocabularyStore()
-	// Entries can be deleted from the list while a session is queued. Skip
-	// them instead of ending the whole session on the first stale ID.
 	var entry VocabularyEntry
 	found := false
 	for a.vocabReviewIdx < total {
@@ -82,8 +71,6 @@ func (a *app) pageVocabReview(c *ui.Context, t *ui.Theme) {
 		return
 	}
 
-	// 全键盘复习：Space/Enter 翻牌，1/2/3 评分，R 朗读。
-	// 复习是重复动作，鼠标要来回跑三趟，键盘流才不磨手。
 	if c.Shortcut(0, ui.KeyR) {
 		PlaySpeechLang(entry.Term, "", false)
 	}
@@ -110,7 +97,6 @@ func (a *app) pageVocabReview(c *ui.Context, t *ui.Theme) {
 		Border(1, t.Border).Shadow(0, 2, 8, 0, ui.RGBA(0, 0, 0, 0.05)).Children(func() {
 		ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
 			ui.Text(c, entry.Term).FontSize(30).FontWeight(700).TextColor(t.Text).Wrap()
-			// 音标和朗读按钮放在同一行；即使条目没有保存音标，也能听发音。
 			ui.Row(c).AlignItems(ui.Center).Gap(4).Children(func() {
 				if entry.Phonetic != "" {
 					ui.Text(c, entry.Phonetic).FontSize(14).TextColor(t.TextMuted)

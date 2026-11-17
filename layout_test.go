@@ -7,8 +7,6 @@ import (
 	"github.com/egoist/mygo"
 )
 
-// TestWrappedLines pins the wrap estimator: every popup height below is built
-// on it, so an off-by-one here is a clipped save button there.
 func TestWrappedLines(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -22,12 +20,8 @@ func TestWrappedLines(t *testing.T) {
 		{"one short ascii line", "hello", 400, 14, 1, 1},
 		{"explicit newlines", "a\nb\nc", 400, 14, 3, 3},
 		{"blank line still counts", "a\n\nb", 400, 14, 3, 3},
-		// 200 ASCII chars at 14px ≈ 7.7px each = 1540px over a ~354px
-		// usable width: five lines, and certainly more than one.
 		{"long ascii wraps", strings.Repeat("abcdefghij", 20), 400, 14, 4, 6},
 		{"cjk is wider", "中文字符测试", 200, 14, 1, 2},
-		// The 80px usable floor keeps a degenerate width from turning a
-		// short string into dozens of lines.
 		{"tiny width uses the floor", "hello world hello world", 10, 14, 2, 4},
 	}
 	for _, tc := range cases {
@@ -40,8 +34,6 @@ func TestWrappedLines(t *testing.T) {
 	}
 }
 
-// TestWrappedLinesGrowsWithText guards the monotonicity the height maths
-// depends on: more text must never mean fewer lines.
 func TestWrappedLinesGrowsWithText(t *testing.T) {
 	prev := 0
 	for n := 0; n <= 200; n += 10 {
@@ -53,8 +45,6 @@ func TestWrappedLinesGrowsWithText(t *testing.T) {
 	}
 }
 
-// TestPopupContentHeightFloor pins the 260px minimum: a window shorter than
-// that clips the source, the translation or the bottom action bar.
 func TestPopupContentHeightFloor(t *testing.T) {
 	if h := popupContentHeight(snapshot{mode: modeTranslate}, 440); h < popupMinHeight {
 		t.Fatalf("empty translate popup = %vpx, below the %v floor", h, popupMinHeight)
@@ -64,9 +54,6 @@ func TestPopupContentHeightFloor(t *testing.T) {
 	}
 }
 
-// TestPopupContentHeightGrowsWithContent checks that each mode reacts to the
-// data it renders — the bug class here is a fixed height that hides the
-// buttons the user needs.
 func TestPopupContentHeightGrowsWithContent(t *testing.T) {
 	short := popupContentHeight(snapshot{
 		mode:   modeTranslate,
@@ -89,9 +76,6 @@ func TestPopupContentHeightGrowsWithContent(t *testing.T) {
 	}
 }
 
-// TestPopupContentHeightWritingCountsAnnotations is the regression that
-// motivated the estimate: a fixed 40px per annotation clipped the save row
-// as soon as an annotation wrapped.
 func TestPopupContentHeightWritingCountsAnnotations(t *testing.T) {
 	one := popupContentHeight(snapshot{
 		mode: modeWriting,
@@ -116,29 +100,24 @@ func TestPopupContentHeightWritingCountsAnnotations(t *testing.T) {
 	}
 }
 
-// TestClampPopupHeight covers the work-area and auto-height caps.
 func TestClampPopupHeight(t *testing.T) {
 	if got := clampPopupHeight(500, 0, 1080); got != 500 {
 		t.Fatalf("clampPopupHeight(500, 0, 1080) = %v, want 500 (already fits)", got)
 	}
-	// 1080px work area would allow 669px at 62%, so the fixed 580 cap wins.
 	if got := clampPopupHeight(900, 0, 1080); got != popupMaxAutoHeight {
 		t.Fatalf("clampPopupHeight(900, 0, 1080) = %v, want %v", got, popupMaxAutoHeight)
 	}
 	if got := clampPopupHeight(2000, 0, 1080); got != popupMaxAutoHeight {
 		t.Fatalf("clampPopupHeight(2000, 0, 1080) = %v, want %v", got, popupMaxAutoHeight)
 	}
-	// On a short work area 62% is the tighter bound: 800 * 0.62 = 496.
 	if got := clampPopupHeight(900, 0, 800); got != 496 {
 		t.Fatalf("clampPopupHeight(900, 0, 800) = %v, want 496", got)
 	}
-	// Margins wider than the work area must not yield a negative height.
 	if got := clampPopupHeight(500, 600, 500); got > 500 {
 		t.Fatalf("clampPopupHeight(500, 600, 500) = %v, want <= 500", got)
 	}
 }
 
-// TestLiftPopupY covers the branches of the 主动抬高 logic.
 func TestLiftPopupY(t *testing.T) {
 	const waTop, waBottom = 14, 1066
 	cases := []struct {
@@ -148,13 +127,9 @@ func TestLiftPopupY(t *testing.T) {
 		wantY   int
 		wantH   int
 	}{
-		// Fits below the bottom edge: untouched.
 		{"fits", 100, 300, 100, 300},
-		// Bottom overflow: lifted so the last pixel lands on waBottom.
 		{"lifts up", 900, 300, 766, 300},
-		// Already above the top edge but short enough to fit: pinned down.
 		{"pinned to top", -50, 300, 14, 300},
-		// Taller than the work area: pinned to the top and shrunk to fit.
 		{"shrunk to work area", 20, 2000, 14, 1052},
 	}
 	for _, tc := range cases {
@@ -166,8 +141,6 @@ func TestLiftPopupY(t *testing.T) {
 	}
 }
 
-// TestLiftPopupYAlwaysStaysInBounds is the invariant: whatever the inputs,
-// the popup must end up fully visible.
 func TestLiftPopupYAlwaysStaysInBounds(t *testing.T) {
 	const waTop, waBottom = 14, 1066
 	for _, curY := range []int{-500, 0, 100, 500, 1000, 5000} {
@@ -183,9 +156,6 @@ func TestLiftPopupYAlwaysStaysInBounds(t *testing.T) {
 	}
 }
 
-// TestCalcPopupPositionInStaysInsideWorkArea is the same invariant for the
-// horizontal placement: the popup must never hang off the screen, which is
-// how it became unreachable on a secondary monitor.
 func TestCalcPopupPositionInStaysInsideWorkArea(t *testing.T) {
 	wa := mygoRect(0, 0, 1920, 1080)
 	const w, h = 440, 300
@@ -203,8 +173,6 @@ func TestCalcPopupPositionInStaysInsideWorkArea(t *testing.T) {
 	}
 }
 
-// TestCalcPopupPositionFlipsAboveTheCursor pins the deliberate behaviour: in
-// the lower half of the screen the popup opens upwards so it is not cut off.
 func TestCalcPopupPositionFlipsAboveTheCursor(t *testing.T) {
 	wa := mygoRect(0, 0, 1920, 1080)
 	_, highY := calcPopupPositionIn(mygo.Point{X: 800, Y: 100}, 440, 300, wa)
@@ -217,9 +185,6 @@ func TestCalcPopupPositionFlipsAboveTheCursor(t *testing.T) {
 	}
 }
 
-// TestPopupContentHeightNotesExpansion ensures that extracting notes does not
-// cause vertical layout jumps when collapsed, and properly accounts for the notes card
-// only when explicitly expanded.
 func TestPopupContentHeightNotesExpansion(t *testing.T) {
 	baseSnap := snapshot{
 		mode:   modeTranslate,

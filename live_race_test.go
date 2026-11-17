@@ -7,10 +7,6 @@ import (
 	"time"
 )
 
-// TestLiveRaceIncludesGoogle is the end-to-end check for the user's "谷歌翻译
-// 又是400" report. It is skipped in a normal run: it needs the network, and the
-// race picks whichever engine is fastest, so it cannot assert on the winner.
-// Run it with FASTDICTIONARY_LIVE=1 to see which engines answered.
 func TestLiveRaceIncludesGoogle(t *testing.T) {
 	if os.Getenv("FASTDICTIONARY_LIVE") == "" {
 		t.Skip("set FASTDICTIONARY_LIVE=1 to hit the live engines")
@@ -18,8 +14,6 @@ func TestLiveRaceIncludesGoogle(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	// detectLocal returns "" for this sentence, which is exactly the case that
-	// used to make Google answer 400.
 	const sentence = "She cooked the books to hide the losses."
 	if from := detectLocal(sentence); from != "" {
 		t.Logf("note: local detection now returns %q, so this no longer reproduces the empty-sl path", from)
@@ -36,8 +30,6 @@ func TestLiveRaceIncludesGoogle(t *testing.T) {
 		t.Log("Microsoft won on speed; that is a result, not a failure")
 	}
 
-	// Google pinned must also work on its own, which is the direct assertion:
-	// before the sl=auto fix this returned "google: http 400".
 	gctx, gcancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer gcancel()
 	out, detected, err := GoogleTranslate(gctx, sentence, "", "zh-Hans")

@@ -12,15 +12,10 @@ import (
 //go:embed resources/tray.png
 var embeddedTrayIcon []byte
 
-// trayIcon returns the embedded high-DPI modern tray icon.
 func trayIcon() []byte {
 	return embeddedTrayIcon
 }
 
-// toggleTrayFlyout opens or closes the native Menubar Flyout attached to the tray icon.
-//
-// 托盘左键已经改成直达主窗口（见 toggleMainWindow）；这个面板保留下来，因为
-// 主窗口的首页工作台就是同一套快捷功能，而面板自身仍有渲染测试和截图模式。
 func (a *app) toggleTrayFlyout() {
 	if a.trayFlyout != nil && !a.trayFlyout.IsDestroyed() {
 		a.trayFlyout.Close()
@@ -41,7 +36,6 @@ func (a *app) toggleTrayFlyout() {
 	})
 }
 
-// trayStatusText 只描述运行状态，不复读上方已选的划词模式。
 func trayStatusText(cfg Config) string {
 	hk := strings.TrimSpace(cfg.HotkeySelection)
 	if hk != "" {
@@ -50,8 +44,6 @@ func trayStatusText(cfg Config) string {
 	return "运行中"
 }
 
-// trayFlyoutView 是单层 Surface 面板：顶栏 / 搜索 / 两列快捷按钮 / 状态与退出底栏。
-// 搜索框不再套第二层装饰盒，退出按钮常态无底无框、不亮红。
 func (a *app) trayFlyoutView(c *ui.Context) {
 	cfg := a.store.Get()
 	applyTheme(c, cfg.ThemeMode, c.Theme().Dark, cfg.AccentTheme)
@@ -65,7 +57,6 @@ func (a *app) trayFlyoutView(c *ui.Context) {
 		panel.InsetShadow(0, 0, 1, 0, at.InsetColor)
 	}
 	panel.Children(func() {
-		// 1. 顶栏：淡蓝微底盒 Logo + 应用名 + Ghost 设置齿轮
 		ui.Row(c).FillWidth().Height(HeightIconMd).AlignItems(ui.Center).Gap(Space2).Children(func() {
 			ui.Box(c).Size(HeightIconSm, HeightIconSm).Radius(RadiusSM).Center().
 				Background(at.AccentSoft).Children(func() {
@@ -81,7 +72,6 @@ func (a *app) trayFlyoutView(c *ui.Context) {
 			}
 		})
 
-		// 2. 搜索框：TextInputBase 无外观，图标与键帽都在同一行内，只有一层容器。
 		search := ui.Box(c).FillWidth().Height(HeightSearch).Radius(RadiusSM).
 			Background(at.Surface).Border(1, at.BorderCtrl).Padding(0, Space3)
 		search.Children(func() {
@@ -114,7 +104,6 @@ func (a *app) trayFlyoutView(c *ui.Context) {
 			})
 		})
 
-		// 3. 快捷功能：两列等宽、等高 Secondary。
 		ui.Row(c).FillWidth().Gap(Space2).Children(func() {
 			vocab := SecondaryButton(c, t,
 				fmt.Sprintf("生词本 (%d)", GetVocabularyStore().Count()), iconBookmark).Grow(1)
@@ -135,15 +124,12 @@ func (a *app) trayFlyoutView(c *ui.Context) {
 			}
 		})
 
-		// 划词模式切换：Compact 版 + 显式值映射，不依赖魔法下标。
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
 			ui.Text(c, "划词").Font(fontUI).FontSize(FontHelper).
 				TextColor(at.TextMuted).SingleLine()
 			SegmentedControlMapped(c, true, cfg.SelectionTrigger, func(mode string) {
 				a.store.Update(func(c *Config) { c.SelectionTrigger = mode })
 				a.applySelectionMode()
-				// The tray menu's radio is fixed when built; without this it keeps
-				// showing the mode that was active before the flyout changed it.
 				a.rebuildTray()
 			},
 				SegmentedOption[string]{Value: "icon", Label: "显示图标"},
@@ -152,7 +138,6 @@ func (a *app) trayFlyoutView(c *ui.Context) {
 			)
 		})
 
-		// 4. 底栏：1px 分割线 + 状态 + Danger-Ghost 退出。
 		ui.Box(c).FillWidth().BorderWidth(1, 0, 0, 0).BorderColor(at.BorderSubtle).
 			Padding(Space2, 0, 0, 0).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {

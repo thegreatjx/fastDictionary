@@ -13,8 +13,6 @@ import (
 	xdraw "golang.org/x/image/draw"
 )
 
-// AI 看图把截图交给用户自选模型。模型是否收图片由服务端回答；客户端不按模型名
-// 或旧版「图片输入」开关预先禁用，避免把用户自选模型锁死。
 const (
 	visionSourceMarker = "[SOURCE]"
 	visionTargetMarker = "[TARGET]"
@@ -22,8 +20,6 @@ const (
 	visionJPEGQuality  = 85
 )
 
-// compressedImageFileDataURL 缩小大图、把透明底铺白，再编码为 JPEG。截图常是
-// PNG，直接 base64 原图会把 2K/4K 图片和透明像素一起发给模型，既慢又贵。
 func compressedImageFileDataURL(path string) (string, error) {
 	if strings.TrimSpace(path) == "" {
 		return "", fmt.Errorf("截图路径为空")
@@ -75,8 +71,6 @@ type visionStreamParser struct {
 	buf strings.Builder
 }
 
-// Push 返回当前已经能确定的原文和译文。流式片段可能把标记切开，缓冲到完整标记
-// 出现后再显示；没有 [TARGET] 时不把半截标记当成译文。
 func (p *visionStreamParser) Push(delta string) (source, target string) {
 	p.buf.WriteString(delta)
 	text := p.buf.String()
@@ -97,8 +91,6 @@ func (p *visionStreamParser) Push(delta string) (source, target string) {
 	return source, ""
 }
 
-// stripPartialVisionTargetMarker 删掉流式片段末尾尚未完整的 [TARGET] 前缀，
-// 避免把 "[TAR" 临时显示成原文。
 func stripPartialVisionTargetMarker(s string) string {
 	upper := strings.ToUpper(s)
 	for n := len(visionTargetMarker) - 1; n > 0; n-- {
@@ -109,16 +101,11 @@ func stripPartialVisionTargetMarker(s string) string {
 	return s
 }
 
-// parseVisionOutput 统一处理带分隔符和纯译文两种返回。纯译文流保留用户原有的
-// 流式体验，原文继续用本地 OCR 或用户已编辑的文本。
 func parseVisionOutput(out, fallbackSource string) (source, target string) {
 	source, target = rawVisionSections(out, fallbackSource)
 	return CleanOcrText(source), flattenTranslation(target)
 }
 
-// parseVisionOutputForLayout is parseVisionOutput with the card's layout mode
-// applied, so the 紧凑 / 智能 / 保留换行 switch also works on answers the model
-// read straight from the screenshot.
 func parseVisionOutputForLayout(out, fallbackSource, mode string) (source, target string) {
 	source, target = rawVisionSections(out, fallbackSource)
 	return cleanSourceForLayout(source, mode, true), formatTranslationForLayout(target, mode, true)

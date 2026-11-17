@@ -18,10 +18,6 @@ func hookFuncBody(t *testing.T, src, signature string) string {
 	return src[start : start+rel]
 }
 
-// TestHookCommandQueueIsBuffered is the regression: the old single-slot
-// hookCommandFn let a second post overwrite the first before the hook thread
-// drained it, so a fast mode switch (or quitting right after one) could drop
-// installHooks/removeHooks for good.
 func TestHookCommandQueueIsBuffered(t *testing.T) {
 	src := readSourceFile(t, "hook.go")
 	if !containsText(src, "make(chan func(),") {

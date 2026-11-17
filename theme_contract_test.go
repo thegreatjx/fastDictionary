@@ -6,9 +6,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// themeForContract builds the real ui.Theme through applyTheme, so each case
-// exercises the same accent resolution the app uses instead of a hand-made
-// palette that could drift from it.
 func themeForContract(t *testing.T, dark bool, accent string) *ui.Theme {
 	t.Helper()
 	var got *ui.Theme
@@ -27,9 +24,6 @@ func themeForContract(t *testing.T, dark bool, accent string) *ui.Theme {
 	return got
 }
 
-// contrastOn composites fg over an opaque bg and returns the WCAG contrast
-// ratio. Semi-transparent washes must be flattened first; skipping that step
-// is how a 30% tint gets mistaken for the colour the reader actually sees.
 func contrastOn(fg, bg ui.Color) float64 {
 	flat := fg.Over(bg)
 	a, b := relativeLuminance(flat), relativeLuminance(bg)
@@ -46,9 +40,6 @@ func requireContrast(t *testing.T, label string, fg, bg ui.Color, min float64) {
 	}
 }
 
-// TestGrammarPaletteContrastAcrossThemes pins the 4.5:1 text floor for every
-// accent and both modes. The old palette passed only on the default blue; a
-// single screenshot could not show that coral or mint was worse.
 func TestGrammarPaletteContrastAcrossThemes(t *testing.T) {
 	tags := []string{"宾从", "主从", "表从", "定从", "同位", "状从"}
 	for _, choice := range accentChoices {
@@ -82,10 +73,6 @@ func TestGrammarPaletteContrastAcrossThemes(t *testing.T) {
 	}
 }
 
-// TestGrammarClauseWashHierarchy pins the three wash depths and the deeper
-// badge. The 1.4.5 bug painted the 30% badge colour behind whole clauses, so
-// every clause looked selected. A named struct plus this check keeps the
-// three layers from collapsing again.
 func TestGrammarClauseWashHierarchy(t *testing.T) {
 	for _, choice := range accentChoices {
 		for _, dark := range []bool{false, true} {
@@ -102,8 +89,6 @@ func TestGrammarClauseWashHierarchy(t *testing.T) {
 	}
 }
 
-// TestGrammarDifficultyStaysNeutral makes the DESIGN.md rule executable:
-// a difficulty is information, never a Warning or a Danger.
 func TestGrammarDifficultyStaysNeutral(t *testing.T) {
 	for _, choice := range accentChoices {
 		for _, dark := range []bool{false, true} {

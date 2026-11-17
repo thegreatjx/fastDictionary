@@ -6,8 +6,6 @@ import (
 	"time"
 )
 
-// visionRefine 是截图模式「AI 精翻」按钮的实现。它直接把压缩截图发给模型，
-// 同时把本地 OCR 文本作为提示；模型以图片为准，流式刷新原文和译文。
 func (a *app) visionRefine() {
 	cfg := a.store.Get()
 	mode := normalizeLayoutMode(cfg.LayoutMode)
@@ -152,8 +150,6 @@ func (a *app) finishVisionRefineError(ctx context.Context, gen, ocrGen requestTo
 	a.fitHeight()
 }
 
-// recognizeScreenshotVision 是「AI 直接看图」模式和「本地优先」自动复核共用的入口。
-// fallbackText 非空时，AI 请求失败仍保留本地 OCR 结果并继续机器翻译。
 func (a *app) recognizeScreenshotVision(ctx context.Context, cancel context.CancelFunc, generation requestToken, path, fallbackText string) {
 	defer recoverLog("ai_vision_actions.go:recognizeScreenshotVision")
 	defer cancel()

@@ -38,7 +38,6 @@ func TestExportImportVocabulary(t *testing.T) {
 		},
 	}
 
-	// 1. Test ExportJSON
 	jsonPath := filepath.Join(tmpDir, "export.json")
 	if err := store.ExportJSON(jsonPath); err != nil {
 		t.Fatalf("ExportJSON failed: %v", err)
@@ -48,7 +47,6 @@ func TestExportImportVocabulary(t *testing.T) {
 		t.Fatalf("JSON export content invalid")
 	}
 
-	// 2. Test ExportCSV
 	csvPath := filepath.Join(tmpDir, "export.csv")
 	if err := store.ExportCSV(csvPath); err != nil {
 		t.Fatalf("ExportCSV failed: %v", err)
@@ -57,12 +55,10 @@ func TestExportImportVocabulary(t *testing.T) {
 	if err != nil || !strings.Contains(string(csvBytes), "ambitious") {
 		t.Fatalf("CSV export content invalid")
 	}
-	// Verify UTF-8 BOM
 	if len(csvBytes) < 3 || csvBytes[0] != 0xEF || csvBytes[1] != 0xBB || csvBytes[2] != 0xBF {
 		t.Fatalf("CSV missing UTF-8 BOM")
 	}
 
-	// 3. Test Import into new store
 	newStore := &VocabularyStore{
 		path: filepath.Join(tmpDir, "imported_vocab.json"),
 	}
@@ -74,7 +70,6 @@ func TestExportImportVocabulary(t *testing.T) {
 		t.Fatalf("expected 2 imported items, got count=%d store=%d", count, newStore.Count())
 	}
 
-	// 4. Test Import from CSV
 	csvStore := &VocabularyStore{
 		path: filepath.Join(tmpDir, "csv_imported_vocab.json"),
 	}
@@ -86,7 +81,6 @@ func TestExportImportVocabulary(t *testing.T) {
 		t.Fatalf("expected 2 items from CSV, got count=%d store=%d", countCSV, csvStore.Count())
 	}
 
-	// 5. Test Import from TXT
 	txtPath := filepath.Join(tmpDir, "words.txt")
 	_ = os.WriteFile(txtPath, []byte("legendary\t传奇的\nephemeral - 短暂的\ncherish: 珍惜"), 0o644)
 	txtStore := &VocabularyStore{
@@ -99,7 +93,6 @@ func TestExportImportVocabulary(t *testing.T) {
 	if countTXT != 3 {
 		t.Fatalf("expected 3 items from TXT, got %d", countTXT)
 	}
-	// Verify auto-enrichment occurred on imported TXT words
 	legEntry := txtStore.Search("legendary")
 	if len(legEntry) == 0 || legEntry[0].Phonetic == "" || legEntry[0].Difficulty == "" {
 		t.Fatalf("expected legendary to be enriched with phonetic and difficulty")

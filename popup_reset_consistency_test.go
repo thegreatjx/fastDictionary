@@ -2,10 +2,6 @@ package main
 
 import "testing"
 
-// TestResetPopupTransientLocked pins the shared reset for the per-look view
-// switches and the active action id. Both popup entry points must apply this
-// same list: onlyTrunk used to be cleared by one entry only, so a popup opened
-// through the other entry kept the previous card's folded view.
 func TestResetPopupTransientLocked(t *testing.T) {
 	a := &app{}
 	a.onlyTrunk = true
@@ -19,15 +15,12 @@ func TestResetPopupTransientLocked(t *testing.T) {
 			a.onlyTrunk, a.showSlashes, a.activeActionID)
 	}
 
-	// Repeated resets must stay harmless.
 	a.resetPopupTransientLocked()
 	if a.onlyTrunk || a.showSlashes || a.activeActionID != "" {
 		t.Fatal("resetPopupTransientLocked is not idempotent")
 	}
 }
 
-// TestBothPopupEntriesResetTransients proves both entry points delegate to the
-// shared reset, and that only that method spells out the field list.
 func TestBothPopupEntriesResetTransients(t *testing.T) {
 	src := readSourceFile(t, "popup.go")
 

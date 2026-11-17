@@ -1,6 +1,3 @@
-// Magpie-specific reasoning. The HTTP client lives in ai_client.go; this
-// file keeps the effort table and the prompts, which are the parts that are
-// actually about a particular gateway.
 package main
 
 import (
@@ -8,50 +5,19 @@ import (
 	"sync"
 )
 
-// Effort is a preference, not a wire value: the wire value depends on the
-// model. There is no "no reasoning" level to ask for — the gateway validates
-// reasoning_effort against each model's own reasoning_levels and silently drops
-// anything it does not list, after which the model applies its default.
-//
-// Asking for each model's lowest declared level is not the same as making it
-// fast, because a declared level switches reasoning ON for a model that would
-// otherwise not think at all. Measured here on the same sentence, with the
-// top-level reasoning_effort field being the one the gateway honours (the
-// nested reasoning.effort is ignored by this gateway):
-//
-//	deepseek-v4.1-flash, no field 1.2s / 0 reasoning tokens / 24 annotations
-//	deepseek-v4.1-flash, low      38s  / 5000-7000 tokens  / 55 annotations
-//	gemini-3.8-flash,    no field 10.5s / 743 reasoning tokens
-//	gemini-3.8-flash,    low      2.9s / 0 reasoning tokens
-//
-// The two families point opposite ways, so no single choice serves both: what
-// makes deepseek fast makes gemini slow, and the reverse. EffortFast therefore
-// sends the value measured to be fast for the model's family (empty = send
-// nothing), and EffortDeep asks for high everywhere.
 const (
 	EffortFast = "fast"
 	EffortDeep = "deep"
 )
 
-// fastEfforts records, per model family, the wire value that actually makes
-// that family answer quickly. An empty level means "send no reasoning field".
-//
-// This table is measured, not derived: it cannot be computed from
-// reasoning_levels, because the levels say what a model can be asked for, not
-// whether asking switches thinking on. A family missing from this table falls
-// back to its lowest declared level, which is right for models that think by
-// default — the only kind where the fallback has an effect that is safe.
 var fastEfforts = []struct {
 	match string
 	level string
 }{
-	{"gemini", "low"}, // thinks by default: no field 10.5s, low 2.9s
-	{"deepseek", ""},  // idle by default: no field 1.2s, low 38s
+	{"gemini", "low"},
+	{"deepseek", ""},
 }
 
-// fastEffortFor returns the measured fast value for a model. The second result
-// reports whether the family was known; an unknown family must not be guessed
-// at, because sending a level can only ever turn reasoning on.
 func fastEffortFor(model string) (string, bool) {
 	name := strings.ToLower(model)
 	for _, f := range fastEfforts {
@@ -62,22 +28,15 @@ func fastEffortFor(model string) (string, bool) {
 	return "", false
 }
 
-// effortRank orders the levels the gateway reports so the lowest one can be
-// picked without trusting the order the API happens to return.
 var effortRank = map[string]int{
 	"minimal": 0, "low": 1, "medium": 2, "high": 3, "xhigh": 4, "max": 5,
 }
 
-// modelEfforts caches each model's declared reasoning_levels, filled by
-// FetchAvailableModels. ResolveEffort needs it to answer "what is this model's
-// lowest level", which differs per model: deepseek lists low/high/max, gemini
-// lists low/medium/high, and one gateway model lists only high/max.
 var modelEfforts = struct {
 	sync.RWMutex
 	m map[string][]string
 }{m: map[string][]string{}}
 
-// lowestReasoningLevel returns the cheapest level the model declares.
 func lowestReasoningLevel(model string) (string, bool) {
 	modelEfforts.RLock()
 	levels := modelEfforts.m[model]
@@ -95,14 +54,6 @@ func lowestReasoningLevel(model string) (string, bool) {
 	return best, found
 }
 
-// ResolveEffort turns the user's preference into the value to send for this
-// model. An empty result means "send no reasoning field", which is not a
-// neutral value: it is what lets a model that is idle by default stay idle.
-//
-// 快速 uses the measured table first and only falls back to the lowest declared
-// level for a family nobody has measured, where a level is likely to help
-// rather than hurt. 深度思考 asks for high regardless — that is what the user
-// picked it for, and it is the setting under which a slow answer is expected.
 func ResolveEffort(pref, model string) string {
 	if pref == EffortDeep {
 		return "high"
@@ -116,11 +67,8 @@ func ResolveEffort(pref, model string) string {
 	return ""
 }
 
-// refineSystemPrompt is the translation-refinement persona (mirrors pot's
-// gemini prompt: translate only, never interpret).
 const refineSystemPrompt = "You are a professional translation engine. Translate the user's text into the other language (Chinese source -> elegant English, otherwise -> natural colloquial Chinese). Output ONLY the translation, never explanations."
 
-// Read-Frog 1:1 System Prompts for Built-in Actions
 const grammarSystemPrompt = `You are a grammar tutor. Mark up the Selection (a sentence in any language) so a learner sees its structure at a glance: the core of the main clause, every clause and longer phrase, and whatever makes the sentence hard to read.
 
 ## Output Format
@@ -264,5 +212,3 @@ const learnerDictSystemPrompt = "你是一个面向语言学习者的词典助�
 	"12. “记忆技巧”针对词条特点教学习者记住它（最多 3 条，每条一行）：词根词缀、拆字、词源、近反义词、易混词、搭配。严禁谐音或硬凑。\n" +
 	"严格以紧凑的 JSON 对象格式输出，包含以下字段：\n" +
 	"{\"term\": \"...\", \"phonetic\": \"...\", \"partOfSpeech\": \"...\", \"definition\": \"...\", \"context\": \"...\", \"contextTerm\": [{\"text\": \"...\"}], \"contextTranslation\": \"...\", \"memoryTips\": \"...\", \"difficulty\": \"...\"}\n"
-
-	// FetchAvailableModels queries the local magpie gateway for the list of available model IDs.

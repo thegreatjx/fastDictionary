@@ -5,15 +5,6 @@ import (
 	"testing"
 )
 
-// TestQuittingStateIsExplicitAndRaceSafe pins the fix for C5: isQuitting used
-// to be a plain bool written under a.mu in one place, written bare in
-// OnBeforeQuit, and read bare in the settings window's OnClose. Three
-// synchronisation contracts for one flag is a data race waiting to happen.
-// The flag is now an atomic.Bool with a single Store/Load contract.
-//
-// A real cross-callback race cannot be reproduced deterministically in a unit
-// test (those callbacks run on mygo's window message loop), so this is a
-// source-level contract test plus go test -race on the concurrent test below.
 func TestQuittingStateIsExplicitAndRaceSafe(t *testing.T) {
 	popup := readSourceFile(t, "popup.go")
 	if !containsText(popup, "atomic.Bool") || !containsText(popup, `"sync/atomic"`) {
@@ -40,9 +31,6 @@ func TestQuittingStateIsExplicitAndRaceSafe(t *testing.T) {
 	}
 }
 
-// TestQuittingAtomicConcurrentLoadStore exercises the atomic flag from many
-// goroutines. Under go test -race this is what proves the Store/Load contract
-// is race-free; a plain bool with mixed locked/bare access could not pass here.
 func TestQuittingAtomicConcurrentLoadStore(t *testing.T) {
 	a := newTestApp()
 	var wg sync.WaitGroup

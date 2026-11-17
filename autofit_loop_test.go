@@ -2,25 +2,17 @@ package main
 
 import "testing"
 
-// TestAutofitLoopConverges 是「收起猜你想存后留下空白」的收敛逻辑测试。
-//
-// 旧实现按 delta 的正负判断震荡：方向一反就锁死。用户折叠面板时内容突然
-// 变矮，delta 从正变负，窗口于是停在展开时的高度。现在的条件是「上次请求
-// 有没有真的改变窗口」。
 func TestAutofitLoopConverges(t *testing.T) {
 	t.Run("折叠后缩小能被应用，不因方向反转被挡", func(t *testing.T) {
 		var l autofitLoop
 
-		// 展开状态下内容比视口高，请求增长。
 		if d, ok := l.decide(141.5, true, 580, 614.6); !ok || d != 141.5 {
 			t.Fatalf("首次应应用增长，得到 (%v, %v)", d, ok)
 		}
-		// 窗口已经到上限，高度没变：锁定，别每帧刷同一个请求。
 		if _, ok := l.decide(141.5, true, 580, 614.6); ok {
 			t.Error("窗口没跟着变时应锁定，否则每帧重复同一个请求")
 		}
 
-		// 用户折叠面板：内容从 614.6 掉到 211.5，解锁并允许负数。
 		d, ok := l.decide(-261.6, true, 580, 211.5)
 		if !ok || d != -261.6 {
 			t.Errorf("折叠面板后应允许缩小，得到 (%v, %v)：方向反转不是震荡", d, ok)
@@ -32,7 +24,7 @@ func TestAutofitLoopConverges(t *testing.T) {
 		if _, ok := l.decide(100, true, 400, 500); !ok {
 			t.Fatal("首次应应用")
 		}
-		l.confirm(450) // 窗口按请求变了
+		l.confirm(450)
 		d, ok := l.decide(-50, true, 450, 400)
 		if !ok || d != -50 {
 			t.Errorf("窗口已响应，下一轮应允许缩小，得到 (%v, %v)", d, ok)

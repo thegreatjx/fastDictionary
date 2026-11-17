@@ -8,7 +8,6 @@ import (
 	"github.com/egoist/mygo"
 )
 
-// truncateFor shortens s to n runes for logs and status lines.
 func truncateFor(s string, n int) string {
 	r := []rune(s)
 	if len(r) > n {
@@ -17,42 +16,29 @@ func truncateFor(s string, n int) string {
 	return s
 }
 
-// sleepMS pauses for n milliseconds.
 func sleepMS(n int) { time.Sleep(time.Duration(n) * time.Millisecond) }
 
-// mygoRect builds a mygo.Rectangle, for the geometry tables in tests and in
-// the chip's placement.
 func mygoRect(x, y, w, h int) mygo.Rectangle {
 	return mygo.Rectangle{X: x, Y: y, Width: w, Height: h}
 }
 
-// nativePtr turns an address of memory Go does not manage — a COM pointer,
-// a hook's parameter block — into a pointer. Going through a local variable
-// keeps the conversion inside the one pattern go vet accepts, the same way
-// mygo's own Windows backend does it.
 func nativePtr(addr uintptr) unsafe.Pointer {
 	return *(*unsafe.Pointer)(unsafe.Pointer(&addr))
 }
 
-// CleanSelectionText normalizes whitespace, removes zero-width characters,
-// and tidies up line breaks inspired by Read-Frog's cleanText.
 func CleanSelectionText(s string) string {
 	if s == "" {
 		return ""
 	}
-	// 1. Remove zero-width characters
 	s = removeZeroWidthChars(s)
 
-	// 2. Normalize Windows newlines
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\r", "\n")
 
-	// 3. Split by paragraph boundaries (2 or more newlines)
 	paragraphs := strings.Split(s, "\n\n")
 	var cleanedParagraphs []string
 
 	for _, p := range paragraphs {
-		// Inside each paragraph, collapse runs of whitespace to single space
 		var runes []rune
 		inSpace := false
 		for _, r := range p {
@@ -67,7 +53,6 @@ func CleanSelectionText(s string) string {
 			}
 		}
 
-		// Remove space if it sits between two CJK characters
 		var b strings.Builder
 		for i := 0; i < len(runes); i++ {
 			if runes[i] == ' ' && i > 0 && i < len(runes)-1 {
@@ -88,34 +73,23 @@ func CleanSelectionText(s string) string {
 }
 
 func isCJK(r rune) bool {
-	return (r >= 0x4E00 && r <= 0x9FFF) || // CJK Unified Ideographs
-		(r >= 0x3400 && r <= 0x4DBF) || // CJK Extension A
-		(r >= 0x3040 && r <= 0x309F) || // Hiragana
-		(r >= 0x30A0 && r <= 0x30FF) || // Katakana
-		(r >= 0xAC00 && r <= 0xD7AF) // Hangul
+	return (r >= 0x4E00 && r <= 0x9FFF) ||
+		(r >= 0x3400 && r <= 0x4DBF) ||
+		(r >= 0x3040 && r <= 0x309F) ||
+		(r >= 0x30A0 && r <= 0x30FF) ||
+		(r >= 0xAC00 && r <= 0xD7AF)
 }
 
-// isCJKPunctuation reports full-width punctuation, which OCR separates from
-// the glyph beside it with the same spurious space it puts between glyphs.
-// It is deliberately not part of isCJK: selection policy uses isCJK to answer
-// "is this text at all", and punctuation is not.
 func isCJKPunctuation(r rune) bool {
-	return (r >= 0x3000 && r <= 0x303F) || // CJK symbols and punctuation
-		(r >= 0xFF00 && r <= 0xFFEF) || // Halfwidth and fullwidth forms
-		(r >= 0xFE30 && r <= 0xFE4F) // CJK compatibility forms
+	return (r >= 0x3000 && r <= 0x303F) ||
+		(r >= 0xFF00 && r <= 0xFFEF) ||
+		(r >= 0xFE30 && r <= 0xFE4F)
 }
 
-// isCJKOrPunctuation is the neighbour test for removing OCR's spurious glyph
-// spaces: a space between “好” and “，” is the same artifact as one between
-// “好” and “世”, so punctuation counts as a neighbour here but nowhere else.
 func isCJKOrPunctuation(r rune) bool {
 	return isCJK(r) || isCJKPunctuation(r)
 }
 
-// CleanOcrText tidies OCR output the way CleanSelectionText tidies a
-// selection, except it keeps line structure: OCR reports the page's own
-// line breaks, and folding them into spaces (as the selection path does)
-// turns a paragraph of an image into one unwieldy line.
 func CleanOcrText(s string) string {
 	if s == "" {
 		return ""
@@ -125,22 +99,12 @@ func CleanOcrText(s string) string {
 	s = strings.ReplaceAll(s, "\r", "\n")
 	lines := strings.Split(s, "\n")
 	for i, ln := range lines {
-		// Collapse runs of spaces/tabs inside a line, but never across lines.
 		ln = strings.Join(strings.Fields(ln), " ")
-		// Windows.Media.Ocr reports each CJK glyph as its own word, so its
-		// text comes back as "微 软 翻 译". Left alone, that reaches the
-		// translator as six tokens instead of two words, and the result
-		// reads as broken Chinese. Only spaces between two CJK glyphs go:
-		// a space beside Latin text is a real word break.
 		lines[i] = removeCJKSeparation(ln)
 	}
-	// Drop empty lines at the edges; keep the interior ones — they separate
-	// paragraphs of the image.
 	return strings.Trim(strings.Join(lines, "\n"), "\n")
 }
 
-// removeCJKSeparation deletes the single spaces OCR puts between CJK glyphs,
-// which it reports as one word each.
 func removeCJKSeparation(s string) string {
 	runes := []rune(s)
 	out := make([]rune, 0, len(runes))
@@ -167,10 +131,6 @@ func removeZeroWidthChars(s string) string {
 	return b.String()
 }
 
-// flattenTranslation folds the line breaks a translation engine copies from
-// the source into one continuous paragraph. The popup wraps text to its own
-// width, so keeping those empty lines only leaves blank bands between
-// sentences and makes the card far taller than the text needs.
 func flattenTranslation(s string) string {
 	words := strings.Fields(removeZeroWidthChars(s))
 	if len(words) == 0 {
@@ -179,11 +139,6 @@ func flattenTranslation(s string) string {
 	return removeCJKSeparation(strings.Join(words, " "))
 }
 
-// reflowTranslation is flattenTranslation for OCR results: blank lines still
-// separate paragraphs, but ordinary line breaks inside a paragraph become
-// spaces so the card can wrap to the popup width. Indented blocks (code,
-// lists) keep their own line breaks because folding them would destroy their
-// meaning.
 func reflowTranslation(s string) string {
 	if s == "" {
 		return ""
@@ -230,21 +185,11 @@ func reflowTranslation(s string) string {
 }
 
 const (
-	// layoutSmart joins wrapped lines inside a paragraph but keeps the blank
-	// line between paragraphs. It is the shipped default: most pages use
-	// line breaks as typesetting, not as meaning.
-	layoutSmart = "smart"
-	// layoutCompact folds every line break, including paragraph breaks, into
-	// one paragraph. It is for cards that are already too tall.
-	layoutCompact = "compact"
-	// layoutPreserve keeps the source's line breaks and blank lines. Code,
-	// lists and side-by-side paragraph reading need the layout to survive the
-	// round trip through the translator.
+	layoutSmart    = "smart"
+	layoutCompact  = "compact"
 	layoutPreserve = "preserve"
 )
 
-// normalizeLayoutMode folds anything unrecognised, including the empty value
-// of a config written before the setting existed, onto the default.
 func normalizeLayoutMode(mode string) string {
 	switch mode {
 	case layoutCompact, layoutPreserve:
@@ -254,9 +199,6 @@ func normalizeLayoutMode(mode string) string {
 	}
 }
 
-// cleanSourceForLayout prepares raw selection or OCR text for the card. ocr
-// selects the cleaner that understands OCR's per-glyph CJK spaces; it also
-// decides whether smart mode keeps the page's lines.
 func cleanSourceForLayout(s, mode string, ocr bool) string {
 	switch mode {
 	case layoutCompact:
@@ -274,10 +216,6 @@ func cleanSourceForLayout(s, mode string, ocr bool) string {
 	}
 }
 
-// preserveLineBreaks tidies a selection without touching its line structure:
-// no line is joined to the next, and interior blank lines stay. Trailing
-// spaces are dropped because they are invisible yet make the text look ragged
-// when it wraps.
 func preserveLineBreaks(s string) string {
 	if s == "" {
 		return ""
@@ -292,10 +230,6 @@ func preserveLineBreaks(s string) string {
 	return strings.Trim(strings.Join(lines, "\n"), "\n")
 }
 
-// formatTranslationForLayout applies the user's layout mode to an engine
-// answer. keepParagraphs is the OCR path's request to keep paragraph breaks in
-// smart mode; a selection is already one paragraph by the time it reaches the
-// engine.
 func formatTranslationForLayout(s, mode string, keepParagraphs bool) string {
 	switch mode {
 	case layoutCompact:
@@ -310,7 +244,6 @@ func formatTranslationForLayout(s, mode string, keepParagraphs bool) string {
 	}
 }
 
-// TruncateEllipsis limits text to maxChars runes, appending "…" if truncated.
 func TruncateEllipsis(s string, maxChars int) string {
 	r := []rune(s)
 	if len(r) <= maxChars {

@@ -24,7 +24,7 @@ func TestAISetupProblem(t *testing.T) {
 	cases := []struct {
 		name string
 		cfg  Config
-		want string // substring; "" means ready
+		want string
 	}{
 		{"magpie default", DefaultConfig(), ""},
 		{"disabled", func() Config { c := DefaultConfig(); c.AIEnabled = false; return c }(), "未启用"},
@@ -32,7 +32,6 @@ func TestAISetupProblem(t *testing.T) {
 		{"deepseek no key", deepseek(func(c *Config) { c.AIKey = "" }), "API Key"},
 		{"no model", deepseek(func(c *Config) { c.AIModel = " " }), "模型"},
 		{"custom empty", func() Config { c := DefaultConfig(); c.AIProvider = "custom"; c.AIURL = ""; return c }(), "模型服务"},
-		// 自定义常用来接 LM Studio 等本机无认证服务，设置页也写着 Key「可留空」。
 		{"custom keyless local", func() Config {
 			c := DefaultConfig()
 			c.AIProvider, c.AIURL, c.AIModel, c.AIKey = "custom", "http://127.0.0.1:1234/v1", "local-model", ""
@@ -53,8 +52,6 @@ func TestAISetupProblem(t *testing.T) {
 	}
 }
 
-// A fresh install must not assume Magpie: most people do not run it, and the
-// notes extraction would then fire a doomed request on every selection.
 func TestFirstRunAIIsUnconfigured(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	swapConfigPath(t, path)
@@ -78,7 +75,6 @@ func TestFirstRunAIIsUnconfigured(t *testing.T) {
 	}
 }
 
-// An existing Magpie user must keep working after upgrade.
 func TestExistingMagpieConfigStaysMagpie(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(path, []byte(`{"ai_enabled":true,"ai_url":"http://127.0.0.1:3425/v1/chat/completions","ai_model":"m"}`), 0o644); err != nil {

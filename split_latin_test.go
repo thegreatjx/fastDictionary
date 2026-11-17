@@ -8,11 +8,6 @@ import (
 	"time"
 )
 
-// TestRepairSplitLatinRestoresMicrosoftLetterSplit is the regression test for
-// the sentence a reader reported: 微软 answered "Deepsee克" for "Deepseek" and
-// won the race, so the popup showed a Chinese character inside a brand name.
-// Both strings are verbatim: the source is what the reader selected, mangled is
-// the body edge.microsoft.com/translate/translatetext returned on 2026-11-14.
 func TestRepairSplitLatinRestoresMicrosoftLetterSplit(t *testing.T) {
 	const source = "I can't believe now I am counting on Huawei and Deepseek for the very survival of the OSS community. What a loss..."
 	const mangled = "我简直不敢相信现在我竟然指望华为和Deepsee克来拯救OSS社区的生存。真是损失......"
@@ -23,8 +18,6 @@ func TestRepairSplitLatinRestoresMicrosoftLetterSplit(t *testing.T) {
 	}
 }
 
-// TestRepairSplitLatinKeepsGoodTranslations guards the other side: 腾讯 answers
-// this exact sentence correctly, and a repair must not touch it.
 func TestRepairSplitLatinKeepsGoodTranslations(t *testing.T) {
 	const source = "I can't believe now I am counting on Huawei and Deepseek for the very survival of the OSS community."
 	cases := []struct{ name, translated string }{
@@ -42,18 +35,12 @@ func TestRepairSplitLatinKeepsGoodTranslations(t *testing.T) {
 	}
 }
 
-// TestRepairSplitLatinNeedsAFourLetterRun pins the size guard that keeps the
-// repair away from ordinary words: "cats" behind "cat猫" is a plausible real
-// translation, and dropping the 猫 to restore "cats" would be a worse trade.
 func TestRepairSplitLatinNeedsAFourLetterRun(t *testing.T) {
 	if got := repairSplitLatin("Two cats.", "两只cat猫。"); got != "两只cat猫。" {
 		t.Fatalf("short run was repaired: %q", got)
 	}
 }
 
-// TestRepairSplitLatinOnlySwapsOneLetter: the engine swallowed one letter into
-// one Han character. A two-letter tail behind one Han character is a different
-// defect, and "repairing" it would delete a character the engine did translate.
 func TestRepairSplitLatinOnlySwapsOneLetter(t *testing.T) {
 	if got := repairSplitLatin("Kubernetes runs it.", "Kube克在运行它。"); got != "Kube克在运行它。" {
 		t.Fatalf("a five-letter loss was repaired: %q", got)
@@ -63,10 +50,6 @@ func TestRepairSplitLatinOnlySwapsOneLetter(t *testing.T) {
 	}
 }
 
-// TestLiveMicrosoftSplitIsRepaired is the end-to-end check behind the report:
-// the real engine, then the real repair. Skipped by default because it needs
-// the network, and because the engine may fix its tokenizer at any time — when
-// that happens this test should say so in its log, not fail the build.
 func TestLiveMicrosoftSplitIsRepaired(t *testing.T) {
 	if os.Getenv("FASTDICTIONARY_LIVE") == "" {
 		t.Skip("set FASTDICTIONARY_LIVE=1 to hit the live engine")

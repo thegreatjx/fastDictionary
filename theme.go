@@ -6,7 +6,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// 唯一几何标尺：4px 栅格，整数 DIP。组件文件里不再出现散落的像素数字。
 const (
 	Space1 float32 = 4
 	Space2 float32 = 8
@@ -15,13 +14,11 @@ const (
 	Space6 float32 = 24
 	Space8 float32 = 32
 
-	// 同心圆角：外圆角 = 内圆角 + 内边距。
 	RadiusXS     float32 = 4
 	RadiusSM     float32 = 6
 	RadiusTrack  float32 = 8
 	RadiusWindow float32 = 10
 
-	// 双密度控件高度。
 	HeightCompact float32 = 28
 	HeightControl float32 = 32
 	HeightSearch  float32 = 34
@@ -29,7 +26,6 @@ const (
 	HeightIconMd  float32 = 28
 )
 
-// 字阶。LineHeight 是字号倍数；字重最多 600。
 const (
 	FontPageTitle float32 = 20
 	FontWordHead  float32 = 18
@@ -39,12 +35,11 @@ const (
 	FontMicro     float32 = 11
 	IconSize      float32 = 16
 
-	// 布局宽度。
 	LabelColumn     float32 = 112
-	ControlColumn   float32 = 480 // 长说明的阅读上限
+	ControlColumn   float32 = 480
 	InputWidth      float32 = 240
 	ContentMaxWidth float32 = 600
-	NavWidth                = 188 // 无类型常量：窗口选项用 int，布局用 float32
+	NavWidth                = 188
 	TrayWidth               = 300
 	TrayHeight              = 248
 
@@ -54,15 +49,12 @@ const (
 	buttonPadding float32 = 12
 )
 
-// 字体栈。Font 接受逗号分隔的候选列表。
 const (
 	fontUI   = "Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI"
 	fontIPA  = "Segoe UI, Lucida Sans Unicode, Arial Unicode MS"
 	fontMono = "Cascadia Mono, Consolas"
 )
 
-// AppTheme 是项目自己的语义色板。框架控件读 ui.Theme，自定义组件读这里；
-// 两者由 applyTheme 一次同步，颜色定义只在本文件出现。
 type AppTheme struct {
 	Dark bool
 
@@ -97,8 +89,8 @@ type AppTheme struct {
 
 	ShadowColor ui.Color
 	InsetColor  ui.Color
-	TintSurface ui.Color // 清冷淡蓝微底（浮窗原文条 / 轻量强调底）
-	TintBorder  ui.Color // 淡蓝微边框
+	TintSurface ui.Color
+	TintBorder  ui.Color
 }
 
 func defaultAccent(dark bool) ui.Color {
@@ -108,10 +100,6 @@ func defaultAccent(dark bool) ui.Color {
 	return ui.Hex("#2563EB")
 }
 
-// accentChoice is one user-selectable theme. The soft background and its
-// border belong to the choice, so switching themes moves the source strip,
-// selected pills and focus borders together instead of only recolouring the
-// primary button.
 type accentChoice struct {
 	Value           string
 	Label           string
@@ -152,9 +140,6 @@ var accentChoices = []accentChoice{
 	},
 }
 
-// accentThemeChoice maps a saved value to a palette. Values from the retired
-// paper theme are folded into the nearest new hue so old configs keep a valid
-// colour instead of opening on a zero value.
 func accentThemeChoice(value string) accentChoice {
 	switch value {
 	case "mint":
@@ -169,8 +154,6 @@ func accentThemeChoice(value string) accentChoice {
 	return accentChoices[0]
 }
 
-// accentForTheme resolves a saved value; an empty or unknown value falls back
-// to the default sky blue.
 func accentForTheme(value string, dark bool) ui.Color {
 	choice := accentThemeChoice(value)
 	if dark {
@@ -209,9 +192,6 @@ func accentPressFor(accent ui.Color, dark bool) ui.Color {
 	return accent.Mix(ui.Hex("#000000"), 0.26)
 }
 
-// accentSoftColors returns the themed source-strip wash and its soft border.
-// Values are explicit per palette so the selected pill, source strip and
-// focus border always move together with the accent.
 func accentSoftColors(accent ui.Color, dark bool) (soft, border ui.Color) {
 	for _, choice := range accentChoices {
 		if dark && choice.Dark == accent {
@@ -227,10 +207,6 @@ func accentSoftColors(accent ui.Color, dark bool) (soft, border ui.Color) {
 	return accent.Alpha(0.12), accent.Alpha(0.45)
 }
 
-// newAppTheme 是晴空微蓝系统的唯一定义处。
-//
-// 冷白底、白色卡片、一条淡色氛围底和一个主题色构成整套表面；成功只在
-// 瞬时勾选时借用青绿，不出现整块绿色。所有背景与文字色值集中在这里。
 func newAppTheme(dark bool, accent ui.Color) AppTheme {
 	white := ui.Hex("#FFFFFF")
 	soft, ring := accentSoftColors(accent, dark)
@@ -304,14 +280,10 @@ func newAppTheme(dark bool, accent ui.Color) AppTheme {
 	}
 }
 
-// appTheme 从当前框架主题派生完整色板，组件不必再自己判断明暗。
 func appTheme(t *ui.Theme) AppTheme {
 	return newAppTheme(t.Dark, t.Accent)
 }
 
-// applyTheme 同时喂给框架控件（ui.Theme）和自定义组件（appTheme）。
-// 强调色固定为晴空微蓝的当前主题色，不再跟随系统强调色：Windows 主题
-// 可能是荧光绿或高饱和蓝，一旦接管就会破坏整套冷白表面。
 func applyTheme(c *ui.Context, mode string, dark bool, accentTheme string) {
 	curr := c.Theme()
 	t := *curr
@@ -344,10 +316,7 @@ func applyTheme(c *ui.Context, mode string, dark bool, accentTheme string) {
 	t.Radius = RadiusSM
 	t.Spacing = Space1
 	t.Font = fontUI
-	// 框架把 Field 的说明画成 FontSize-1；13 正好得到 12px helper。
 	t.FontSize = FontControl
-	// 拖拽浮窗时每一帧都会重画，而 SetTheme 会让整棵树失效重排：色板、圆角、
-	// 间距与字号一个字段都没变也走一遍，就是拖拽时的闪烁和卡顿。
 	if curr.Dark == t.Dark && curr.Background == t.Background && curr.Surface == t.Surface &&
 		curr.SurfaceHover == t.SurfaceHover && curr.SurfacePressed == t.SurfacePressed &&
 		curr.Border == t.Border && curr.Text == t.Text && curr.TextMuted == t.TextMuted &&
@@ -361,8 +330,6 @@ func applyTheme(c *ui.Context, mode string, dark bool, accentTheme string) {
 	}
 	c.SetTheme(&t)
 }
-
-// ---- 共享文本 ----
 
 func HelperText(c *ui.Context, t *ui.Theme, text string) ui.Element {
 	at := appTheme(t)
@@ -396,11 +363,6 @@ func KeycapBadge(c *ui.Context, t *ui.Theme, text string) ui.Element {
 	})
 	return badge
 }
-
-// ---- 四级按钮 ----
-// 全部基于 ui.ButtonBase：保留 Focusable 与框架焦点环，不用容器 Opacity。
-// 不挂 ElementTransition{Colors:true}：设置页切页和托盘开合都会销毁重建
-// 按钮，按 md 的提醒，挂了会在首帧闪一下强调色。
 
 func buttonLabel(c *ui.Context, at AppTheme, label string, color ui.Color) {
 	ui.Text(c, label).Font(fontUI).FontSize(FontControl).FontWeight(500).
@@ -436,7 +398,6 @@ func SecondaryButton(c *ui.Context, t *ui.Theme, label string, icon ...*ui.SVG) 
 		Background(at.Surface).Border(1, at.BorderCtrl).TextColor(at.Text)
 	withIcon := len(icon) > 0 && icon[0] != nil
 	if withIcon {
-		// 左图标按钮的光学修正：左内边距比右内边距少 2DIP。
 		b.PaddingStart(Space3 - 2).PaddingEnd(Space3)
 	}
 	if b.Pressed() {
@@ -467,10 +428,6 @@ func GhostButton(c *ui.Context, t *ui.Theme, label string) ui.Element {
 	return b
 }
 
-// AccentSoftButton is the quiet form of a recommended action: it marks the
-// option inside the theme family without painting a full-width saturated
-// block. It is used for the shortcut preset, where a solid accent fill read
-// as a banner rather than a choice.
 func AccentSoftButton(c *ui.Context, t *ui.Theme, label string) ui.Element {
 	at := appTheme(t)
 	b := ui.ButtonBase(c).Height(HeightControl).Radius(RadiusSM).
@@ -520,8 +477,6 @@ func IconButton(c *ui.Context, t *ui.Theme, icon *ui.SVG, tip string) ui.Element
 	return b
 }
 
-// ---- 设置页组件 ----
-
 func SurfaceCard(c *ui.Context, t *ui.Theme) ui.Element {
 	at := appTheme(t)
 	return ui.Box(c).FillWidth().Padding(Space3, Space4).Radius(RadiusTrack).
@@ -554,7 +509,6 @@ func SettingRow(c *ui.Context, t *ui.Theme, label, desc string, control func()) 
 	})
 }
 
-// SettingSliderRow 是设置页滑块的统一行：左侧标签与说明，右侧滑块 + 等宽数值。
 func SettingSliderRow(c *ui.Context, t *ui.Theme, label, desc, valueText string, buildSlider func()) {
 	at := appTheme(t)
 	ui.Box(c).FillWidth().Padding(Space4, Space4).
@@ -577,7 +531,6 @@ func SettingSliderRow(c *ui.Context, t *ui.Theme, label, desc, valueText string,
 	})
 }
 
-// LongField 是脱离 ui.Form 的独立字段：标签在控件正上方左对齐。
 func LongField(c *ui.Context, t *ui.Theme, label, desc string, control func() ui.Element) {
 	at := appTheme(t)
 	ui.Box(c).FillWidth().Padding(Space4).BorderWidth(0, 0, 1, 0).
@@ -598,12 +551,10 @@ func LongField(c *ui.Context, t *ui.Theme, label, desc string, control func() ui
 	})
 }
 
-// SegmentedControl 基于 ui.SegmentedBase，宽度随选项内容自适应。
 func SegmentedControl(c *ui.Context, selected *int, labels ...string) ui.Element {
 	return segmentedControlWithHeight(c, selected, HeightControl, labels...)
 }
 
-// SegmentedControlCompact 用于托盘与浮窗 Tabs 的紧凑态。
 func SegmentedControlCompact(c *ui.Context, selected *int, labels ...string) ui.Element {
 	return segmentedControlWithHeight(c, selected, HeightCompact, labels...)
 }
@@ -614,7 +565,6 @@ func segmentedControlWithHeight(c *ui.Context, selected *int, height float32, la
 	if height <= HeightCompact {
 		pad = 2
 	}
-	// 精确扣除上下 1px Border 与上下 Padding，滑块不再压住底边框。
 	segH := height - 2 - pad*2
 	parts := ui.SegmentedBase(c, selected, len(labels))
 	track := parts.Track.Height(height).Radius(RadiusTrack).Padding(pad).Gap(2).
@@ -644,7 +594,6 @@ func segmentedControlWithHeight(c *ui.Context, selected *int, height float32, la
 	return track
 }
 
-// SegmentedOption 与 SegmentedControlMapped 用显式值映射代替魔法下标 0/1/2。
 type SegmentedOption[T comparable] struct {
 	Value T
 	Label string
@@ -672,8 +621,6 @@ func SegmentedControlMapped[T comparable](c *ui.Context, compact bool, current T
 	})
 }
 
-// ---- 过渡辅助（P1 推广完设置页后删除）----
-
 func field(c *ui.Context, t *ui.Theme, label, desc string, build func() ui.Element) {
 	at := appTheme(t)
 	ui.Row(c).FillWidth().Gap(fieldGap).AlignItems(ui.Start).Children(func() {
@@ -697,18 +644,13 @@ func fieldGroup(c *ui.Context, fn func()) {
 	ui.Column(c).FillWidth().Gap(fieldRowGap).Children(fn)
 }
 
-// 兼容旧组件名的颜色派生，全部走 AppTheme。
 func accentSoft(t *ui.Theme) ui.Color { return appTheme(t).AccentSoft }
 func accentLine(t *ui.Theme) ui.Color { return appTheme(t).AccentRing }
 func dangerSoft(t *ui.Theme) ui.Color { return appTheme(t).DangerHoverBg }
 func dangerLine(t *ui.Theme) ui.Color { return appTheme(t).Danger.Alpha(0.35) }
 
-// inkRuleWidth is the 2px accent rule marking the hero translation.
 const inkRuleWidth float32 = 3
 
-// Notice colours: the "why did the shortcut open this" banner. It explains
-// rather than reports an error, so it uses the plain paper tint and neutral
-// ink instead of spending a warning hue.
 func noticeBg(t *ui.Theme) ui.Color {
 	return appTheme(t).TintSurface
 }
@@ -721,10 +663,6 @@ func noticeText(t *ui.Theme) ui.Color {
 	return appTheme(t).TextSec
 }
 
-// cefrColors gives the CEFR badge one neutral surface and encodes difficulty
-// by ink weight, not hue. The letter already says A1/B2/C1; a second colour
-// code on top of it was decoration, and the old green/violet pair was the
-// brightest thing in the card.
 func cefrColors(t *ui.Theme, level string) (bg, fg ui.Color) {
 	at := appTheme(t)
 	fg = at.TextMuted
@@ -737,24 +675,16 @@ func cefrColors(t *ui.Theme, level string) (bg, fg ui.Color) {
 	return at.SurfaceSubtle, fg
 }
 
-// memoryTipColors tints the "memory tips" card. Guidance is not a warning, so
-// it sits on the same neutral paper tint as the source strip; the heading's
-// icon carries the only emphasis.
 func memoryTipColors(t *ui.Theme) (bg, border, title, body ui.Color) {
 	at := appTheme(t)
 	return at.TintSurface, at.TintBorder, at.TextSec, at.Text
 }
 
-// The save action is the one commit in a card, so it takes the theme accent
-// and its own foreground. The foreground is dark on the bright dark-theme
-// accents and white on the deeper light-theme accents.
 func saveButtonColors(t *ui.Theme) (bg, fg, hover, press ui.Color) {
 	at := appTheme(t)
 	return at.Accent, at.AccentText, at.AccentHover, at.AccentPress
 }
 
-// saveButtonStyle paints the button and returns the foreground its icon and
-// label must use.
 func saveButtonStyle(b ui.Element, t *ui.Theme) ui.Color {
 	bg, fg, hover, press := saveButtonColors(t)
 	switch {
@@ -767,7 +697,6 @@ func saveButtonStyle(b ui.Element, t *ui.Theme) ui.Color {
 	return fg
 }
 
-// saveButtonColor is the accent used by the writing card's tone table.
 func saveButtonColor(t *ui.Theme) ui.Color {
 	bg, _, _, _ := saveButtonColors(t)
 	return bg
@@ -778,30 +707,13 @@ func saveButtonTextColor(t *ui.Theme) ui.Color {
 	return fg
 }
 
-// chipTone names what one selection-chip button does. The tone picks one of
-// two inks, not one of seven hues.
-//
-// The chip used to colour every action differently: blue, teal, violet,
-// amber, green, magenta in one 36px row. Six saturated hues side by side read
-// as a toy, and they fought the quiet grey the rest of the app is built from.
-// Colour is now spent once — on the primary action — and the other buttons
-// share a cool slate ink that differs from its neighbours by glyph and by
-// position, which is how a real toolbar separates its tools.
 type chipTone int
 
 const (
-	// chipTonePrimary marks the chip's main action (translate). It is the one
-	// button allowed an accent colour, so the row has a single place to look
-	// first.
 	chipTonePrimary chipTone = iota
-	// chipToneInk is every other action: speech, screenshot, the AI actions
-	// and the utility menu.
 	chipToneInk
 )
 
-// The chip's palette. A floating tool sits on the page like a clean white
-// card: pure white in light mode, deep sea blue in dark mode, a hairline and
-// two inks. Only the primary action carries the theme accent.
 const (
 	chipSurfaceLight = "#FFFFFF"
 	chipSurfaceDark  = "#192030"
@@ -817,7 +729,6 @@ const (
 	chipTipFgDark    = "#0F172A"
 )
 
-// chipSurface is the pill the buttons sit on.
 func chipSurface(t *ui.Theme) ui.Color {
 	if t.Dark {
 		return ui.Hex(chipSurfaceDark)
@@ -825,8 +736,6 @@ func chipSurface(t *ui.Theme) ui.Color {
 	return ui.Hex(chipSurfaceLight)
 }
 
-// chipBorderColor is the hairline around the pill and the rule that separates
-// the tools from the menu.
 func chipBorderColor(t *ui.Theme) ui.Color {
 	if t.Dark {
 		return ui.Hex(chipBorderDark)
@@ -834,14 +743,6 @@ func chipBorderColor(t *ui.Theme) ui.Color {
 	return ui.Hex(chipBorderLight)
 }
 
-// chipToneColors returns the icon colour of a chip action and the wash its
-// button takes on hover.
-//
-// Both inks sit at or above the 3:1 non-text contrast floor against
-// chipSurface in both themes, which is what keeps a glyph legible when colour
-// is no longer carrying the meaning. The wash is the same slate for every
-// button: a hover that changes hue per button was what made the row look like
-// six unrelated tools.
 func chipToneColors(t *ui.Theme, tone chipTone) (fg, wash ui.Color) {
 	if tone == chipTonePrimary {
 		if t.Dark {
@@ -855,9 +756,6 @@ func chipToneColors(t *ui.Theme, tone chipTone) (fg, wash ui.Color) {
 	return ui.Hex(chipInkLight), ui.RGBA(15, 23, 42, 0.06)
 }
 
-// chipIconHover is the icon colour while the pointer is on the button: the ink
-// deepens instead of turning into another hue, so hover reads as emphasis and
-// not as a change of identity.
 func chipIconHover(t *ui.Theme) ui.Color {
 	if t.Dark {
 		return ui.Hex(chipInkHoverD)
@@ -865,12 +763,6 @@ func chipIconHover(t *ui.Theme) ui.Color {
 	return ui.Hex(chipInkHoverL)
 }
 
-// chipTipColors returns the fill and text of the hover label.
-//
-// It is a dark slate plate in the light theme and a pale one in the dark theme
-// — inverted from the chip, as a tooltip should be, but drawn from the same
-// cool family rather than from the theme's neutral Inverse, which is nearly
-// black and reads as a different product.
 func chipTipColors(t *ui.Theme) (bg, fg ui.Color) {
 	if t.Dark {
 		return ui.Hex(chipTipBgDark), ui.Hex(chipTipFgDark)
@@ -878,14 +770,6 @@ func chipTipColors(t *ui.Theme) (bg, fg ui.Color) {
 	return ui.Hex(chipTipBgLight), ui.Hex(chipTipFgLight)
 }
 
-// ---- 内容语义色板：从 grammar.go / popup_view.go 收口到 theme.go ----
-
-// grammarInkFor 是长难句标注的色板。颜色只在这里定义。
-//
-// The card no longer spends six hues on six roles. The trunk is bold body ink,
-// the predicate is the one element that takes the theme accent and a single
-// fine underline, modifiers fall back to muted grey, and clauses are told
-// apart by accent washes of different depth plus a micro badge.
 func grammarInkFor(t *ui.Theme) grammarInk {
 	at := appTheme(t)
 	return grammarInk{
@@ -899,8 +783,6 @@ func grammarInkFor(t *ui.Theme) grammarInk {
 	}
 }
 
-// withAlpha scales a colour's alpha. It lives here beside the palette so the
-// grammar card keeps its shadow and washes without importing a drawing helper.
 func withAlpha(c ui.Color, a float32) ui.Color {
 	if a < 0 {
 		a = 0
@@ -912,20 +794,12 @@ func withAlpha(c ui.Color, a float32) ui.Color {
 	return c
 }
 
-// grammarClauseColors is the three-layer clause treatment: the wash behind the
-// clause text, the deeper badge behind its tag, and the badge ink. Named
-// fields, not three positional returns, so a call site cannot paint the badge
-// colour where the wash belongs.
 type grammarClauseColors struct {
 	wash      ui.Color
 	badgeBg   ui.Color
 	badgeText ui.Color
 }
 
-// grammarClausePalette keeps every clause in the theme accent's family. The
-// clause type changes only the wash depth, never the hue, so the card stays
-// inside the selected atmosphere. The badge is deliberately deeper than the
-// wash; that is the contrast the reader uses to spot the tag.
 func grammarClausePalette(t *ui.Theme, tag string) grammarClauseColors {
 	at := appTheme(t)
 	wash := at.Accent.Alpha(0.14)
@@ -937,10 +811,6 @@ func grammarClausePalette(t *ui.Theme, tag string) grammarClauseColors {
 	case strings.Contains(tag, "宾") || strings.Contains(tag, "主") || strings.Contains(tag, "表"):
 		wash = at.Accent.Alpha(0.17)
 	}
-	// AccentPress alone reaches only 4.35:1 on the 30% sky badge at 10px.
-	// Mixing away from the badge — toward body ink on light, toward white on
-	// dark — keeps the badge in the accent family while clearing the
-	// small-text floor in both modes.
 	badgeText := at.AccentPress.Mix(at.Text, 0.40)
 	if at.Dark {
 		badgeText = at.AccentPress.Mix(ui.Hex("#FFFFFF"), 0.50)
@@ -952,8 +822,6 @@ func grammarClausePalette(t *ui.Theme, tag string) grammarClauseColors {
 	}
 }
 
-// grammarDifficultyColors is the neutral reading aid under the sentence. A
-// difficulty is information, not a warning: no Warning amber, no Danger red.
 type grammarDifficultyColors struct {
 	surface    ui.Color
 	border     ui.Color
@@ -984,15 +852,11 @@ func grammarDifficultyPalette(at AppTheme) grammarDifficultyColors {
 	}
 }
 
-// grammarHeaderColors 是长难句卡片顶部「拆解」标签的底、边、字。
-// The text uses AccentPress rather than Accent: at 11px the lighter accent
-// does not reach the 4.5:1 text floor on the soft wash.
 func grammarHeaderColors(t *ui.Theme) (bg, border, text ui.Color) {
 	at := appTheme(t)
 	return at.AccentSoft, at.AccentRing, at.AccentPress
 }
 
-// grammarToggleOnColors 是长难句卡片开关的选中态。
 func grammarToggleOnColors(t *ui.Theme) (bg, text, border ui.Color) {
 	at := appTheme(t)
 	return at.AccentSoft, at.AccentPress, at.AccentRing

@@ -6,9 +6,6 @@ import (
 	"testing"
 )
 
-// TestVocabularyStoreLastSaveError 钉住「保存失败可被界面读到」这条契约：
-// Add / Delete 的布尔返回值只表示内存里改没改，磁盘写失败必须能从
-// LastSaveError 读到，否则界面会继续显示「已保存 ✓」而重启后丢词。
 func TestVocabularyStoreLastSaveError(t *testing.T) {
 	dir := t.TempDir()
 	blocker := filepath.Join(dir, "blocker")
@@ -38,7 +35,6 @@ func TestVocabularyStoreLastSaveError(t *testing.T) {
 	}
 }
 
-// TestVocabularyStoreLastSaveErrorClearsOnSuccess 对照：保存成功时必须是 nil。
 func TestVocabularyStoreLastSaveErrorClearsOnSuccess(t *testing.T) {
 	dir := t.TempDir()
 	s := &VocabularyStore{path: filepath.Join(dir, "vocabulary.json")}
@@ -51,8 +47,6 @@ func TestVocabularyStoreLastSaveErrorClearsOnSuccess(t *testing.T) {
 	}
 }
 
-// TestQuickSaveSurfacesPersistenceFailure 是源码契约测试：三个卡片快速保存
-// 与设置页撤销/删除都必须在提示成功之前检查 LastSaveError。
 func TestQuickSaveSurfacesPersistenceFailure(t *testing.T) {
 	actions := readSourceFile(t, "popup_actions.go")
 	if got := countOccurrences(actions, "vocabStore.LastSaveError()"); got != 3 {

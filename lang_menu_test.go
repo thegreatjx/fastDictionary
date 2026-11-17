@@ -7,10 +7,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// TestLangChoicesAreComplete pins the two lists the pickers are built from: the
-// full option list is exactly the primary five plus the region groups, every
-// code has a label, and no label is used twice (langFromLabel reverses the map
-// by scanning labels, so a duplicate would silently pick the wrong language).
 func TestLangChoicesAreComplete(t *testing.T) {
 	var want []string
 	want = append(want, langPrimary...)
@@ -40,9 +36,6 @@ func TestLangChoicesAreComplete(t *testing.T) {
 	}
 }
 
-// TestLangMenuHidesTheRestBehindOneSubmenu pins the fix for the 34-row menu:
-// the top level offers the primary five plus a single 更多语言 submenu, and no
-// picker builds its own flat list any more.
 func TestLangMenuHidesTheRestBehindOneSubmenu(t *testing.T) {
 	settings := readSourceFile(t, "settings.go")
 	build := settings[strings.Index(settings, "func buildLangMenu("):]
@@ -68,9 +61,6 @@ func TestLangMenuHidesTheRestBehindOneSubmenu(t *testing.T) {
 	}
 }
 
-// TestCurrentLanguageInSubmenuIsNamedOnTheParent covers the other half of the
-// report: with the list collapsed, the parent item has to say which of the
-// hidden languages is active, or the user cannot tell what they are using.
 func TestCurrentLanguageInSubmenuIsNamedOnTheParent(t *testing.T) {
 	settings := readSourceFile(t, "settings.go")
 	if !containsText(settings, `"更多语言（"+langLabels[current]+"）"`) {
@@ -84,9 +74,6 @@ func TestCurrentLanguageInSubmenuIsNamedOnTheParent(t *testing.T) {
 	}
 }
 
-// TestTargetLanguageMenuIsShort is the direct answer to the report: opening the
-// picker shows the five common languages and one 更多语言 entrance, and a
-// language inside the submenu is still reachable.
 func TestTargetLanguageMenuIsShort(t *testing.T) {
 	a := newTestApp()
 	tt := ui.NewTester(func(c *ui.Context) {

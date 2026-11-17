@@ -24,18 +24,16 @@ type NoteItem struct {
 type popupMode int
 
 const (
-	modeTranslate        popupMode = iota // 划词翻译 (Fast Translation + 猜你想存)
-	modeDictionary                        // 词典精读 (Learner's Dictionary Layout)
-	modeGrammar                           // 长难句分析 (Sentence Analysis Layout)
-	modeWriting                           // 写作改进 (Improve Writing Layout)
-	modeInput                             // 输入模式
-	modeSelectionPreview                  // Demo preview
+	modeTranslate popupMode = iota
+	modeDictionary
+	modeGrammar
+	modeWriting
+	modeInput
+	modeSelectionPreview
 )
 
 const modeSelection = modeTranslate
 
-// modeName is the human label used in the log, so a user reading fastDictionary.log
-// can tell which card a gesture opened without decoding the enum.
 func modeName(m popupMode) string {
 	switch m {
 	case modeTranslate:
@@ -54,42 +52,33 @@ func modeName(m popupMode) string {
 	return "unknown"
 }
 
-// app is the whole client state.
 type app struct {
 	store *store
 
-	mu     sync.Mutex
-	mode   popupMode
-	source string
-	target string
-	// rawSource is the selection or OCR text before the layout mode cleaned
-	// it. The quick layout switch needs it to restore paragraph breaks that
-	// compact mode removed from the source.
+	mu        sync.Mutex
+	mode      popupMode
+	source    string
+	target    string
 	rawSource string
 	engine    string
 	detected  string
 	errText   string
-	// echoNote explains a translation attempt whose engine echoed the source:
-	// an answer, not a failure. It names the engine that kept the text and, when
-	// another engine supplied the reading, the one that did.
-	echoNote string
-	notice   string
-	busy     bool
-	elapsed  time.Duration
-	dict     *YoudaoDict
-	gdict    *DictResult
-	aiText   string
-	aiBusy   bool
-	aiCancel context.CancelFunc
-	// aiGen counts AI passes and anything that supersedes them. A cancelled
-	// pass keeps running until its HTTP request returns, so without this its
-	// teardown would write over the newer request's card.
+	echoNote  string
+	notice    string
+	busy      bool
+	elapsed   time.Duration
+	dict      *YoudaoDict
+	gdict     *DictResult
+	aiText    string
+	aiBusy    bool
+	aiCancel  context.CancelFunc
+	// 代次用于丢弃旧 AI 请求的回包。
 	aiGen           requestToken
-	aiRefineGen     requestToken // 精翻专用代次，与卡片流分开
+	aiRefineGen     requestToken
 	aiRefineCancel  context.CancelFunc
 	inputText       string
 	inputTargetMode popupMode
-	trayInput       string // the tray quick-search box, separate from the popup's input
+	trayInput       string
 	sourceExpanded  bool
 	snipExpanded    bool
 	notesExpanded   bool
@@ -101,164 +90,88 @@ type app struct {
 	ocrGeneration   requestToken
 	ocrCancel       context.CancelFunc
 
-	win    *mygo.Window
-	cfgWin *mygo.Window
-	// mainWinVisible tracks whether the main window is really on screen. Hide
-	// and Show bypass the window's own state, and the tray toggle has to know
-	// whether the next click opens or closes it.
-	mainWinVisible bool
-	tray           *mygo.Tray
-	trayFlyout     *mygo.Window
-	page           string
-	pinned         bool
-	showNotes      bool
-	notes          []NoteItem
-	notesBusy      bool
-	// notesGen counts note extractions and every popup/translation that
-	// supersedes them. The request is slow (up to 20s), so its teardown must
-	// not write into a newer card after the user has moved on.
-	notesGen      requestToken
-	notesCancel   context.CancelFunc
-	onlyTrunk     bool
-	grammarResult *SentenceAnalysisResult
-	// grammarResultPrefill reports that grammarResult.Translation came from the
-	// machine engines rather than the model, so the card can say so while the
-	// annotations are still being generated.
+	win                  *mygo.Window
+	cfgWin               *mygo.Window
+	mainWinVisible       bool
+	tray                 *mygo.Tray
+	trayFlyout           *mygo.Window
+	page                 string
+	pinned               bool
+	showNotes            bool
+	notes                []NoteItem
+	notesBusy            bool
+	notesGen             requestToken
+	notesCancel          context.CancelFunc
+	onlyTrunk            bool
+	grammarResult        *SentenceAnalysisResult
 	grammarResultPrefill bool
-	// aiResultCache keeps the last few AI action answers, keyed by action,
-	// model and source text. The model is non-deterministic: re-selecting the
-	// same sentence used to draw different annotations every time, and
-	// switching tabs re-ran a pass that takes 8-13s. The footer's 重新翻译
-	// button bypasses it, because there "try again" is the whole point.
-	aiResultCache map[string]string
-	aiResultOrder []string
-	// skipAIResultCache is set by the refresh button: it promises a new
-	// answer, so the cache must not answer instead.
-	skipAIResultCache bool
-	activeActionID    string
-	dictResult        *DictionaryResult
-	writingResult     *ImproveWritingResult
-	actionSavedMsg    string
-	// saveErr is the popup's own save failure. Success never needs a banner:
-	// the card's button already turns into 已保存, and a second green strip
-	// saying the same thing is noise.
-	saveErr string
-	// savedDictTerm is the term that went into the notebook on the last save,
-	// so the card's own button can answer 已保存 instead of offering a second
-	// click that would add the same entry twice.
-	savedDictTerm      string
-	copiedMsg          string
-	feedbackText       string
-	feedbackAt         time.Time
-	feedbackTimer      *time.Timer
-	editingActionID    string
-	customizingAction  CustomActionConfig
-	vocabSearchQuery   string
-	actionSaveFeedback string
-	selHoverTip        string
-	selHoverIdx        int
-	moreFlyout         *mygo.Window
-	// moreFlyoutRect is the menu's DIP rectangle, recorded when it shows: the
-	// hook thread needs it to tell a click on the menu from a click outside,
-	// and asking the window for its position there would wait on the main
-	// thread. Guarded by mu; shown is false until the first frame places it.
-	moreFlyoutRect   ui.Rect
-	moreFlyoutShown  bool
-	showSlashes      bool
-	vocabCategoryIdx int
-	vocabList        ui.ListState
-	// vocabExpandedID is the 生词本 entry currently opened as a full word card.
-	// The card the 词典 tab used to render lives here now, so this decides
-	// which row is showing it; "" means every row is in its summary form.
-	vocabExpandedID string
-	// Spaced-repetition session: a snapshot of due IDs keeps the queue stable
-	// while grading changes due dates mid-session.
-	vocabReviewing      bool
-	vocabReviewIDs      []string
-	vocabReviewIdx      int
-	vocabReviewRevealed bool
-	vocabReviewDone     int
-	// update* holds the result of the user-triggered 检查更新. Guarded by mu:
-	// the fetch runs in a goroutine while the About page paints.
-	updateChecking bool
-	updateMsg      string
-	updateURL      string
-	updateNewer    bool
-	// notesSaved records that the 猜你想存 checklist was saved; grammarSaved
-	// records that the sentence card was. They were one flag, so saving words
-	// from 猜你想存 made the sentence card claim "already in the notebook" for
-	// a sentence that was never saved, and the other way round.
-	notesSaved   bool
-	grammarSaved bool
-	writingSaved bool
-	// 退出标志由 quitApp、OnBeforeQuit 与设置窗口 OnClose 三处访问，用原子类型统一读写契约。
-	isQuitting atomic.Bool
-	// pausedUntil stops the selection trigger until the moment it holds;
-	// the zero value means "not paused".
-	pausedUntil      time.Time
-	isScreenshotMode bool
-	// translateGen counts translations so a slow answer that has been
-	// superseded can be recognised and dropped instead of overwriting the
-	// newer result.
-	translateGen requestToken
-	// tabStates keeps the answer each reading tab already owns. Switching
-	// tabs must not rerun a slow model or show the previous tab's text under
-	// the new heading.
-	tabStates map[popupMode]*tabViewState
-	// OCR paragraph view: compare shows each OCR paragraph beside its
-	// translation; expanded lifts the height cap for long screenshots.
-	ocrCompare  bool
-	ocrExpanded bool
-	// screenshotPinned remembers that the *screenshot* translation asked
-	// for a pinned window, so the next normal popup can un-pin it. Setting
-	// pinned alone made every popup after one screenshot permanently
-	// pinned: OnBlur stopped closing it and the pin button stayed lit.
-	screenshotPinned bool
-	snipBitmap       *ui.Bitmap
-	popupX           int
-	popupY           int
-	popupW           int
-	popupH           int
-	// popupAnchoredAbove records that the card was flipped above the cursor
-	// because there was no room below. Height changes then keep the bottom
-	// edge where it is: growing downwards would walk the card over the text
-	// it is explaining.
+	aiResultCache        map[string]string
+	aiResultOrder        []string
+	skipAIResultCache    bool
+	activeActionID       string
+	dictResult           *DictionaryResult
+	writingResult        *ImproveWritingResult
+	actionSavedMsg       string
+	saveErr              string
+	savedDictTerm        string
+	copiedMsg            string
+	feedbackText         string
+	feedbackAt           time.Time
+	feedbackTimer        *time.Timer
+	editingActionID      string
+	customizingAction    CustomActionConfig
+	vocabSearchQuery     string
+	actionSaveFeedback   string
+	selHoverTip          string
+	selHoverIdx          int
+	moreFlyout           *mygo.Window
+	moreFlyoutRect       ui.Rect
+	moreFlyoutShown      bool
+	showSlashes          bool
+	vocabCategoryIdx     int
+	vocabList            ui.ListState
+	vocabExpandedID      string
+	vocabReviewing       bool
+	vocabReviewIDs       []string
+	vocabReviewIdx       int
+	vocabReviewRevealed  bool
+	vocabReviewDone      int
+	updateChecking       bool
+	updateMsg            string
+	updateURL            string
+	updateNewer          bool
+	notesSaved           bool
+	grammarSaved         bool
+	writingSaved         bool
+	isQuitting           atomic.Bool
+	pausedUntil          time.Time
+	isScreenshotMode     bool
+	translateGen         requestToken
+	tabStates            map[popupMode]*tabViewState
+	ocrCompare           bool
+	ocrExpanded          bool
+	screenshotPinned     bool
+	snipBitmap           *ui.Bitmap
+	popupX               int
+	popupY               int
+	popupW               int
+	popupH               int
+	// 卡片从底边向上生长时，resize 必须保持底边不动。
 	popupAnchoredAbove bool
 	popupAnchorBottom  int
-	// userResized means the user dragged the popup to a size of their own.
-	// The autofit would otherwise snap it back on the next frame, which is
-	// exactly what made a hand-resized card feel stuck: every repaint undid
-	// the drag. The flag is cleared when a new card opens.
-	userResized bool
-	// lastAutofitWinH remembers the window height of the previous frame, so a
-	// frame that still lays out at the old size is not measured again.
-	lastAutofitWinH int
-	// autofit 决定是否应用一次高度修正。旧的「按方向判震荡」规则会把用户
-	// 折叠面板这种正常操作当成抖动锁死，详见 autofit_loop.go。
-	autofit autofitLoop
+	userResized        bool
+	lastAutofitWinH    int
+	autofit            autofitLoop
 
-	// the floating selection chip
-	sel selState
-	// chipTip is the label that names the button under the pointer. It has
-	// its own lock, so the render pass never waits on app.mu for it.
-	chipTip chipTipState
-	// gestureGate drops a gesture that repeats the one just accepted. It is
-	// what keeps a scrollbar drag or a stutter from raising the chip twice.
-	gestureGate gestureGate
-	// captureSelection reads the current selection; nil uses the real
-	// UI Automation and clipboard readers. Tests set it.
+	sel              selState
+	chipTip          chipTipState
+	gestureGate      gestureGate
 	captureSelection func() selection
-	// showChip and showPopup place the two outcomes of a selection. They
-	// are fields so the trigger policy can be verified without windows.
-	showChip  func(x, y int, text string)
-	showPopup func(m popupMode, text string)
+	showChip         func(x, y int, text string)
+	showPopup        func(m popupMode, text string)
 
-	// home is the 查词与翻译 workbench of the main window. It is separate
-	// from every popup field above: a lookup in the main window must not be
-	// overwritten by the selection chip firing in the background.
 	home homeState
 
-	// settings window scratch state
 	aiProbe                 aiProbeState
 	aiModels                aiModelsState
 	aiModelsBySource        map[string]aiModelsState
@@ -272,25 +185,13 @@ type app struct {
 	pendingHotkeyInput      string
 	pendingHotkeyScreenshot string
 	hotkeyDraftsInit        bool
-	// newBlockedApp is the text being typed into the selection blocklist
-	// editor on the 划词 settings page.
-	newBlockedApp string
-	// confirmClearVocab turns the 清空 button into a confirm/cancel pair.
-	confirmClearVocab    bool
-	vocabConfirmDeleteID string
-	lastDeletedVocab     *VocabularyEntry
-	// settingsScroll keeps the settings page's offset across re-renders, so
-	// toggling a switch near the bottom does not jump back to the top. It
-	// also carries MaxY, which is how "can this page scroll at all" is
-	// asserted in the layout test.
-	settingsScroll ui.ScrollState
-	// navScroll is the sidebar's own offset. 工作台 adds a fifth group and a
-	// permanent status capsule, and the two together do not fit a 500 DIP
-	// window: without this the last entries are simply cut off.
-	navScroll ui.ScrollState
-	// settingsPageSeen is the page the scroll offset belongs to; switching
-	// pages starts the new one at the top.
-	settingsPageSeen string
+	newBlockedApp           string
+	confirmClearVocab       bool
+	vocabConfirmDeleteID    string
+	lastDeletedVocab        *VocabularyEntry
+	settingsScroll          ui.ScrollState
+	navScroll               ui.ScrollState
+	settingsPageSeen        string
 }
 
 type snapshot struct {
@@ -343,13 +244,8 @@ type snapshot struct {
 	ocrExpanded          bool
 }
 
-// feedbackTTL is how long a copy or save confirmation stays on screen. Without
-// an expiry the banner stayed until the next popup was opened, which looked
-// like a stuck notification rather than a confirmation of one action.
 const feedbackTTL = 2 * time.Second
 
-// noteFeedbackLocked records when the current banner text first appeared. The
-// popup renders from a snapshot, so the clock has to live next to the text.
 func (a *app) noteFeedbackLocked() {
 	text := ""
 	if a.copiedMsg != "" || a.actionSavedMsg != "" {
@@ -367,7 +263,6 @@ func (a *app) noteFeedbackLocked() {
 	if text == "" {
 		return
 	}
-	// 两个窗口共用这一份文案：浮窗底部和主窗口首页都要它，谁在前就刷谁。
 	popupWin, mainWin := a.win, a.cfgWin
 	a.feedbackTimer = time.AfterFunc(feedbackTTL, func() {
 		a.mu.Lock()
@@ -381,8 +276,6 @@ func (a *app) noteFeedbackLocked() {
 	})
 }
 
-// feedbackVisibleLocked reports whether the banner recorded at feedbackAt is
-// still within its display window.
 func (a *app) feedbackVisibleLocked() bool {
 	return a.feedbackText != "" && time.Since(a.feedbackAt) < feedbackTTL
 }
@@ -395,9 +288,6 @@ func (a *app) snap() snapshot {
 	if !a.feedbackVisibleLocked() {
 		copiedMsg, actionSavedMsg = "", ""
 	}
-	// Deep copy the note list. The view hands &s.notes[i].Checked to a
-	// checkbox and writes through it, and a shallow copy points that write at
-	// the live slice, where dismissNoteWord is reusing the same array.
 	var notes []NoteItem
 	if len(a.notes) > 0 {
 		notes = append([]NoteItem(nil), a.notes...)
@@ -414,17 +304,10 @@ func (a *app) snap() snapshot {
 	}
 }
 
-// play speaks a word or sentence in the language the popup knows it is in.
-//
-// The tag comes from `detected` — the engine's own answer — before the local
-// guess, because detectLocal cannot separate French from Dutch and returns ""
-// for both. An empty tag used to reach the voice picker and fall through to an
-// English voice, which is what made foreign text sound robotic.
 func (a *app) play(word string, us bool) {
 	PlaySpeechLang(word, a.speechLang(), us)
 }
 
-// speechLang returns the tag to speak the popup's text in.
 func (a *app) speechLang() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -434,13 +317,6 @@ func (a *app) speechLang() string {
 	return detectLocal(a.source)
 }
 
-// openPopup shows the window near the cursor and starts the right mode.
-//
-// In selection mode the text is read *before* the window appears: showing
-// or focusing a window moves the keyboard focus away from the application
-// the user selected in, and both UI Automation's TextPattern and a
-// simulated Ctrl+C answer about the focused application. Capturing first is
-// what makes the shortcut translate what the user actually selected.
 func (a *app) openPopup(m popupMode) {
 	a.hideSelIcon()
 
@@ -448,11 +324,6 @@ func (a *app) openPopup(m popupMode) {
 		app := foregroundAppName()
 		sel := a.CaptureSelection()
 		if sel.Text == "" {
-			// Nothing was selected, or the application would not give it up.
-			// Say so: an input box with no explanation reads as "the
-			// shortcut opened the wrong thing". An elevated foreground
-			// window is the one case where no setting can help, so it gets
-			// its own explanation instead of the generic one.
 			selfElevated := currentProcessElevated()
 			blocked := !selfElevated && foregroundProcessElevated()
 			log.Printf("fastDictionary: no selection from %q; opening input mode (elevated window=%v, self=%v)",
@@ -468,10 +339,6 @@ func (a *app) openPopup(m popupMode) {
 			return
 		}
 		log.Printf("fastDictionary: selection %s from %q", a.logText(sel.Text, 40), app)
-		// Honour the "默认模式" preference: with AI 精翻 on, the user picked
-		// which card a fresh selection should land in. Without this the
-		// setting was inert — it rendered, it persisted, and it changed
-		// nothing about what actually opened.
 		mode := modeSelection
 		if preferred, ok := a.store.Get().InitialAIMode(); ok {
 			mode = preferred
@@ -496,11 +363,7 @@ func (a *app) rerunCurrentMode(text string) {
 	}
 }
 
-// rerunCurrentModeFresh is the footer's 重新翻译: it promises a new answer, so
-// it must not be served the cached one the way reopening the same text is.
 func (a *app) rerunCurrentModeFresh(text string) {
-	// Translate mode has no AI cache: setting the flag there would leak into
-	// the next AI pass and silently bypass its cache.
 	switch a.mode {
 	case modeDictionary, modeGrammar, modeWriting:
 		a.mu.Lock()
@@ -514,9 +377,6 @@ func (a *app) switchMode(m popupMode) {
 	cfg := a.store.Get()
 	notice := ""
 	if problem := cfg.AISetupProblem(); (m == modeGrammar || m == modeWriting) && problem != "" {
-		// The AI tabs cannot run without a usable service. Falling back to the
-		// machine translation is better than opening a blank card whose only
-		// explanation is an error.
 		m = modeTranslate
 		notice = "AI 精翻暂不可用（" + problem + "），已使用机器翻译。可在 设置 → AI 精翻 中设置。"
 	}
@@ -532,25 +392,17 @@ func (a *app) switchMode(m popupMode) {
 		}
 		return
 	}
-	// Switching tabs is also switching cards. Save the old tab before its
-	// async work is cancelled, then restore the tab's own answer if it has
-	// one. An old AI pass or note request must not paint over the new tab.
 	a.saveTabLocked()
 	a.stopAIPassLocked()
 	a.stopNotesLocked()
 	text := a.source
 	a.mode = m
 	a.busy = false
-	// 切页签会丢弃当前翻译的展示，但旧 goroutine 仍在飞。不自增代次，
-	// 它回来时 gen == a.translateGen 仍通过，会把旧译文写进新模式视图。
 	a.translateGen++
 	a.notice = notice
 	a.errText = ""
 	a.echoNote = ""
 	if strings.TrimSpace(text) == "" {
-		// An empty source means there is no new request to replace the old
-		// card. Leaving the old answer on screen under a different tab makes
-		// it look as if the newly selected feature produced that answer.
 		a.clearTabLocked()
 		a.mu.Unlock()
 		if a.win != nil {
@@ -572,19 +424,12 @@ func (a *app) switchMode(m popupMode) {
 	a.rerunCurrentMode(text)
 }
 
-// resetPopupTransientLocked 清理「只对当前这张卡片有效」的开关和动作 ID。
-// 两个弹窗入口必须用同一份清单：onlyTrunk 曾经只在一条入口里复位，另一条
-// 打开的新卡片会继续折叠，缺了从句标记和下划线，看起来像标注坏了。
-// 调用方持 a.mu。
 func (a *app) resetPopupTransientLocked() {
 	a.onlyTrunk = false
 	a.showSlashes = false
 	a.activeActionID = ""
 }
 
-// resetScreenshotPinLocked 把「截图翻译临时置顶」的复位规则收在一处：
-// 普通弹窗是新卡片，不能继承上一张截图卡片为自身窗口申请的置顶。
-// 调用方持 a.mu；用户手动置顶（screenshotPinned 为 false）不动。
 func (a *app) resetScreenshotPinLocked() {
 	if a.screenshotPinned {
 		a.pinned = false
@@ -618,22 +463,14 @@ func (a *app) openPopupAction(m popupMode, text string) {
 	a.popupY = y
 	a.popupW = int(w)
 	a.popupH = initH
-	// A card flipped above the cursor is resized from its bottom edge, so the
-	// anchor is recorded here and cleared with the card.
 	a.popupAnchoredAbove = anchoredAbove
 	a.popupAnchorBottom = y + initH
 
 	a.mu.Lock()
-	// A new card is an auto-sized card again: a hand-resized size belongs to
-	// the card it was dragged on, not to the next lookup.
 	a.userResized = false
 	a.autofit.reset()
-	// Opening a new card supersedes every async result that belonged to the
-	// previous one, including the note extraction.
 	a.stopAIPassLocked()
 	a.stopNotesLocked()
-	// A new card has no tab history: results from the previous source must
-	// never be restored under the new text.
 	a.tabStates = nil
 	a.mode = m
 	a.inputTargetMode = m
@@ -649,7 +486,6 @@ func (a *app) openPopupAction(m popupMode, text string) {
 	a.dict = nil
 	a.gdict = nil
 	a.busy = false
-	// 新卡片同样要让在飞的机器翻译失效，否则旧译文会写进这张新卡片。
 	a.translateGen++
 	a.aiBusy = false
 	a.dictResult = nil
@@ -675,8 +511,6 @@ func (a *app) openPopupAction(m popupMode, text string) {
 	a.resetScreenshotPinLocked()
 	a.mu.Unlock()
 
-	// One call for size and position: setting them separately makes the window
-	// appear at one size in the old place before it moves.
 	win.SetBounds(mygo.Rectangle{X: x, Y: y, Width: int(w), Height: initH})
 	win.SetAlwaysOnTop(cfg.AlwaysOnTop)
 	win.Show()
@@ -688,8 +522,6 @@ func (a *app) openPopupAction(m popupMode, text string) {
 	}
 }
 
-// openPopupWithText shows the popup near the cursor and, for the modes that
-// have one, translates text that was already captured.
 func (a *app) openPopupWithText(m popupMode, text string) {
 	a.stopScreenshotOCR()
 	cfg := a.store.Get()
@@ -712,16 +544,12 @@ func (a *app) openPopupWithText(m popupMode, text string) {
 	a.popupY = y
 	a.popupW = int(w)
 	a.popupH = initH
-	// Same anchor rule as openPopupAction.
 	a.popupAnchoredAbove = anchoredAbove
 	a.popupAnchorBottom = y + initH
 
 	a.mu.Lock()
-	// A new card is an auto-sized card again: see openPopupAction.
 	a.userResized = false
 	a.autofit.reset()
-	// A normal popup is a new card too: the previous AI pass and note request
-	// must not write into it after the user has selected another text.
 	a.stopAIPassLocked()
 	a.stopNotesLocked()
 	a.tabStates = nil
@@ -737,7 +565,6 @@ func (a *app) openPopupWithText(m popupMode, text string) {
 	a.rawSource = raw
 	a.sourceExpanded = false
 	a.dict, a.gdict, a.busy, a.aiBusy = nil, nil, false, false
-	// 新卡片同样要让在飞的机器翻译失效，否则旧译文会写进这张新卡片。
 	a.translateGen++
 	a.activeActionID = ""
 	a.dictResult = nil
@@ -756,11 +583,9 @@ func (a *app) openPopupWithText(m popupMode, text string) {
 	a.snipBitmap = nil
 	a.ocrText, a.ocrPath, a.ocrError = "", "", ""
 	a.ocrCompare, a.ocrExpanded = false, false
-	// 普通弹窗不继承截图卡片的置顶；规则见 resetScreenshotPinLocked。
 	a.resetScreenshotPinLocked()
 	a.mu.Unlock()
 
-	// One call for size and position, as in openPopupAction.
 	win.SetBounds(mygo.Rectangle{X: x, Y: y, Width: int(w), Height: initH})
 	win.SetAlwaysOnTop(cfg.AlwaysOnTop)
 	win.Show()
@@ -768,15 +593,6 @@ func (a *app) openPopupWithText(m popupMode, text string) {
 	win.Update(func() {})
 
 	if text != "" {
-		// Dispatch on the mode we just set. It used to call translate()
-		// unconditionally, which is why opening straight into 词典精读 or
-		// 长难句分析 showed machine translation instead of the AI card:
-		// the mode was set, then ignored by the very next line.
 		a.rerunCurrentMode(text)
 	}
 }
-
-// ---------------------------------------------------------------------------
-// The popup view — design: "ink and signal". The translation is the hero,
-// marked by a single ink-teal rule; everything else stays quiet.
-// ---------------------------------------------------------------------------

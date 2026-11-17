@@ -5,12 +5,6 @@ import (
 	"testing"
 )
 
-// TestRemoveHooksResetsClickTracking pins the session boundary. Uninstalling
-// the hooks ends a gesture session; the double-click candidate (lastClickTime,
-// lastClickPos, clickCount) must not survive into the next install. Those
-// fields are read under hookMu in lowLevelMouseProc, so the reset has to run
-// inside the same lock. This is a source contract: lowLevelMouseProc is a
-// Win32 callback and cannot be driven headlessly.
 func TestRemoveHooksResetsClickTracking(t *testing.T) {
 	src := readSourceFile(t, "hook.go")
 	if !containsText(src, "func resetClickTrackingLocked()") {
@@ -32,15 +26,11 @@ func TestRemoveHooksResetsClickTracking(t *testing.T) {
 	if unlock := strings.Index(body, "hookMu.Unlock()"); unlock < 0 || call > unlock {
 		t.Fatal("双击候选复位必须发生在 hookMu 锁内")
 	}
-	// 手势识别本身不改：判定表达式与 clickCount 累加保持原样，本批只在卸载边界复位会话。
 	if !containsText(src, "clickCount++") || !containsText(src, "clickCount == 2") {
 		t.Fatal("双击判定被改动了；本批只在卸载边界复位会话")
 	}
 }
 
-// TestResetClickTrackingLocked checks the pure reset directly. The three
-// fields are package globals shared with the Win32 callback, so save and
-// restore them to keep other tests isolated.
 func TestResetClickTrackingLocked(t *testing.T) {
 	hookMu.Lock()
 	oldTime, oldPos, oldCount := lastClickTime, lastClickPos, clickCount
@@ -68,7 +58,6 @@ func TestResetClickTrackingLocked(t *testing.T) {
 		if lastClickTime != 0 || lastClickPos != (winPoint{}) || clickCount != 0 {
 			t.Errorf("%s: 复位后仍有残留 time=%d pos=%+v count=%d", tc.name, lastClickTime, lastClickPos, clickCount)
 		}
-		// 幂等：会话边界被重复触发（applySelectionMode 每次设置变更都调）不应出问题。
 		resetClickTrackingLocked()
 		if lastClickTime != 0 || lastClickPos != (winPoint{}) || clickCount != 0 {
 			t.Errorf("%s: 重复复位后不干净", tc.name)

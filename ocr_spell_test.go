@@ -6,13 +6,6 @@ import (
 	"testing"
 )
 
-// TestFixDoubledLetterRepairsOcrNoise covers the errors the recognizer actually
-// produces on printed English.
-//
-// Every input here was taken from a real run over a newspaper page. The repairs
-// matter because a single doubled letter changes what the translator thinks the
-// subject is: "Sttocks in bold rose or fell 5%" came back as "加粗的数字涨跌5%"
-// while the correct "Stocks" gives "加粗的股票涨跌5%".
 func TestFixDoubledLetterRepairsOcrNoise(t *testing.T) {
 	cases := map[string]string{
 		"Sttocks":       "Stocks",
@@ -32,11 +25,6 @@ func TestFixDoubledLetterRepairsOcrNoise(t *testing.T) {
 	}
 }
 
-// TestFixDoubledLetterKeepsRealWords is the guard that makes the repair safe.
-//
-// English has plenty of words with genuinely doubled letters. Rewriting any of
-// them would corrupt text that was already correct, which is worse than the bug
-// being fixed: a doubled letter can still be read, a wrong word cannot.
 func TestFixDoubledLetterKeepsRealWords(t *testing.T) {
 	keep := []string{
 		"letter", "better", "coffee", "address", "success", "really",
@@ -50,19 +38,17 @@ func TestFixDoubledLetterKeepsRealWords(t *testing.T) {
 	}
 }
 
-// TestFixDoubledLetterLeavesUnprovableAlone covers the cases where collapsing
-// does not produce a word. Guessing here would invent text.
 func TestFixDoubledLetterLeavesUnprovableAlone(t *testing.T) {
 	for _, w := range []string{
-		"felll",     // collapses to "fel", not a word
-		"Maatinees", // collapses to "matines", not a word
-		"usaatoday", // a URL fragment, not in any word list
+		"felll",
+		"Maatinees",
+		"usaatoday",
 		"continuousll",
-		"5%",       // not letters at all
-		"723-8698", // a phone number
-		"don't",    // an apostrophe: the list does not carry contractions
-		"Stocks",   // already correct
-		"ab",       // too short to judge
+		"5%",
+		"723-8698",
+		"don't",
+		"Stocks",
+		"ab",
 	} {
 		if got := fixDoubledLetter(w); got != w {
 			t.Errorf("fixDoubledLetter(%q) = %q, want it unchanged", w, got)
@@ -70,9 +56,6 @@ func TestFixDoubledLetterLeavesUnprovableAlone(t *testing.T) {
 	}
 }
 
-// TestFixDoubledLettersHandlesPunctuation pins that the last word of a line is
-// still repaired. OCR ends lines with commas and periods, and a repair that
-// skipped them would miss most of the words at line ends.
 func TestFixDoubledLettersHandlesPunctuation(t *testing.T) {
 	in := "Sttocks in bold, rose or fell 5%."
 	got := fixDoubledLetters(in)
@@ -84,7 +67,6 @@ func TestFixDoubledLettersHandlesPunctuation(t *testing.T) {
 	}
 }
 
-// TestFixDoubledLettersMultiLine keeps a table from being joined into one line.
 func TestFixDoubledLettersMultiLine(t *testing.T) {
 	in := "Nasddaq & AMEX\nSttocks in bold rose\nUSA"
 	got := fixDoubledLettersAll(in)
@@ -100,8 +82,6 @@ func TestFixDoubledLettersMultiLine(t *testing.T) {
 	}
 }
 
-// TestSpellListLoaded guards the embedded word list against being emptied by an
-// over-eager clean-up. Without it the repair silently does nothing.
 func TestSpellListLoaded(t *testing.T) {
 	words := spellWords()
 	if len(words) < 10000 {
@@ -114,14 +94,11 @@ func TestSpellListLoaded(t *testing.T) {
 	}
 }
 
-// TestOCRRepairEndToEnd runs the real engine on the page whose doubled letters
-// started this. It skips when the models are not installed.
 func TestOCRRepairEndToEnd(t *testing.T) {
 	txt := liveIndraText(t, "docs/ocr-bench/stock_gs200.jpg")
 	if txt == "" {
 		t.Skip("no text recognised")
 	}
-	// The heading used to come back as "Nasddaq && AMEX".
 	if strings.Contains(txt, "Nasddaq") {
 		t.Errorf("doubled letter survived the repair:\n%s", txt)
 	}
@@ -130,15 +107,12 @@ func TestOCRRepairEndToEnd(t *testing.T) {
 	}
 }
 
-// TestRepairKeepsTranslationMeaning is the reason the repair exists: the
-// doubled letter changed what the sentence was about.
 func TestRepairKeepsTranslationMeaning(t *testing.T) {
 	broken := "Sttocks in bold rose or fell 5% or more"
 	fixed := fixDoubledLetters(broken)
 	if !strings.Contains(fixed, "Stocks") {
 		t.Fatalf("repair did not fire: %q", fixed)
 	}
-	// And the repaired text still translates, which is the whole point.
 	if testing.Short() {
 		t.Skip("network")
 	}

@@ -5,10 +5,6 @@ import (
 	"time"
 )
 
-// TestStopAIPassLockedLegacyBehavior 录下改造前的行为，作为状态机显式化的护栏。
-// 阶段 A（镜像 → 切读 → 清理）不得改变其中任何一项，包括
-// stopAIPassLocked 不清 aiText 这一已知缺陷（见 docs/STATE_MACHINES.md §4.2 U1）。
-// 缺陷本身留到阶段 B 单独修，修的时候先写复现测试。
 func TestStopAIPassLockedLegacyBehavior(t *testing.T) {
 	a := newTestApp()
 	a.mu.Lock()
@@ -35,10 +31,6 @@ func TestStopAIPassLockedLegacyBehavior(t *testing.T) {
 	}
 }
 
-// TestRestoreTabLockedLegacyBehavior 录下改造前 U6 的行为，作为阶段 B 的护栏。
-// 现状：saveTabLocked 记下 aiBusy / notesBusy，restoreTabLocked 却强制置 false，
-// 且不碰 aiGen / notesGen —— 切走再切回时旧异步请求的代次仍然匹配。
-// 缺陷本身留到阶段 B 单独修，修的时候先写复现测试。
 func TestRestoreTabLockedLegacyBehavior(t *testing.T) {
 	a := newTestApp()
 	a.mu.Lock()
@@ -73,15 +65,11 @@ func TestRestoreTabLockedLegacyBehavior(t *testing.T) {
 	}
 }
 
-// TestRefineWithAIIndependentGeneration 录下批次 4b 修复后 refineWithAI 的入口行为。
-// 修复前精翻复用 a.aiGen 并调 stopAIPassLocked()，aiGen 从 7 增到 8、aiBusy 被清空，
-// 正在输出的卡片流静默中断（批次 4a 里这条断言原为 {8, false, "partial"}）。
-// 修复后精翻只自增 aiRefineGen，卡片流的 aiGen / aiBusy / aiText 原样保留。
 func TestRefineWithAIIndependentGeneration(t *testing.T) {
 	a := newTestApp()
 	a.store.mu.Lock()
 	a.store.cfg.AIEnabled = true
-	a.store.cfg.AIURL = "http://127.0.0.1:1" // 无监听端口，请求立即失败
+	a.store.cfg.AIURL = "http://127.0.0.1:1"
 	a.store.mu.Unlock()
 
 	a.mu.Lock()
@@ -108,7 +96,6 @@ func TestRefineWithAIIndependentGeneration(t *testing.T) {
 		t.Fatalf("refineWithAI 改变了既有行为: got %+v want %+v", got, want)
 	}
 
-	// 等后台精翻 goroutine 收尾，避免测试之间残留写 app 的 goroutine。
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		a.mu.Lock()

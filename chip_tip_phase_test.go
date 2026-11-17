@@ -5,8 +5,6 @@ import (
 	"time"
 )
 
-// 批次 6d 源码契约：onChipPointer 的两个隐式时间窗口判断应收进具名谓词，
-// 不再以内联布尔表达式散落。
 func TestChipTipUsesNamedPredicates(t *testing.T) {
 	src := readSourceFile(t, "selicon.go")
 	if !containsText(src, "chipTipIsWarm(") {
@@ -23,8 +21,6 @@ func TestChipTipUsesNamedPredicates(t *testing.T) {
 	}
 }
 
-// 零行为变化判据：遍历时间组合，两个具名谓词的结果必须与原内联表达式
-// 逐项一致。这是把「收进谓词」钉成纯显式化的核心证据。
 func TestChipTipTimeWindowsMatchLegacy(t *testing.T) {
 	base := time.Unix(1_700_000_000, 0)
 	hiddenCases := []struct {

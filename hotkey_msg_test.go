@@ -47,8 +47,6 @@ func TestSetHotkeyMsgKeepsSeverity(t *testing.T) {
 	a.mu.Unlock()
 }
 
-// TestHotkeyMsgSeverityIsExplicit is the source contract: the colour must come
-// from the recorded kind, never from searching the message text.
 func TestHotkeyMsgSeverityIsExplicit(t *testing.T) {
 	src := readSourceFile(t, "settings_pages.go")
 	if containsText(src, `strings.Contains(a.hotkeyMsg, "冲突")`) {

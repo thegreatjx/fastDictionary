@@ -7,10 +7,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// TestClassifyAIViewEquivalence 锁定 popupView 三个 AI mode 分支的旧判定。
-// 旧结构是「对应 result != nil → 卡片；否则 aiBusy || aiText != "" → 结果区；
-// 否则空态」。用例逐组列出旧结构应选的分支，classifyAIView 必须给出同一个
-// 名字。卡片优先、以及各 mode 只认自己的结果字段，是最容易写错的两条。
 func TestClassifyAIViewEquivalence(t *testing.T) {
 	grammarCard := &SentenceAnalysisResult{Translation: "她递给你一瓶。"}
 	dictCard := &DictionaryResult{Term: "seize", Definition: "夺取"}
@@ -33,8 +29,6 @@ func TestClassifyAIViewEquivalence(t *testing.T) {
 		{name: "dictionary prose", snap: snapshot{mode: modeDictionary, aiText: "seize 表示抓住。"}, want: aiPassProse},
 		{name: "writing parse failed", snap: snapshot{mode: modeWriting, aiText: `{"term":`}, want: aiPassParseFailed},
 		{name: "grammar empty", snap: snapshot{mode: modeGrammar}, want: aiPassIdle},
-		// 非 AI mode 由 popupView 的 default 分支处理，不调用本函数；
-		// 这里只记录回落行为：卡片检查返回 false，结果照常分类。
 		{name: "non-AI mode falls back to result phase", snap: snapshot{mode: modeTranslate, aiBusy: true}, want: aiPassStreaming},
 	}
 	for _, tc := range cases {
@@ -46,8 +40,6 @@ func TestClassifyAIViewEquivalence(t *testing.T) {
 	}
 }
 
-// TestClassifyAIViewFallsBackToResult 保证没有卡片时两层分类完全一致，
-// 这样 renderAIResultState 继续按老样子画结果区。
 func TestClassifyAIViewFallsBackToResult(t *testing.T) {
 	snaps := []snapshot{
 		{mode: modeGrammar},
@@ -63,9 +55,6 @@ func TestClassifyAIViewFallsBackToResult(t *testing.T) {
 	}
 }
 
-// TestAIViewRenderingBaseline 录下三态在三个 AI mode 下画出的文字。卡片态
-// 用现有测试已验证能渲染的结果对象；pass 态看 busy 文案，空态看各 mode
-// 独有的按钮文案。切换读取点前后，这张表必须逐字成立。
 func TestAIViewRenderingBaseline(t *testing.T) {
 	cases := []struct {
 		name   string

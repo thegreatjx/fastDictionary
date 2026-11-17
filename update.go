@@ -12,35 +12,23 @@ import (
 	"time"
 )
 
-// appVersion is what 关于 compares against the latest GitHub release. It is a
-// var rather than a const so a release build can stamp it with
-// `-X main.appVersion=...` the same way buildStamp is injected.
 var appVersion = "1.1.0"
 
 const releasesAPI = "https://api.github.com/repos/thegreatjx/fastDictionary/releases/latest"
 
-// errNoRelease means the release feed answered, but there is nothing published
-// yet. 404 is also how GitHub reports a missing/private repository, so the
-// message stays neutral instead of claiming the project does not exist.
 var errNoRelease = errors.New("GitHub 上还没有可用的发布版本")
 
-// releaseInfo is the slice of the GitHub release payload the update check
-// needs. The API sends far more; decoding only these fields keeps the check
-// robust to unrelated schema additions.
 type releaseInfo struct {
 	TagName string `json:"tag_name"`
 	HTMLURL string `json:"html_url"`
 	Name    string `json:"name"`
 }
 
-// fetchLatestRelease reads the newest published release. The check is
-// read-only and user-triggered: nothing is downloaded or installed.
 func fetchLatestRelease(ctx context.Context, client *http.Client, url string) (releaseInfo, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return releaseInfo{}, err
 	}
-	// GitHub rejects API requests without a User-Agent.
 	req.Header.Set("User-Agent", "fastDictionary/"+appVersion)
 	req.Header.Set("Accept", "application/vnd.github+json")
 
@@ -69,9 +57,6 @@ func fetchLatestRelease(ctx context.Context, client *http.Client, url string) (r
 	return out, nil
 }
 
-// compareVersions orders dotted numeric versions: "v1.10.0" is newer than
-// "1.9.9". A suffix after '-' or '+' is ignored for ordering, so a
-// prerelease counts as its base version rather than as newer.
 func compareVersions(a, b string) int {
 	as := numericVersion(a)
 	bs := numericVersion(b)
@@ -108,8 +93,6 @@ func numericVersion(v string) []int {
 	for _, p := range parts {
 		n, err := strconv.Atoi(p)
 		if err != nil {
-			// A non-numeric segment sorts below any number instead of
-			// making the whole comparison meaningless.
 			n = 0
 		}
 		out = append(out, n)
@@ -117,9 +100,6 @@ func numericVersion(v string) []int {
 	return out
 }
 
-// updateMessage turns a release into the sentence shown under 检查更新.
-// newer=false means the installed build is current (or ahead, as with a
-// local build), and no download link is offered.
 func updateMessage(current string, rel releaseInfo) (msg string, newer bool) {
 	if compareVersions(rel.TagName, current) > 0 {
 		name := strings.TrimSpace(rel.Name)
@@ -131,8 +111,6 @@ func updateMessage(current string, rel releaseInfo) (msg string, newer bool) {
 	return "已是最新版本（" + current + "）", false
 }
 
-// checkForUpdate performs the whole check. It is a var so tests can replace
-// the network round-trip without starting a server.
 var checkForUpdate = func(ctx context.Context, client *http.Client) (releaseInfo, error) {
 	return fetchLatestRelease(ctx, client, releasesAPI)
 }
@@ -141,8 +119,6 @@ func updateHTTPClient() *http.Client {
 	return &http.Client{Timeout: 10 * time.Second}
 }
 
-// The update result is written from a background goroutine and read while the
-// settings page paints, so it uses the same mutex as the rest of app.
 func (a *app) updateSnapshot() (checking bool, msg, url string, newer bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -156,8 +132,6 @@ func (a *app) setUpdateState(checking bool, msg, url string, newer bool) {
 	a.settingsRefresh()
 }
 
-// checkUpdatesAsync is the 检查更新 button. It only reads a public release
-// feed; installing a new build stays a manual download.
 func (a *app) checkUpdatesAsync() {
 	if checking, _, _, _ := a.updateSnapshot(); checking {
 		return

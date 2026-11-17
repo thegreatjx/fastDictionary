@@ -9,9 +9,6 @@ import (
 	"testing"
 )
 
-// The log used to be truncated on every start: restarting after a crash
-// erased exactly the lines that explained it. Rotation keeps one previous
-// file and appends to the current one.
 func TestOpenLogFileRotatesOnceAtLimit(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "fastDictionary.log")
 	if err := os.WriteFile(path, []byte("old crash\n"), 0o644); err != nil {
@@ -42,7 +39,6 @@ func TestOpenLogFileRotatesOnceAtLimit(t *testing.T) {
 		t.Fatalf("current log = %q, want only the appended line", current)
 	}
 
-	// A second start below the limit must append, not rotate again.
 	f2, err := openLogFile(path, 4096)
 	if err != nil {
 		t.Fatal(err)
@@ -76,8 +72,6 @@ func TestLogTextHidesSelectionByDefault(t *testing.T) {
 }
 
 func TestRecoverLogSwallowsBackgroundPanic(t *testing.T) {
-	// The recovered stack is written through the standard logger; silence it
-	// so a passing test does not print a panic that never happened.
 	prev := log.Writer()
 	log.SetOutput(io.Discard)
 	t.Cleanup(func() { log.SetOutput(prev) })

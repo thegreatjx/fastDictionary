@@ -115,7 +115,7 @@
 
 ### 3.4 为什么已有资产没挡住
 
-- `docs/STATE_MACHINES_FIX_PLAYBOOK.md` 已经系统处理了请求令牌、generation、recover 契约，但它管的是**数据流状态机**；本次重复主要集中在视觉、协议与验证身份。
+- 现有 token/generation 契约测试（`ai_generation_race_test.go` 等）已经覆盖请求令牌与过期回包，但它们管的是**数据流状态机**；本次重复主要集中在视觉、协议与验证身份。
 - `docs/DESIGN.md` 是散文契约，能被人读懂，但不能被 CI 执行。组件仍然可以写 `at.Warning` 或 `ui.Hex` 而不被拦住。
 - 测试覆盖了“新格式 + 正常输入”，没有覆盖“旧配置 + 真实模型的错序输出”。
 - `CHANGELOG.md` 记录的是事后结果，不是事前门槛；它无法阻止第 24 个包。

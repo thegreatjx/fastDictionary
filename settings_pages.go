@@ -101,8 +101,6 @@ func (a *app) pageGeneral(c *ui.Context, t *ui.Theme, cfg Config) {
 	})
 }
 
-// cleanBlockedAppName strips surrounding quotes and directory paths and
-// ensures the .exe extension is lowercased.
 func cleanBlockedAppName(raw string) string {
 	raw = strings.TrimSpace(raw)
 	raw = strings.Trim(raw, `"'`)
@@ -118,7 +116,6 @@ func cleanBlockedAppName(raw string) string {
 	return raw
 }
 
-// pageSelection configures how a text selection triggers fastDictionary.
 func (a *app) pageSelection(c *ui.Context, t *ui.Theme, cfg Config) {
 	PageTitle(c, t, "划词", "选中文字之后发生什么。")
 	at := appTheme(t)
@@ -492,9 +489,6 @@ func (a *app) aiModelField(c *ui.Context, t *ui.Theme, cfg Config) {
 	current := strings.TrimSpace(cfg.AIModel)
 	notInFetched := state.phase == aiModelsReady && current != "" && !slices.Contains(state.models, current)
 	if current != "" && !slices.Contains(models, current) {
-		// Keep the active model visible even when the service did not list it.
-		// Hiding it behind "自定义模型…" made the page look like it had no
-		// model while a valid one was still configured.
 		models = append([]string{current}, models...)
 	}
 
@@ -510,9 +504,6 @@ func (a *app) aiModelField(c *ui.Context, t *ui.Theme, cfg Config) {
 					ui.Select(c, &chosen, options).Grow(1).
 						Height(HeightControl).Radius(RadiusSM).OnChange(func() {
 						if chosen == "自定义模型…" {
-							// Clearing the stored model is what makes the next frame
-							// show the text input. A local "custom" flag would be a
-							// second source of truth for the same fact.
 							a.store.Update(func(c *Config) { c.AIModel = "" })
 							a.settingsRefresh()
 							return
@@ -585,8 +576,6 @@ func (a *app) aiTestField(c *ui.Context, t *ui.Theme, cfg Config) {
 			a.testAIConnection()
 		}
 	})
-	// 结果单独占一行：模型名、耗时和错误详情都不再挤在按钮旁的单行里，
-	// 长文本直接换行，不会被省略号截掉。
 	if state.phase != aiProbeSucceeded && state.phase != aiProbeFailed {
 		return
 	}
@@ -603,8 +592,6 @@ func (a *app) aiTestField(c *ui.Context, t *ui.Theme, cfg Config) {
 }
 
 func (a *app) aiDefaultModeRow(c *ui.Context, t *ui.Theme, cfg Config) {
-	// 跟随翻译 is the "no preference" slot: it keeps the popup on the
-	// translate engine, which is what every existing install does.
 	idx := 0
 	if cfg.AIModeIsChoice {
 		switch cfg.AIMode {
@@ -617,8 +604,6 @@ func (a *app) aiDefaultModeRow(c *ui.Context, t *ui.Theme, cfg Config) {
 	SettingRow(c, t, "默认模式", "划词后打开哪张 AI 卡片；「跟随翻译」只做机翻。", func() {
 		SegmentedControl(c, &idx, "跟随翻译", "长难句分析", "润色翻译").OnChange(func() {
 			if idx > 0 && !a.store.Get().AIEnabled {
-				// The preference would be ignored at popup time anyway;
-				// keeping it selected would claim a mode the app cannot run.
 				a.mu.Lock()
 				a.actionSaveFeedback = "AI 精翻未启用，默认模式保持「跟随翻译」。请先启用 AI 精翻"
 				a.mu.Unlock()
@@ -731,9 +716,6 @@ func (a *app) pageHotkey(c *ui.Context, t *ui.Theme, cfg Config) {
 			ui.Box(c).FillWidth().Padding(Space4).BorderWidth(0, 0, 1, 0).
 				BorderColor(appTheme(t).BorderSubtle).Children(func() {
 				ui.Column(c).FillWidth().Gap(Space2).Children(func() {
-					// Two presets, not three: the third button restored the same
-					// Alt+D / Alt+C / Alt+Q set the first one applies, and a
-					// separate "恢复默认" already sits in 生效保存 below.
 					btnP1 := AccentSoftButton(c, t, "极速单手：Alt+D (划词) / Alt+C (截图) / Alt+Q (输入)").
 						Tooltip("【最推荐】左手单手盲操极速触发。注意：Alt+D 在 Chrome/Edge 中会聚焦地址栏，浏览器内建议用方案二")
 					if btnP1.Clicked() {

@@ -13,13 +13,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// The chip's redesign in one sentence: it used to spend six saturated hues on
-// six buttons, and it never told the user what a button did until they had
-// already committed to clicking it. The tests below hold both halves of the
-// fix: one cool palette, and a label that names the hovered button at once.
-
-// saturation returns the HSL saturation of a colour, 0 for grey and 1 for a
-// pure hue.
 func saturation(c ui.Color) float64 {
 	maxv := float64(max(c.R, c.G, c.B)) / 255
 	minv := float64(min(c.R, c.G, c.B)) / 255
@@ -29,17 +22,10 @@ func saturation(c ui.Color) float64 {
 	return (maxv - minv) / maxv
 }
 
-// chroma returns how far a colour is from grey in absolute terms, 0 for a grey
-// and 1 for a fully saturated primary.
-//
-// This is the measure "低饱和度" is about: HSL saturation divides by the
-// colour's own lightness, so a very dark navy scores high there while looking
-// almost black on screen. Chroma asks how much colour there actually is.
 func chroma(c ui.Color) float64 {
 	return float64(max(c.R, c.G, c.B)-min(c.R, c.G, c.B)) / 255
 }
 
-// hue returns the HSL hue of a colour in degrees.
 func hue(c ui.Color) float64 {
 	r, g, b := float64(c.R)/255, float64(c.G)/255, float64(c.B)/255
 	maxv := max(r, g, b)
@@ -63,21 +49,10 @@ func hue(c ui.Color) float64 {
 	return h
 }
 
-// TestChipPaletteIsCoolAndDesaturated is the check the user actually asked
-// for: the chip's colours must be cold-toned and low in saturation.
-//
-// The old palette failed both halves — magenta #C026D3 sat at chroma 0.68 and
-// hue 296, amber #B45309 at chroma 0.67 and hue 26. Every colour the chip
-// draws with is measured here, so a future "let's make the dictionary icon
-// stand out" cannot quietly bring the rainbow back.
 func TestChipPaletteIsCoolAndDesaturated(t *testing.T) {
-	// Cool means blue through cyan: hue 180–280. Slate inks sit near 210.
 	const (
-		minHue = 175.0
-		maxHue = 290.0
-		// 二轮精修把主图标与 hover 恢复为明快系统蓝（#2563EB / #1D4ED8，
-		// chroma 约 0.73–0.78），所以墨色放宽到 0.85；表面、边框和提示牌
-		// 仍必须保持安静的低饱和。冷色相规则对两者都不变。
+		minHue           = 175.0
+		maxHue           = 290.0
 		maxSurfaceChroma = 0.26
 		maxInkChroma     = 0.85
 	)
@@ -98,7 +73,7 @@ func TestChipPaletteIsCoolAndDesaturated(t *testing.T) {
 
 		for name, c := range colors {
 			if c.A == 0 {
-				continue // transparent, nothing to measure
+				continue
 			}
 			limit := maxInkChroma
 			switch name {
@@ -109,8 +84,6 @@ func TestChipPaletteIsCoolAndDesaturated(t *testing.T) {
 				t.Errorf("dark=%v %s %v has chroma %.2f, want at most %.2f",
 					dark, name, c, got, limit)
 			}
-			// Near-neutral colours have an unstable hue, so the hue rule
-			// only applies where there is enough chroma to name a hue.
 			if chroma(c) < 0.03 {
 				continue
 			}
@@ -122,9 +95,6 @@ func TestChipPaletteIsCoolAndDesaturated(t *testing.T) {
 	}
 }
 
-// TestChipSpendsColourOnlyOnThePrimaryAction is the other half of the palette
-// rule: the row is quiet, and exactly one button is allowed to be the place
-// the eye lands first.
 func TestChipSpendsColourOnlyOnThePrimaryAction(t *testing.T) {
 	for _, dark := range []bool{false, true} {
 		theme := chipThemeForTest(t, dark)
@@ -140,8 +110,6 @@ func TestChipSpendsColourOnlyOnThePrimaryAction(t *testing.T) {
 	}
 }
 
-// TestChipTipInvertsTheChip keeps the label readable as a plate above the bar:
-// it has to stand off the surface rather than blend into it.
 func TestChipTipInvertsTheChip(t *testing.T) {
 	for _, dark := range []bool{false, true} {
 		theme := chipThemeForTest(t, dark)
@@ -149,17 +117,12 @@ func TestChipTipInvertsTheChip(t *testing.T) {
 		if got := contrastRatio(fg, bg); got < 4.5 {
 			t.Errorf("dark=%v label text contrast %.2f:1 on its plate, want at least 4.5:1", dark, got)
 		}
-		// The plate itself must be distinguishable from the chip's surface,
-		// or the label reads as a floating smudge of text.
 		if got := contrastRatio(bg, chipSurface(theme)); got < 3.0 {
 			t.Errorf("dark=%v label plate contrast %.2f:1 against the chip, want at least 3:1", dark, got)
 		}
 	}
 }
 
-// TestChipTipNamesEveryButton walks the row and proves each button's label is
-// available to the hover plate — the "hover and it tells you what this is"
-// behaviour that was missing.
 func TestChipTipNamesEveryButton(t *testing.T) {
 	a := newTestApp()
 	for _, tip := range chipTestTips(t, a) {
@@ -170,25 +133,17 @@ func TestChipTipNamesEveryButton(t *testing.T) {
 			t.Errorf("label %q sizes to %dpx, below the minimum plate width", tip, w)
 		}
 	}
-	// A longer label must make a wider plate, or text would be clipped.
 	if chipTipWidth("复制与更多功能") <= chipTipWidth("写作改进") {
 		t.Error("the plate does not grow with the label")
 	}
 }
 
-// TestChipTipAppearsWithoutAWindow drives the state machine the plate uses:
-// the pointer rests on a button, time passes, and the label is due.
-//
-// It is a headless check on purpose — the real plate is a separate window, and
-// creating one in a test would need a display. What it pins is the timing and
-// the "one label at a time" rule, which are the parts that can regress.
 func TestChipTipAppearsWithoutAWindow(t *testing.T) {
 	var asked []time.Duration
 	tt := ui.NewTester(func(c *ui.Context) {
 		applyTheme(c, "light", false, "")
 		ui.Row(c).Fill().Children(func() {
 			b := ui.Button(c, "").Label("词典").Size(28, 28)
-			// Stand in for the real render hook: record what it would ask.
 			if b.Hovered() {
 				asked = append(asked, chipTipDelay)
 			}
@@ -207,19 +162,13 @@ func TestChipTipAppearsWithoutAWindow(t *testing.T) {
 	if asked[0] != chipTipDelay {
 		t.Errorf("label delay = %v, want %v", asked[0], chipTipDelay)
 	}
-	// read-frog's toolbars feel immediate; mygo's built-in Tooltip waits
-	// 600ms. The whole point of this window is to beat that.
 	if chipTipDelay >= 400*time.Millisecond {
 		t.Errorf("label delay %v is too slow to feel like a hover label", chipTipDelay)
 	}
 }
 
-// TestChipTipCentresOnItsButton checks the placement arithmetic: a label sits
-// over the middle of the button it names, and one at either end of the row
-// stays inside the bar's footprint instead of hanging off it.
 func TestChipTipCentresOnItsButton(t *testing.T) {
 	const chipX, chipW = 100, 219
-	// A button in the middle of the row.
 	mid := ui.Rect{X: 100, Y: 4, W: 28, H: 28}
 	label := "长难句分析"
 	w := chipTipWidth(label)
@@ -230,12 +179,10 @@ func TestChipTipCentresOnItsButton(t *testing.T) {
 	if x < chipX {
 		x = chipX
 	}
-	// Centred on the button, so the label's middle is the button's middle.
 	if got, want := x+w/2, chipX+int(mid.X+mid.W/2); got != want && (x == chipX || x+w == chipX+chipW) == false {
 		t.Errorf("label centre %d, button centre %d", got, want)
 	}
 
-	// The last button: the label must not run past the chip's right edge.
 	last := ui.Rect{X: chipW - 32, Y: 4, W: 28, H: 28}
 	lw := chipTipWidth("复制与更多功能")
 	lx := chipX + int(last.X+last.W/2) - lw/2
@@ -251,9 +198,6 @@ func TestChipTipCentresOnItsButton(t *testing.T) {
 	}
 }
 
-// TestChipLabelIsNotTheBuiltinTooltip guards the reason the plate is its own
-// surface: mygo's Tooltip draws outside the chip's clipped window, and the chip
-// is clipped to its rounded pill, so a built-in tip would be cut away.
 func TestChipLabelIsNotTheBuiltinTooltip(t *testing.T) {
 	src := readSourceFile(t, "selicon.go")
 	if containsText(src, `Label(tip).Tooltip(tip)`) {
@@ -270,22 +214,13 @@ func TestChipLabelIsNotTheBuiltinTooltip(t *testing.T) {
 	}
 }
 
-// TestChipLabelNeverTakesTheKeyboard pins the rule the whole chip follows: it
-// never takes the keyboard. A label that activated itself would steal focus
-// from the page the user is reading, which is the one thing the chip must not
-// do.
-//
-// It also pins the flyout over a plain window. A window created by NewWindow is
-// an overlapped window, and the desktop floors an overlapped window's height at
-// 64 physical pixels, which turned the 22 DIP plate into a 36 DIP slab. The
-// flyout is a WS_POPUP with no such floor.
 func TestChipLabelNeverTakesTheKeyboard(t *testing.T) {
 	src := readSourceFile(t, "selicon.go")
 	start := strings.Index(src, "func (a *app) raiseChipTip(")
 	if start < 0 {
 		t.Fatal("raiseChipTip is gone")
 	}
-	end := strings.Index(src[start:], "// hideChipTip")
+	end := strings.Index(src[start:], "func (a *app) hideChipTip(")
 	if end < 0 {
 		t.Fatal("could not delimit raiseChipTip")
 	}
@@ -308,9 +243,6 @@ func TestChipLabelNeverTakesTheKeyboard(t *testing.T) {
 	}
 }
 
-// TestChipPaletteStrip renders the chip at rest and on hover into one strip, so
-// the palette can be looked at rather than only measured. Opt-in, because it
-// writes a file.
 func TestChipPaletteStrip(t *testing.T) {
 	if os.Getenv("FASTDICTIONARY_VISUAL") == "" {
 		t.Skip("set FASTDICTIONARY_VISUAL=1 to write build/chip-palette.png")

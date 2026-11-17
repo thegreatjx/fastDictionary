@@ -1,6 +1,5 @@
 package main
 
-// 截图识别的三种模式。模型是否支持图片由服务端决定；这里只决定发不发截图。
 const (
 	ocrModeLocal      = "local"
 	ocrModeVision     = "vision"

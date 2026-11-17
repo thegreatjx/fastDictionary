@@ -6,8 +6,6 @@ import (
 	"testing"
 )
 
-// readSourceFile reads a source file next to the test, for the structural
-// assertions the runtime behaviour cannot express on a headless machine.
 func readSourceFile(t *testing.T, name string) string {
 	t.Helper()
 	b, err := os.ReadFile(name)

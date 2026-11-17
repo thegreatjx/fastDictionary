@@ -45,9 +45,6 @@ func TestPreferCJKRecognizer(t *testing.T) {
 	}
 }
 
-// TestIndraScriptSelectionIsTyped pins the wiring: the classifier must return
-// the named type and readLine must route through the shared predicate, with the
-// old ink-ratio heuristic and the bare-int constant block gone.
 func TestIndraScriptSelectionIsTyped(t *testing.T) {
 	src := readSourceFile(t, "indra_ocr.go")
 	if !containsText(src, "func (e *indraEngine) classifyScript(page grayImage, box lineBox) scriptKind {") {
@@ -65,8 +62,6 @@ func TestIndraScriptSelectionIsTyped(t *testing.T) {
 	}
 }
 
-// TestIndraStatusReportsLatinPrerequisites pins that the status line only claims
-// the Latin recognizer when readLine's three prerequisites are all present.
 func TestIndraStatusReportsLatinPrerequisites(t *testing.T) {
 	src := readSourceFile(t, "indra_ocr.go")
 	body := sourceFuncBody(t, src, "func indraStatus() string {")

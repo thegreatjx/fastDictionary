@@ -1,20 +1,3 @@
-// Edge TTS: the neural voices read-frog uses, ported to Go.
-//
-// The old fallback was SAPI5 (Huihui/Zira/David), which is concatenative and
-// sounds like a machine. Edge TTS is the same service the browser's Read
-// Aloud uses: it returns an ordinary mp3, so the existing MCI player handles
-// it with no new dependency.
-//
-// Two calls:
-//
-//  1. POST dev.microsofttranslator.com/apps/endpoint with an HMAC-SHA256
-//     X-MT-Signature header. The response carries a bearer token and the
-//     region the synthesis endpoint lives in.
-//  2. POST {region}.tts.speech.microsoft.com/cognitiveservices/v1 with that
-//     token and an SSML body. The response body is the mp3.
-//
-// The signing material is public (it ships inside every first-party Edge
-// client); the algorithm is read-frog's utils/server/edge-tts/signature.ts.
 package main
 
 import (
@@ -37,40 +20,17 @@ import (
 )
 
 const (
-	edgeTTSEndpointURL = "https://dev.microsofttranslator.com/apps/endpoint?api-version=1.0"
-	edgeTTSAppID       = "MSTranslatorAndroidApp"
-	edgeTTSClientVer   = "4.0.530a 5fe1dc6c"
-	edgeTTSUserID      = "0f04d16a175c411e"
-	edgeTTSHomeRegion  = "zh-Hans-CN"
-	edgeTTSUserAgent   = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36 Edg/127.0.0.0"
-	// edgeTTSFormat is the audio the service returns.
-	//
-	// It used to be audio-24khz-48kbitrate-mono-mp3: a 24kHz band-limited
-	// stream. Whatever a better DAC could reveal is not in that signal, which
-	// is why a motherboard jack and a USB dongle sound identical on it — the
-	// information was lost at the source, not in the output stage.
-	//
-	// Measured on this machine, same sentence:
-	//
-	//	24kHz/48kbps   1.04s   100 KB   (old)
-	//	24kHz/96kbps   0.78s   201 KB
-	//	48kHz/96kbps   1.02s   201 KB   (chosen)
-	//	48kHz/192kbps  1.83s   401 KB
-	//
-	// 48kHz/96kbps carries the full band the neural voice produces. 192kbps
-	// buys nothing audible for speech and costs most of a second, which the
-	// speaker button wears as sluggishness.
-	edgeTTSFormat = "audio-48khz-96kbitrate-mono-mp3"
-	// edgeTTSSecretBase64 is the signing key every Edge/Translator client
-	// carries. It is not a user secret: it identifies the client, nothing
-	// more.
+	edgeTTSEndpointURL  = "https://dev.microsofttranslator.com/apps/endpoint?api-version=1.0"
+	edgeTTSAppID        = "MSTranslatorAndroidApp"
+	edgeTTSClientVer    = "4.0.530a 5fe1dc6c"
+	edgeTTSUserID       = "0f04d16a175c411e"
+	edgeTTSHomeRegion   = "zh-Hans-CN"
+	edgeTTSUserAgent    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36 Edg/127.0.0.0"
+	edgeTTSFormat       = "audio-48khz-96kbitrate-mono-mp3"
 	edgeTTSSecretBase64 = "oik6PdDdMnOXemTbwvMn9de/h9lFnfBaCWbGMMZqqoSaQaqUOqjVGm5NqsmjcBI1x+sS9ugjB55HEJWRiFXYFw=="
-	// Refresh a little before the token expires, so a long read never dies
-	// mid-sentence.
-	edgeTTSTokenSlack = 3 * time.Minute
+	edgeTTSTokenSlack   = 3 * time.Minute
 )
 
-// edgeTTSAuth is the cached endpoint token.
 type edgeTTSAuth struct {
 	token     string
 	region    string
@@ -78,30 +38,16 @@ type edgeTTSAuth struct {
 }
 
 var (
-	edgeTTSMu    sync.Mutex
-	edgeTTSAuth_ edgeTTSAuth
-	// edgeTTSAuthGen increments every time a fresh token is stored. A request
-	// that was handed an older token must not invalidate the newer one when
-	// its call comes back rejected.
+	edgeTTSMu      sync.Mutex
+	edgeTTSAuth_   edgeTTSAuth
 	edgeTTSAuthGen uint64
-	// edgeTTSFetchMu serialises token handshakes so a burst of reads does not
-	// fetch the same token several times over.
 	edgeTTSFetchMu sync.Mutex
 )
 
-// edgeTTSFetchAuthFunc is the token handshake, kept as a variable so the
-// cache's refresh and invalidation rules can be tested without network access.
 var edgeTTSFetchAuthFunc = edgeTTSFetchAuth
 
-// edgeTTSHTTP is the client for the two TTS calls. It is separate from
-// httpClient (the 8s translation client) because a long sentence takes
-// longer to synthesise than a translation request.
 var edgeTTSHTTP = &http.Client{Timeout: 15 * time.Second}
 
-// edgeTTSSignature builds the X-MT-Signature header: appid, base64 HMAC of
-// "appid + url + date + requestID", the date and the request id, joined by
-// "::". Everything is lowercased before signing, which is what the service
-// expects.
 func edgeTTSSignature(now time.Time, requestID string) (string, error) {
 	key, err := base64.StdEncoding.DecodeString(edgeTTSSecretBase64)
 	if err != nil {
@@ -123,8 +69,6 @@ func edgeTTSSignature(now time.Time, requestID string) (string, error) {
 	return edgeTTSAppID + "::" + sig + "::" + date + "::" + requestID, nil
 }
 
-// edgeTTSFetchAuth exchanges a signature for a bearer token and the region
-// its endpoint lives in.
 func edgeTTSFetchAuth(ctx context.Context) (edgeTTSAuth, error) {
 	reqID := randomHexID(16)
 	sig, err := edgeTTSSignature(time.Now(), reqID)
@@ -166,8 +110,6 @@ func edgeTTSFetchAuth(ctx context.Context) (edgeTTSAuth, error) {
 	if out.Token == "" || out.Region == "" {
 		return edgeTTSAuth{}, fmt.Errorf("edge tts auth: empty token or region")
 	}
-	// The token is a JWT; its exp claim is the real expiry. Falling back to
-	// a ten minute lifetime matches the service's default.
 	ttl := 10 * time.Minute
 	if exp, ok := jwtExpiry(out.Token); ok {
 		ttl = time.Until(exp)
@@ -175,9 +117,6 @@ func edgeTTSFetchAuth(ctx context.Context) (edgeTTSAuth, error) {
 	return edgeTTSAuth{token: out.Token, region: out.Region, expiresAt: time.Now().Add(ttl)}, nil
 }
 
-// jwtExpiry reads the exp claim of a JWT without verifying it. The token is
-// used immediately and the service validates it; this only schedules the
-// refresh.
 func jwtExpiry(token string) (time.Time, bool) {
 	parts := strings.Split(token, ".")
 	if len(parts) < 2 {
@@ -196,15 +135,10 @@ func jwtExpiry(token string) (time.Time, bool) {
 	return time.Unix(claims.Exp, 0), true
 }
 
-// edgeTTSGetAuth returns a cached token, fetching a new one when it is
-// missing or about to expire. The generation identifies the token so a late
-// rejection only clears the copy the caller was actually given.
 func edgeTTSGetAuth(ctx context.Context) (edgeTTSAuth, uint64, error) {
 	if cached, gen := edgeTTSCachedAuth(); cached.token != "" && time.Now().Before(cached.expiresAt.Add(-edgeTTSTokenSlack)) {
 		return cached, gen, nil
 	}
-	// Only one reader refreshes; the rest wait here and reuse the token it
-	// stored instead of firing their own handshake.
 	edgeTTSFetchMu.Lock()
 	defer edgeTTSFetchMu.Unlock()
 	if cached, gen := edgeTTSCachedAuth(); cached.token != "" && time.Now().Before(cached.expiresAt.Add(-edgeTTSTokenSlack)) {
@@ -222,17 +156,12 @@ func edgeTTSGetAuth(ctx context.Context) (edgeTTSAuth, uint64, error) {
 	return fresh, gen, nil
 }
 
-// edgeTTSCachedAuth returns the cached token and the generation that produced
-// it.
 func edgeTTSCachedAuth() (edgeTTSAuth, uint64) {
 	edgeTTSMu.Lock()
 	defer edgeTTSMu.Unlock()
 	return edgeTTSAuth_, edgeTTSAuthGen
 }
 
-// invalidateEdgeTTSAuth clears the cached token only when the caller's token
-// is still the current one. A slow request holding an older token must not
-// throw away a token another request has already refreshed.
 func invalidateEdgeTTSAuth(gen uint64) {
 	edgeTTSMu.Lock()
 	defer edgeTTSMu.Unlock()
@@ -242,14 +171,6 @@ func invalidateEdgeTTSAuth(gen uint64) {
 	edgeTTSAuth_ = edgeTTSAuth{}
 }
 
-// edgeTTSVoice picks a neural voice for a language tag, honouring a user
-// override when one is configured.
-//
-// Every language the translator offers needs a voice here. The list used to
-// stop at the nine the picker had, so when the picker grew to thirty-four the
-// other twenty-five fell through to en-US-AriaNeural: Japanese, Arabic, Thai
-// and Hindi were all read aloud by an English speaker. That is the "robotic"
-// sound — an English voice pronouncing foreign text.
 func edgeTTSVoice(langTag string, us bool, override string) string {
 	if strings.TrimSpace(override) != "" {
 		return strings.TrimSpace(override)
@@ -328,13 +249,9 @@ func edgeTTSVoice(langTag string, us bool, override string) string {
 	case strings.HasPrefix(base, "ur"):
 		return "ur-PK-UzmaNeural"
 	}
-	// An unknown tag is better read by an English voice than not at all, but
-	// it should be rare: every offered language is listed above.
 	return "en-US-AriaNeural"
 }
 
-// escapeSSML escapes the five XML entities and drops control characters the
-// service rejects.
 func escapeSSML(text string) string {
 	var b strings.Builder
 	for _, r := range text {
@@ -358,7 +275,6 @@ func escapeSSML(text string) string {
 	return b.String()
 }
 
-// edgeTTSSSML wraps the text in the SSML body the service expects.
 func edgeTTSSSML(text, voice string) string {
 	locale := "en-US"
 	parts := strings.Split(voice, "-")
@@ -370,15 +286,10 @@ func edgeTTSSSML(text, voice string) string {
 		escapeSSML(locale), escapeSSML(voice), escapeSSML(text))
 }
 
-// FetchEdgeTTS synthesises text to a cached mp3 file and returns its path.
-// Repeated playback of the same text is served from the cache, which matters
-// for the chip's speak button.
 func FetchEdgeTTS(ctx context.Context, text, voice string) (string, error) {
 	return fetchEdgeTTSFormat(ctx, text, voice, edgeTTSFormat)
 }
 
-// fetchEdgeTTSWithFormat is the measurement seam: it returns the byte count
-// too, so a format can be compared instead of guessed.
 func fetchEdgeTTSWithFormat(ctx context.Context, text, voice, format string) (string, int, error) {
 	path, err := fetchEdgeTTSFormat(ctx, text, voice, format)
 	if err != nil {
@@ -391,8 +302,6 @@ func fetchEdgeTTSWithFormat(ctx context.Context, text, voice, format string) (st
 	return path, int(fi.Size()), nil
 }
 
-// fetchEdgeTTSFormat synthesises with an explicit output format and caches by
-// (voice, format, text).
 func fetchEdgeTTSFormat(ctx context.Context, text, voice, format string) (string, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -428,7 +337,6 @@ func fetchEdgeTTSFormat(ctx context.Context, text, voice, format string) (string
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == 401 || resp.StatusCode == 403 {
-		// The token went stale between the cache check and the call.
 		invalidateEdgeTTSAuth(authGen)
 		return "", fmt.Errorf("edge tts: token rejected (http %d)", resp.StatusCode)
 	}
@@ -455,13 +363,10 @@ func fetchEdgeTTSFormat(ctx context.Context, text, voice, format string) (string
 	return path, nil
 }
 
-// randomHexID returns n random bytes as lowercase hex, used for the request
-// id the signature covers.
 func randomHexID(n int) string {
 	buf := make([]byte, n)
 	seed := uint64(time.Now().UnixNano())
 	for i := range buf {
-		// A cheap xorshift: the id only has to be unique per request.
 		seed ^= seed << 13
 		seed ^= seed >> 7
 		seed ^= seed << 17
@@ -470,11 +375,6 @@ func randomHexID(n int) string {
 	return hex.EncodeToString(buf)
 }
 
-// warmEdgeTTSAuth fetches the endpoint token in the background at startup.
-//
-// The token handshake is about 650ms and used to be paid by the first
-// utterance of the session, which is exactly the press where the user is
-// waiting for sound. Warming it at launch moves that cost off the hot path.
 func warmEdgeTTSAuth() {
 	go func() {
 		defer recoverLog("tts.go:warmEdgeTTSAuth")

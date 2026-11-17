@@ -7,9 +7,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// splitOcrParagraphs keeps blank lines as paragraph boundaries. OCR often
-// reports one visual line per newline; when the page has no blank lines we keep
-// the individual lines so each source line can be paired with its translation.
 func splitOcrParagraphs(s string) []string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\r", "\n")
@@ -32,10 +29,6 @@ func splitOcrParagraphs(s string) []string {
 	return out
 }
 
-// renderOcrParagraphPairs is the screenshot reader's paragraph view. The
-// translation is normally one block; for OCR, the user needs to see which
-// translated paragraph belongs to which source paragraph. Long results fold at
-// four paragraphs and can be expanded without leaving the card.
 func (a *app) renderOcrParagraphPairs(c *ui.Context, t *ui.Theme, s snapshot) {
 	src := splitOcrParagraphs(s.source)
 	dst := splitOcrParagraphs(s.target)
@@ -124,10 +117,6 @@ func (a *app) renderOcrParagraphPairs(c *ui.Context, t *ui.Theme, s snapshot) {
 	}
 }
 
-// renderScreenshotPairActions keeps the same action row as the merged view.
-// Paragraph mode used to replace the whole result area, which hid copy, speech,
-// AI refine and vocabulary controls that users expect from every translation
-// card. The pair view now gets its own copy of that row.
 func (a *app) renderScreenshotPairActions(c *ui.Context, t *ui.Theme, cfg Config, s snapshot) {
 	ui.Row(c).FillWidth().Gap(Space1).AlignItems(ui.Center).Children(func() {
 		copyIcon := iconCopy

@@ -7,9 +7,6 @@ import (
 	"time"
 )
 
-// TestBreakerRegistryIsAtomic is the regression for the cross-test DATA RACE:
-// freshBreakers used to assign the package-level pointer while a request left
-// running by an earlier test called record on it.
 func TestBreakerRegistryIsAtomic(t *testing.T) {
 	src := readSourceFile(t, "services.go")
 	if !containsText(src, "var breakers atomic.Pointer[engineBreaker]") {
@@ -23,8 +20,6 @@ func TestBreakerRegistryIsAtomic(t *testing.T) {
 	}
 }
 
-// TestBreakerSwapIsRaceSafe exercises the exact pattern the tests use: swap the
-// registry while requests keep recording outcomes. Run with -race.
 func TestBreakerSwapIsRaceSafe(t *testing.T) {
 	old := breakers.Load()
 	t.Cleanup(func() { breakers.Store(old) })

@@ -5,12 +5,6 @@ import (
 	"testing"
 )
 
-// TestBothPopupEntriesResetScreenshotPin pins the invariant behind U8:
-// opening a fresh popup must release the pin a screenshot translation set
-// for its own window, on BOTH entry points. openPopupAction and
-// openPopupWithText need a real window, so their behaviour cannot be replayed
-// headless; the migration is factored into one pure method that is asserted
-// structurally here and exercised in TestResetScreenshotPinLocked.
 func TestBothPopupEntriesResetScreenshotPin(t *testing.T) {
 	src := readSourceFile(t, "popup.go")
 	if !containsText(src, "func (a *app) resetScreenshotPinLocked()") {
@@ -34,10 +28,6 @@ func TestBothPopupEntriesResetScreenshotPin(t *testing.T) {
 	}
 }
 
-// TestResetScreenshotPinLocked exercises the pure state migration directly.
-// This is the behaviour-level counterpart of the source-contract test above:
-// only a pin requested by a screenshot translation is released; a pin the user
-// set by hand (screenshotPinned == false) must survive a fresh popup.
 func TestResetScreenshotPinLocked(t *testing.T) {
 	cases := []struct {
 		name                     string
@@ -58,7 +48,6 @@ func TestResetScreenshotPinLocked(t *testing.T) {
 				t.Fatalf("复位后 screenshotPinned=%v pinned=%v，期望 %v %v",
 					a.screenshotPinned, a.pinned, tc.wantScreenshot, tc.wantPin)
 			}
-			// 重复调用必须幂等，不能把用户手动置顶也清掉。
 			a.resetScreenshotPinLocked()
 			if a.screenshotPinned != tc.wantScreenshot || a.pinned != tc.wantPin {
 				t.Fatalf("重复复位后状态漂移：screenshotPinned=%v pinned=%v",

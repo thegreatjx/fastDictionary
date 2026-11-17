@@ -9,9 +9,6 @@ import (
 
 func TestDetectLocal(t *testing.T) {
 	cases := map[string]string{
-		// Plain ASCII cannot prove English: French and Dutch sentences also
-		// consist of ASCII letters. detectLocal reports only what the script
-		// settles, and leaves the rest to the engine.
 		"hello world": "",
 		"你好世界":        "zh-Hans",
 		"こんにちは":       "ja",
@@ -36,7 +33,6 @@ func TestSameLang(t *testing.T) {
 	}
 }
 
-// TestLatencyProbe measures the hot path against the live endpoints.
 func TestLatencyProbe(t *testing.T) {
 	texts := []string{"hello world", "你好，世界", "serendipity"}
 	for _, text := range texts {

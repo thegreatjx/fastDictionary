@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-// exportHTMLPage writes one entry and returns the exported page text.
 func exportHTMLPage(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -27,10 +26,6 @@ func exportHTMLPage(t *testing.T) string {
 	return string(data)
 }
 
-// TestExportHTMLIsExplicitlyASnapshot 钉住「导出的是快照」这件事写在页面上。
-//
-// 以前页面没有任何时间或来源说明，用户导出一份 HTML 后回到桌面端加词，
-// 再打开网页版会以为数据丢了。
 func TestExportHTMLIsExplicitlyASnapshot(t *testing.T) {
 	page := exportHTMLPage(t)
 	if !strings.Contains(page, "导出的静态快照") {
@@ -41,10 +36,6 @@ func TestExportHTMLIsExplicitlyASnapshot(t *testing.T) {
 	}
 }
 
-// TestExportHTMLImportIsDisabledNotFake 钉住假导入按钮已经拿掉。
-//
-// 以前是一个真的文件选择框，选完文件只弹一句「请用桌面端」，用户会以为
-// 自己操作错了。现在直接显示为不可用，并说明原因。
 func TestExportHTMLImportIsDisabledNotFake(t *testing.T) {
 	page := exportHTMLPage(t)
 	if strings.Contains(page, `type="file"`) || strings.Contains(page, "handleImport") {
@@ -58,7 +49,6 @@ func TestExportHTMLImportIsDisabledNotFake(t *testing.T) {
 	}
 }
 
-// TestExportHTMLUsesCategoryConstants 钉住分类值不再散落成字符串字面量。
 func TestExportHTMLUsesCategoryConstants(t *testing.T) {
 	page := exportHTMLPage(t)
 	if !strings.Contains(page, "const CAT=Object.freeze(") {

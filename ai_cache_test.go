@@ -5,9 +5,6 @@ import (
 	"testing"
 )
 
-// TestAnalysisCacheKeepsOneAnswerPerText is the regression test for the user's
-// "长难句每次结果好像都不一样" report. Two looks at the same sentence must show
-// the same card, and the 重新翻译 button must be able to ask for a new one.
 func TestAnalysisCacheKeepsOneAnswerPerText(t *testing.T) {
 	a := newTestApp()
 	key := aiResultCacheKey("default-sentence-analysis", "group/model", "zh-Hans", "She cooked the books.")
@@ -23,8 +20,6 @@ func TestAnalysisCacheKeepsOneAnswerPerText(t *testing.T) {
 		a.mu.Unlock()
 		t.Fatal("stored answer was not retrievable")
 	}
-	// A second pass over the same text overwrites rather than appending, so the
-	// cache cannot grow per look.
 	a.storeAIResult(key, `{"segments":[{"text":"She","role":"subject","is_backbone":true},{"text":" cooked","role":"predicate","is_backbone":true}]}`)
 	second := a.cachedAIResult(key)
 	a.mu.Unlock()
@@ -37,7 +32,6 @@ func TestAnalysisCacheKeepsOneAnswerPerText(t *testing.T) {
 	}
 }
 
-// TestAnalysisCacheEvictsOldest keeps the map from growing without bound.
 func TestAnalysisCacheEvictsOldest(t *testing.T) {
 	a := newTestApp()
 	a.mu.Lock()
@@ -57,8 +51,6 @@ func TestAnalysisCacheEvictsOldest(t *testing.T) {
 	}
 }
 
-// TestCacheHitSkipsTheModel proves the cached answer is used without a network
-// call: runAction must return a card even though magpie is unreachable here.
 func TestCacheHitSkipsTheModel(t *testing.T) {
 	a := newTestApp()
 	a.store.Update(func(c *Config) { c.AIEnabled = true })
@@ -103,8 +95,6 @@ func TestCacheHitSkipsTheModel(t *testing.T) {
 	}
 }
 
-// TestRefreshBypassesTheCache guards the other half: 重新翻译 has to ask the
-// model again, or the button would silently do nothing on a cached sentence.
 func TestRefreshBypassesTheCache(t *testing.T) {
 	a := newTestApp()
 	a.store.Update(func(c *Config) { c.AIEnabled = true })

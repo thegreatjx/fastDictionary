@@ -7,9 +7,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// grammarFixture is a main clause with a prepositional modifier and a cause
-// clause: enough structure to exercise the clause wash, the fold and the hint
-// bar without turning the card into a wall of badges.
 const grammarFixture = "We are doubling the context window for Argon and Carbon because users keep hitting the limit."
 
 func grammarFixtureResult() *SentenceAnalysisResult {
@@ -36,7 +33,6 @@ func grammarFixtureResult() *SentenceAnalysisResult {
 	}
 }
 
-// renderGrammarText renders the card and returns every string it drew.
 func renderGrammarText(t *testing.T, trunk bool) string {
 	t.Helper()
 	th := grammarThemeForTest(t)
@@ -49,8 +45,6 @@ func renderGrammarText(t *testing.T, trunk bool) string {
 	return strings.Join(tt.Texts(), "")
 }
 
-// TestTrunkToggleFoldsTheSentence pins that "只看主干" removes text rather than
-// only dimming it.
 func TestTrunkToggleFoldsTheSentence(t *testing.T) {
 	full := renderGrammarText(t, false)
 	trunk := renderGrammarText(t, true)
@@ -72,9 +66,6 @@ func TestTrunkToggleFoldsTheSentence(t *testing.T) {
 	}
 }
 
-// TestGrammarUsesOneInkLadder pins the palette: the trunk keeps body ink, the
-// predicate alone takes the theme accent, modifiers drop to muted grey, and
-// clauses use a low-alpha wash instead of a second hue.
 func TestGrammarUsesOneInkLadder(t *testing.T) {
 	th := grammarThemeForTest(t)
 	ink := grammarInkFor(th)
@@ -99,8 +90,6 @@ func TestGrammarUsesOneInkLadder(t *testing.T) {
 	}
 }
 
-// TestGrammarCardRendersSegmentText checks that the new segment renderer keeps
-// every word of the sentence, not just the marked ones.
 func TestGrammarCardRendersSegmentText(t *testing.T) {
 	th := grammarThemeForTest(t)
 	const sentence = "The report was never discussed"
@@ -121,7 +110,6 @@ func TestGrammarCardRendersSegmentText(t *testing.T) {
 	}
 }
 
-// grammarThemeForTest returns the theme the grammar card really draws with.
 func grammarThemeForTest(t *testing.T) *ui.Theme {
 	t.Helper()
 	var got *ui.Theme

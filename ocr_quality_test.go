@@ -14,14 +14,6 @@ import (
 	"testing"
 )
 
-// TestPrepareOCRImageScalesForRecognition pins the scaling that makes small
-// screen type legible.
-//
-// Windows.Media.Ocr reads 12px Chinese at roughly 40% character error and 14px
-// at 15%; at 2x a real 900x200 crop of Windows-rendered text went from six
-// wrong glyphs in fourteen to one, and English from a mangled word to exact.
-// The scaling is the whole reason screenshot translation works, so a refactor
-// that quietly drops it would be invisible in every other test.
 func TestPrepareOCRImageScalesForRecognition(t *testing.T) {
 	dir := t.TempDir()
 	src := image.NewRGBA(image.Rect(0, 0, 40, 20))
@@ -46,8 +38,6 @@ func TestPrepareOCRImageScalesForRecognition(t *testing.T) {
 		t.Fatalf("2x scale gave %dx%d, want 80x40", b.Dx(), b.Dy())
 	}
 
-	// The preview and the recorded crop bounds both need the original size,
-	// so the scaled copy must be a separate file and the original untouched.
 	if _, err := os.Stat(in); err != nil {
 		t.Fatalf("original was removed: %v", err)
 	}
@@ -57,9 +47,6 @@ func TestPrepareOCRImageScalesForRecognition(t *testing.T) {
 	}
 }
 
-// TestPrepareOCRImageRefusesToOverflowEngineLimit covers the crop so large that
-// scaling would make the engine throw. A 1x read of a huge image still beats an
-// error the user cannot act on.
 func TestPrepareOCRImageRefusesToOverflowEngineLimit(t *testing.T) {
 	dir := t.TempDir()
 	huge := image.NewRGBA(image.Rect(0, 0, maxOCRSide, 10))
@@ -101,20 +88,13 @@ func decodePNG(path string) (image.Image, error) {
 	return img, err
 }
 
-// TestCleanOcrTextRemovesCJKSeparation covers the shape Windows.Media.Ocr
-// actually produces for Chinese: one word per glyph.
 func TestCleanOcrTextRemovesCJKSeparation(t *testing.T) {
 	cases := []struct{ in, want string }{
-		// The reported bug: 微软翻译 came back as separate glyphs.
 		{"微 软 翻 译", "微软翻译"},
 		{"点 击 这 里 开 始", "点击这里开始"},
-		// A space beside Latin text is a real word break and must survive.
 		{"打开 Chrome 浏览器", "打开 Chrome 浏览器"},
 		{"Hello world 你好 世界", "Hello world 你好世界"},
-		// Full-width punctuation stays put, and the space next to it goes
-		// only when both neighbours are CJK.
 		{"你 好 ， 世 界 。", "你好，世界。"},
-		// Mixed line: cleaning one line must not touch the next.
 		{"微 软 翻 译\nHello world", "微软翻译\nHello world"},
 	}
 	for _, c := range cases {
@@ -124,29 +104,16 @@ func TestCleanOcrTextRemovesCJKSeparation(t *testing.T) {
 	}
 }
 
-// TestCleanOcrTextKeepsLineStructure guards the reason CleanOcrText exists
-// separately from CleanSelectionText: a screenshot of a paragraph has to stay
-// a paragraph.
 func TestCleanOcrTextKeepsLineStructure(t *testing.T) {
 	in := "第一行\n第二行\n\n第四段"
 	if got := CleanOcrText(in); got != in {
 		t.Fatalf("CleanOcrText collapsed the lines: %q, want %q", got, in)
 	}
-	// The contrast: the selection cleaner is allowed to fold them.
 	if got := CleanSelectionText(in); !strings.Contains(got, "\n") {
 		t.Logf("CleanSelectionText kept newlines too: %q", got)
 	}
 }
 
-// TestStreamAIOmitsReasoningWhenEffortNone is the regression test for the
-// 2.3x slowdown.
-//
-// The gateway validates reasoning_effort against each model's own
-// reasoning_levels and silently discards a value the model does not list,
-// after which the model applies its default reasoning. Sending a guessed level
-// is therefore worse than sending nothing: on gemini-3.8-flash, omitting the
-// field costs 8.93s and 743 reasoning tokens, while asking for its real "low"
-// level costs 2.58s and none. An empty effort must carry no reasoning key.
 func TestStreamAIOmitsReasoningWhenEffortNone(t *testing.T) {
 	var bodies []map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -174,9 +141,6 @@ func TestStreamAIOmitsReasoningWhenEffortNone(t *testing.T) {
 		return bodies[0]
 	}
 
-	// "" is what ResolveEffort returns when the model's levels are unknown.
-	// The legacy spellings are still accepted so an old config or a saved
-	// custom action cannot reintroduce the guessed-value bug.
 	for _, effort := range []string{"", "off", "none"} {
 		body := run(effort)
 		if _, ok := body["reasoning_effort"]; ok {
@@ -190,8 +154,6 @@ func TestStreamAIOmitsReasoningWhenEffortNone(t *testing.T) {
 		}
 	}
 
-	// A real level must still be sent, both ways: the gateway reads the flat
-	// field and the nested object, and older paths depend on each.
 	for _, effort := range []string{EffortDeep, "low", "minimal"} {
 		body := run(effort)
 		if body["reasoning_effort"] != effort {
@@ -204,11 +166,6 @@ func TestStreamAIOmitsReasoningWhenEffortNone(t *testing.T) {
 	}
 }
 
-// TestRunActionDoesNotDuplicateSelection guards the doubled input tokens.
-//
-// The action prompt used to be formatted with the selection in both
-// {{selection}} and {{paragraphs}}, so the model received the same sentence
-// twice under two headings. It could not tell which one was context.
 func TestRunActionDoesNotDuplicateSelection(t *testing.T) {
 	tpl := "## Input\nSelection: {{selection}}\nParagraphs: {{paragraphs}}\nTarget: {{targetLanguage}}"
 	got := FormatActionPrompt(tpl, "量价背离是技术分析术语", "", "简体中文")

@@ -21,9 +21,6 @@ func resetIndraForTest(t *testing.T) {
 	})
 }
 
-// TestIndraRetriesAfterCooldown is the regression: the first failed load was
-// cached for the whole process, so a transient problem (model file locked,
-// memory pressure) turned OCR off until the user restarted.
 func TestIndraRetriesAfterCooldown(t *testing.T) {
 	resetIndraForTest(t)
 	calls := 0

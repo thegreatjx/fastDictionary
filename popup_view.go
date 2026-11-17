@@ -8,10 +8,6 @@ import (
 	"github.com/egoist/mygo/ui/markdown"
 )
 
-// renderIconButton renders a square icon button where the icon is guaranteed
-// to be strictly horizontally and vertically centered with crisp feedback.
-// The resting ink is TextSec rather than TextMuted: the row holds real
-// actions, and a 14px glyph at muted grey disappeared into the card.
 func renderIconButton(c *ui.Context, icon *ui.SVG, tip string, size, iconSize float32, active bool) ui.Element {
 	t := c.Theme()
 	at := appTheme(t)
@@ -42,8 +38,6 @@ func renderIconButton(c *ui.Context, icon *ui.SVG, tip string, size, iconSize fl
 
 func (a *app) popupView(c *ui.Context) {
 	cfg := a.store.Get()
-	// MyGo resolves "system" in its base theme. Deriving darkness from the
-	// config alone forced every system-themed popup into the light palette.
 	applyTheme(c, cfg.ThemeMode, c.Theme().Dark, cfg.AccentTheme)
 	t := c.Theme()
 	s := a.snap()
@@ -54,7 +48,6 @@ func (a *app) popupView(c *ui.Context) {
 		a.win.Hide()
 	}
 
-	// Mode switching shortcuts: Ctrl+1 / Alt+1 (Translate), Ctrl+2 / Alt+2 (Grammar), Ctrl+3 / Alt+3 (Writing)
 	if c.Shortcut(ui.Ctrl, ui.Key1) || c.Shortcut(ui.Alt, ui.Key1) {
 		a.switchPopupMode(0)
 	} else if c.Shortcut(ui.Ctrl, ui.Key2) || c.Shortcut(ui.Alt, ui.Key2) {
@@ -63,20 +56,15 @@ func (a *app) popupView(c *ui.Context) {
 		a.switchPopupMode(2)
 	}
 
-	// Quick refresh / re-translate: F5 or Ctrl+R
 	if c.Shortcut(0, ui.KeyF5) || c.Shortcut(ui.Ctrl, ui.KeyR) {
 		if s.source != "" {
 			a.rerunCurrentModeFresh(s.source)
 		}
 	}
 
-	// Quick save to notebook: Ctrl+S
 	if c.Shortcut(ui.Ctrl, ui.KeyS) {
 		a.handleQuickSave(s)
 	}
-	// Ctrl+Shift+C copies whatever this card is mainly showing, Ctrl+L reads
-	// the foreign text, Ctrl+P pins: the three things the hand reaches for
-	// while reading.
 	if c.Shortcut(ui.Ctrl|ui.Shift, ui.KeyC) {
 		if text := primaryCopyText(s); text != "" {
 			a.copyToClipboard(text)
@@ -102,24 +90,10 @@ func (a *app) popupView(c *ui.Context) {
 
 		ui.Divider(c).FillWidth()
 
-		// ===================================================================
-		// 2. Main Content Scroll View (Independent Dedicated Views)
-		// ===================================================================
 		scrollEl = ui.Scroll(c).Grow(1).FillWidth()
 		scrollEl.Children(func() {
-			// Scroll paints its bar over the container's right edge: the
-			// track starts 12px in and the thumb sits 9px in, both measure
-			// from the right edge (ui/paint.go scrollBars, theme scrollbar
-			// width 6). Text that ran to the edge had its last character
-			// under the thumb. 14px of right padding clears the whole
-			// track, so the bar never covers a glyph.
-			// Padding is CSS order: top, right, bottom, left.
 			contentEl = ui.Column(c).FillWidth().Gap(6).Padding(0, 14, 0, 0)
 			contentEl.Children(func() {
-				// A notice explains why the shortcut opened something other
-				// than what the user expected (no selection, for instance).
-				// It used to be stored and never rendered, so the user saw an
-				// empty input box with no explanation at all.
 				if s.notice != "" {
 					ui.Box(c).FillWidth().Padding(8, 10).Radius(6).
 						Background(noticeBg(t)).Border(1, noticeBorder(t)).Children(func() {
@@ -130,8 +104,6 @@ func (a *app) popupView(c *ui.Context) {
 					})
 				}
 
-				// The engine echoed the source back. It answered, so this is not
-				// the red failure box: a 重试 would return the same text.
 				if s.echoNote != "" {
 					ui.Box(c).FillWidth().Padding(8, 10).Radius(6).
 						Background(noticeBg(t)).Border(1, noticeBorder(t)).Children(func() {
@@ -142,11 +114,6 @@ func (a *app) popupView(c *ui.Context) {
 					})
 				}
 
-				// A copy or save that landed is shown by the control itself:
-				// the copy icon turns into a check and the save button turns
-				// into 已保存. A second banner repeating the same sentence was
-				// pure noise, and its green fill was the loudest thing in the
-				// card. Only a failed write still needs a strip of its own.
 				if s.saveErr != "" {
 					ui.Box(c).FillWidth().Padding(6, 10).Radius(6).
 						Background(dangerSoft(t)).Border(1, dangerLine(t)).Children(func() {
@@ -157,9 +124,6 @@ func (a *app) popupView(c *ui.Context) {
 					})
 				}
 
-				// Show general error if present. A failure that left the card
-				// empty is not useful without a way to try again; keep the
-				// reason and the retry together.
 				if s.errText != "" {
 					ui.Box(c).FillWidth().Padding(Space2, Space3).Radius(RadiusTrack).
 						Background(dangerSoft(t)).
@@ -176,22 +140,10 @@ func (a *app) popupView(c *ui.Context) {
 					})
 				}
 
-				// The AI busy state is drawn by renderAIResultState in the body,
-				// where the card will appear. It used to be drawn twice: a
-				// banner here and a second spinner plus progress bar in the
-				// body, so one generation showed two spinners and a bar for a
-				// task with no measurable progress. The body keeps the single
-				// indicator, next to the message that says what is running.
-
-				// RENDER CLEAN HERO CONTENT BY MODE:
 				switch s.mode {
 				case modeGrammar:
-					// Dedicated Sentence Analysis Mode!
 					switch classifyAIView(s) {
 					case aiPassStructured:
-						// The card covers the whole selection in one pass: every
-						// sentence keeps its own segmentation, but the reader sees
-						// the paragraph as one structure instead of paging through it.
 						text := grammarAnalysisText(s.source)
 						a.renderGrammarVisualCard(c, t, text, s.grammarResult, s.grammarSaved, func() { a.saveGrammarToVocab(s.grammarResult) })
 					case aiPassIdle:
@@ -201,7 +153,6 @@ func (a *app) popupView(c *ui.Context) {
 					}
 
 				case modeDictionary:
-					// Dedicated Learner's Dictionary Mode!
 					switch classifyAIView(s) {
 					case aiPassStructured:
 						renderDictionaryCard(c, t, s.source, s.dictResult, s.savedDictTerm, func() { a.saveDictToVocab(s.dictResult) })
@@ -212,7 +163,6 @@ func (a *app) popupView(c *ui.Context) {
 					}
 
 				case modeWriting:
-					// Dedicated Improve Writing Mode!
 					switch classifyAIView(s) {
 					case aiPassStructured:
 						renderImproveWritingCard(c, t, s.source, s.writingResult, s.writingSaved, func(txt string) { a.copyToClipboard(txt) }, func() { a.saveWritingToVocab(s.writingResult) })
@@ -230,28 +180,12 @@ func (a *app) popupView(c *ui.Context) {
 
 		ui.Divider(c).FillWidth()
 
-		// ===================================================================
-		// 3. Bottom Bar
-		// ===================================================================
 		a.renderPopupFooter(c, t, cfg, s)
 	})
 
-	// The window was opened at an estimated height. Once the first frame has
-	// laid the content out, shrink or grow the window so it ends where the
-	// text ends instead of leaving a screenful of empty space below it.
 	a.scheduleAutofit(scrollEl, contentEl)
 }
 
-// scheduleAutofit resizes the popup from the previous frame's measurements.
-// Bounds are one frame behind, so the resize is posted through Window.Update:
-// it runs after the current frame, and the following frame renders at the new
-// size.
-//
-// Both measurements come from the same layout pass, so the arithmetic stays in
-// layout units (DIPs). Reading the window height instead mixed physical pixels
-// with DIPs: at 125% scaling the window reported 1.25x the height the layout
-// had used, so every shrink request looked like a growth and the popup stayed
-// at its initial height.
 func (a *app) scheduleAutofit(scrollEl, contentEl ui.Element) {
 	viewportH := scrollEl.Bounds().H
 	contentH := contentEl.LayoutBounds().H
@@ -265,11 +199,6 @@ func (a *app) scheduleAutofit(scrollEl, contentEl ui.Element) {
 	a.lastAutofitWinH = h
 	a.mu.Unlock()
 
-	// Bounds describe the previous frame's layout. Right after a resize this
-	// frame lays out at the new height while the numbers still describe the
-	// old one, so they are only trusted once the window height has stopped
-	// changing. Without this the stale viewport fed a fresh delta back in
-	// every frame and the popup oscillated instead of settling.
 	if !settled {
 		win := a.win
 		win.Update(func() {})
@@ -278,7 +207,6 @@ func (a *app) scheduleAutofit(scrollEl, contentEl ui.Element) {
 
 	delta, ok := autofitHeight(viewportH, contentH)
 	a.mu.Lock()
-	// 先确认上一轮的请求有没有真的改变窗口，再让本轮做决定。
 	a.autofit.confirm(h)
 	delta, ok = a.autofit.decide(delta, ok, h, contentH)
 	a.mu.Unlock()
@@ -293,10 +221,6 @@ func (a *app) scheduleAutofit(scrollEl, contentEl ui.Element) {
 	win.Update(func() { a.applyPopupHeight(delta) })
 }
 
-// primaryCopyText is the text the card's main copy action would put on the
-// clipboard: the improved version in writing mode, the translation in grammar
-// mode, the translation everywhere else. Ctrl+Shift+C uses it so the shortcut
-// and the visible button cannot drift apart.
 func primaryCopyText(s snapshot) string {
 	switch s.mode {
 	case modeWriting:
@@ -324,9 +248,6 @@ func renderNotesBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 				ui.Spacer(c).Grow(1)
 				ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, "显示猜你想存").FontSize(11).TextColor(t.TextMuted)
-					// Bound to the live config: the local variable this used
-					// to read was recreated on every frame, so the switch
-					// always rendered as on and clicking it did nothing.
 					enabled := a.store.Get().ShowNotes
 					ui.Switch(c, &enabled).Height(18).OnChange(func() {
 						a.store.Update(func(c *Config) { c.ShowNotes = enabled })
@@ -355,10 +276,6 @@ func renderNotesBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 			}
 
 			for idx := range s.notes {
-				// Bind a local copy and write the change back through the app's
-				// lock. The snapshot's slice is a copy, but a checkbox that
-				// writes through it would write into a value the view does not
-				// own.
 				i := idx
 				item := s.notes[idx]
 				checked := item.Checked
@@ -408,7 +325,6 @@ func renderNotesBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 	})
 }
 
-// renderWordSaveButton keeps enrichment and file I/O off the UI thread.
 func renderWordSaveButton(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 	isSaved := s.savedDictTerm != "" && strings.EqualFold(strings.TrimSpace(s.savedDictTerm), strings.TrimSpace(s.source))
 	if isSaved {
@@ -432,16 +348,6 @@ func renderWordSaveButton(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 	}
 }
 
-// dictBlock renders pronunciation controls and meanings. The IPA is quiet
-// text beside a small speaker chip, so the phonetics read as part of the
-// word instead of as a button label.
-// dictBlock renders the dictionary detail under the translation: phonetics
-// with audible buttons, then part of speech and meaning.
-//
-// The type scale is deliberate — headword and phonetics in the caller, POS as
-// a small tinted pill, meaning one step larger and darker than the pill, extra
-// senses quieter still. Reading a word should not need squinting at one grey
-// block of text.
 func dictBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 	ui.Divider(c).FillWidth()
 	hasPhones := (s.dict != nil && (s.dict.UKPhone != "" || s.dict.USPhone != "")) || (s.gdict != nil && s.gdict.Pron != "")
@@ -482,8 +388,6 @@ func dictBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 	} else if s.gdict != nil {
 		for _, e := range s.gdict.Entries {
 			ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Start).Children(func() {
-				// A pill, not bare coloured text: it separates the part of
-				// speech from the meaning without spending a whole column.
 				ui.Box(c).Shrink(0).Padding(2, 6).Radius(4).
 					Background(t.SurfaceHover).Border(1, t.Border).Children(func() {
 					ui.Text(c, e.POS).FontSize(11).FontWeight(600).TextColor(t.Accent).SingleLine()
@@ -514,8 +418,6 @@ func (a *app) renderEmptyActionStart(c *ui.Context, t *ui.Theme, s snapshot, act
 	})
 }
 
-// sameLang reports whether a detected tag and a target tag are the same
-// language in practice (zh-CN vs zh-Hans and friends).
 func sameLang(a, b string) bool {
 	if a == b {
 		return true
@@ -531,29 +433,11 @@ func langPrefix(tag string) string {
 	return strings.ToLower(tag)
 }
 
-// renderAIResultState draws what the three AI cards show while their
-// structured result does not exist yet.
-//
-// It used to render s.aiText — the raw, still-arriving model output — so the
-// entire generation appeared as a wall of JSON that then vanished when the
-// parser finally produced a card. While the model is still streaming the text
-// is noise, not content, so a placeholder takes its place.
-//
-// After the stream ends the text is only shown when it is prose the reader can
-// actually use. A failed parse of a JSON answer leaves braces and half-quoted
-// keys, which is unreadable; that case gets a sentence saying so and points at
-// the 重新翻译 button the footer already carries.
 func renderAIResultState(c *ui.Context, t *ui.Theme, s snapshot) {
 	switch classifyAIResult(s) {
 	case aiPassIdle, aiPassStructured:
-		// Structured cards are drawn by popupView's mode branches; this
-		// function is only reached when no card is available.
 		return
 	case aiPassStreaming:
-		// One spinner and one line: the task has no measurable progress, so a
-		// progress bar only imitated work it could not report. The message
-		// lives here rather than in a banner above so the wait appears where
-		// the card will land.
 		ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(10).Padding(32, 0).Children(func() {
 			ui.Spinner(c).Size(22, 22)
 			ui.Text(c, aiBusyMessage(s.mode)).FontSize(13).TextColor(t.TextMuted)
@@ -574,7 +458,6 @@ func renderAIResultState(c *ui.Context, t *ui.Theme, s snapshot) {
 	}
 }
 
-// aiBusyMessage says what the running AI pass is doing, in the reader's terms.
 func aiBusyMessage(m popupMode) string {
 	switch m {
 	case modeDictionary:
@@ -587,9 +470,6 @@ func aiBusyMessage(m popupMode) string {
 	return "AI 正在分析…"
 }
 
-// looksLikeStructuredPayload reports whether text is a JSON object, array or
-// fenced block rather than prose. Only structured text is withheld: a model
-// that answers in plain sentences has still produced something worth reading.
 func looksLikeStructuredPayload(text string) bool {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
@@ -606,8 +486,6 @@ func looksLikeStructuredPayload(text string) bool {
 	return strings.Contains(head, "{\"")
 }
 
-// renderAiMarkdown displays AI output using MyGo's markdown component:
-// streaming with fade-in when busy, and complete rich view when finished.
 func renderAiMarkdown(c *ui.Context, text string, busy bool) {
 	if busy {
 		markdown.Stream(c, text, nil)
@@ -616,8 +494,6 @@ func renderAiMarkdown(c *ui.Context, text string, busy bool) {
 	}
 }
 
-// renderPopupEmptyState 是浮窗空状态的统一组件：Lucide 图标 + 标题 + 说明，
-// 不再用 Emoji 字符。
 func renderPopupEmptyState(c *ui.Context, t *ui.Theme, icon *ui.SVG, title, desc string) {
 	at := appTheme(t)
 	ui.Column(c).FillWidth().Padding(Space6, Space4).Gap(Space2).Center().Children(func() {

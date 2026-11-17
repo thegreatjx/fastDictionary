@@ -28,7 +28,6 @@ func TestParseDictionaryResult(t *testing.T) {
 		t.Errorf("expected memory tips to contain bloom, got %s", res.MemoryTips)
 	}
 
-	// Test Chinese keys fallback
 	zhJSON := `{"词条":"感動","音标":"kandou","词性":"noun","释义":"感动","句子":"映画を見て感動した。","句中词形":"感動","句子翻译":"看了电影很感动。","记忆技巧":"汉字：感+动","难度":"B1"}`
 	zhRes := ParseDictionaryResult(zhJSON)
 	if zhRes == nil || zhRes.Term != "感動" || zhRes.Difficulty != "B1" {
@@ -53,8 +52,6 @@ func TestParseSentenceAnalysisStructured(t *testing.T) {
 		t.Errorf("unexpected translation: %s", res.Translation)
 	}
 
-	// Without a source the slices are accepted as-is: the caller may only have
-	// the model answer, and alignment cannot be checked.
 	noSource := `{"segments":[{"text":"Only then","role":"modifier"},{"text":" did she realize","role":"predicate"}],"translation":"直到那时她才意识到。"}`
 	sRes := ParseSentenceAnalysis(noSource)
 	if sRes == nil || len(sRes.Segments) != 2 || sRes.Translation == "" {
@@ -106,7 +103,6 @@ func TestVocabularyStoreMemory(t *testing.T) {
 		t.Fatalf("search serendipity failed: %+v", results)
 	}
 
-	// Duplicate update test (same term and context)
 	store.Add(VocabularyEntry{
 		Term:       "serendipity",
 		Phonetic:   "/ˌserənˈdɪpəti/",
@@ -121,7 +117,6 @@ func TestVocabularyStoreMemory(t *testing.T) {
 		t.Errorf("expected updated definition, got %s", store.List()[0].Definition)
 	}
 
-	// Delete test
 	id := store.List()[0].ID
 	if !store.Delete(id) || store.Count() != 0 {
 		t.Fatalf("delete failed, count = %d", store.Count())
@@ -134,8 +129,6 @@ func TestCustomActionConfigMethods(t *testing.T) {
 		t.Fatalf("expected 2 built-in actions, got %d", len(cfg.CustomActions))
 	}
 
-	// 词典 is retired with its popup tab: the card lives in 生词本 now, so the
-	// action must not come back for an install that asks for defaults.
 	if retired := cfg.GetAction("default-dictionary"); retired != nil {
 		t.Fatalf("default-dictionary should be gone, got %+v", retired)
 	}
@@ -150,23 +143,17 @@ func TestCustomActionConfigMethods(t *testing.T) {
 		t.Fatalf("expected 2 enabled actions, got %d", len(enabled))
 	}
 
-	// Disable grammar
 	grammar.Enabled = false
 	if len(cfg.GetEnabledActions()) != 1 {
 		t.Fatalf("expected 1 enabled action after disabling grammar, got %d", len(cfg.GetEnabledActions()))
 	}
 
-	// Reset action
 	cfg.ResetAction("default-sentence-analysis")
 	if !cfg.GetAction("default-sentence-analysis").Enabled {
 		t.Fatal("expected sentence analysis to be re-enabled after reset")
 	}
 }
 
-// TestLegacyFilesDropTheDictionaryAction covers the migration half of removing
-// 词典: the action was written into every config file that ever ran the app, so
-// dropping it from DefaultCustomActions() leaves it sitting in the list — in
-// the 划词 chip and in 指令 settings — with no view able to render it.
 func TestLegacyFilesDropTheDictionaryAction(t *testing.T) {
 	var cfg Config
 	cfg.CustomActions = []CustomActionConfig{
@@ -174,8 +161,6 @@ func TestLegacyFilesDropTheDictionaryAction(t *testing.T) {
 		{ID: "default-sentence-analysis", Name: "长难句分析", Enabled: true},
 		{ID: "my-own", Name: "我的指令", Enabled: true},
 	}
-	// The return value is what makes load() rewrite the file: without it the
-	// stale entry is filtered in memory on every start and the file keeps it.
 	if !ensureDefaultActions(&cfg) {
 		t.Fatal("cleanup did not report the dictionary action it removed")
 	}
@@ -185,7 +170,6 @@ func TestLegacyFilesDropTheDictionaryAction(t *testing.T) {
 	if cfg.GetAction("default-sentence-analysis") == nil || cfg.GetAction("my-own") == nil {
 		t.Fatalf("migration removed the wrong actions: %+v", cfg.CustomActions)
 	}
-	// A file that never had the action must not be marked dirty.
 	var clean Config
 	clean.CustomActions = []CustomActionConfig{{ID: "default-sentence-analysis", Name: "长难句分析", Enabled: true}}
 	if ensureDefaultActions(&clean) {
@@ -216,19 +200,15 @@ func TestPopupRendersImproveWritingCard(t *testing.T) {
 func TestSettingsCustomActionsAndVocabularyPages(t *testing.T) {
 	a := newTestApp()
 
-	// 1. Actions page list view
 	a.page = "actions"
 	tt := ui.NewTester(a.settingsView, 760, 560)
 	if !tt.HasText("AI 指令") || !tt.HasText("长难句分析") || !tt.HasText("写作改进") {
 		t.Errorf("actions page missing expected text: %v", tt.Texts())
 	}
-	// 词典 may still appear once, in the sidebar's 词典与发音 entry; what must
-	// not appear is a card for the retired action, whose description is unique.
 	if tt.HasText("面向语言学习者的精细词典") {
 		t.Errorf("actions page still describes the retired 词典 action: %v", tt.Texts())
 	}
 
-	// 2. Actions page customization view
 	a.editingActionID = "default-sentence-analysis"
 	a.customizingAction = *a.store.Get().GetAction("default-sentence-analysis")
 	ttEdit := ui.NewTester(a.settingsView, 760, 560)
@@ -236,7 +216,6 @@ func TestSettingsCustomActionsAndVocabularyPages(t *testing.T) {
 		t.Errorf("customization form missing: %v", ttEdit.Texts())
 	}
 
-	// 3. Vocabulary page empty view
 	a.editingActionID = ""
 	a.page = "vocabulary"
 	ttVocab := ui.NewTester(a.settingsView, 760, 560)

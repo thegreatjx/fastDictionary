@@ -10,24 +10,11 @@ import (
 	"testing"
 )
 
-// 后台 goroutine 必须自己 recover，这条约定写在 logging.go 的 recoverLog 上：
-// windowsgui 构建没有控制台，进程被 panic 终止时日志也留不下来。
-//
-// 之前没有任何机制守住它，热键回调、钩子命令队列、鼠标与按键回调、托盘重建
-// 都是裸 goroutine，一次 panic 就带走整个托盘进程。这个测试把约定变成可执行
-// 契约：新增裸 goroutine 会立刻变红，而不是等用户报告「取词突然失效」。
-//
-// 未知一律报错，不静默跳过：跨包调用和函数变量看不到函数体，就必须在这里
-// 登记并指向真实的函数，否则契约会留下一个「以后再说」的洞。
 func TestGoroutinesRecoverPanics(t *testing.T) {
-	// 只等子进程退出，不碰应用状态，panic 不可能发生。
-	// 逐字比对：改写这处 goroutine 会让登记失效，逼审核者重新判断。
 	allowedLiterals := map[string]string{
 		"audio.go": "go func() { _ = c.Wait() }()",
 	}
 
-	// 包级函数变量：goroutine 里写的是变量名，实际函数指向这里。每条都要
-	// 解析到同包函数并检查它的函数体，所以登记本身不会放过一个裸函数。
 	functionVars := map[string]string{
 		"OnMouseDown":  "onGlobalMouseDown",
 		"OnMouseWheel": "onGlobalMouseWheel",
@@ -35,7 +22,6 @@ func TestGoroutinesRecoverPanics(t *testing.T) {
 		"OnKeyDown":    "onGlobalKeyDown",
 	}
 
-	// 跨包调用：看不到函数体，逐条登记理由。
 	externalCalls := map[string]string{
 		"OpenExternal": "mygo 的 Shell.OpenExternal，只启动浏览器，不碰应用状态",
 	}
@@ -92,7 +78,6 @@ func TestGoroutinesRecoverPanics(t *testing.T) {
 				return true
 			}
 
-			// 同包函数。
 			if body, ok := lookup(decls, key); ok {
 				if !hasRecoverCall(body) {
 					t.Errorf("%s:%d 的 goroutine 目标函数 %s 没有 recoverLog：panic 会终止整个进程",
@@ -101,7 +86,6 @@ func TestGoroutinesRecoverPanics(t *testing.T) {
 				return true
 			}
 
-			// 函数变量：解析到它指向的同包函数，不能只信登记的名字。
 			if target, ok := functionVars[key]; ok {
 				body, found := lookup(decls, target)
 				switch {
@@ -114,7 +98,6 @@ func TestGoroutinesRecoverPanics(t *testing.T) {
 				return true
 			}
 
-			// 跨包调用：必须登记。
 			if _, ok := externalCalls[key]; ok {
 				return true
 			}
@@ -140,8 +123,6 @@ func funcKey(fd *ast.FuncDecl) string {
 	return fd.Name.Name
 }
 
-// lookup 按全名找，再按方法名找。调用处写的是接收者变量 a，类型却是 app，
-// 两者对不上；同名方法只有一份时才认，有歧义就当找不到。
 func lookup(decls map[string]*ast.BlockStmt, key string) (*ast.BlockStmt, bool) {
 	if body, ok := decls[key]; ok {
 		return body, true
@@ -160,8 +141,6 @@ func lookup(decls map[string]*ast.BlockStmt, key string) (*ast.BlockStmt, bool) 
 	return nil, false
 }
 
-// callKey 把 a.rebuildTray / rebuildTray() / mygo.Shell.OpenExternal 归一成
-// 方法名或函数名：接收者变量名与类型名不同，只能按最后一段匹配。
 func callKey(e ast.Expr) string {
 	switch v := e.(type) {
 	case *ast.SelectorExpr:
@@ -183,7 +162,6 @@ func hasRecoverCall(body *ast.BlockStmt) bool {
 	return found
 }
 
-// nodeText 取出源码片段，用于白名单逐字比对。
 func nodeText(fset *token.FileSet, n ast.Node) string {
 	start := fset.Position(n.Pos())
 	end := fset.Position(n.End())

@@ -6,11 +6,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// tabViewState is the result a reading tab already owns. The three tabs used
-// to share one card, so switching away and back either re-ran a slow model or
-// showed the other tab's answer under the new heading. Each tab now carries
-// its own result and the source text it belongs to; restoring is refused when
-// the source has changed.
 type tabViewState struct {
 	source               string
 	target               string
@@ -50,9 +45,6 @@ type tabViewState struct {
 }
 
 func (s *tabViewState) hasContent() bool {
-	// 正在加载的页签不是完成态。switchMode 用这个判定决定能否直接恢复缓存，
-	// 若把进行中的页签算作有内容，半成品 aiText / notes 会被当成最终答案展示，
-	// 且命中缓存后不会再补发请求。切回来应走 clearTabLocked + 重跑当前模式。
 	return s != nil && !cardHasPendingWork(snapshot{aiBusy: s.aiBusy, notesBusy: s.notesBusy, busy: s.busy, ocrBusy: s.ocrBusy}) && (s.target != "" || s.errText != "" || s.dictResult != nil ||
 		s.grammarResult != nil || s.writingResult != nil || s.dict != nil ||
 		s.gdict != nil || s.aiText != "" || s.isScreenshotMode && s.source != "")
@@ -140,13 +132,6 @@ func (a *app) restoreTabLocked(st *tabViewState) {
 	a.snipBitmap = st.snipBitmap
 }
 
-// clearTabLocked removes the result fields of the current tab while keeping
-// its source text. It is used before starting the tab's first request.
-//
-// 清零与恢复是同一份字段清单：把零值 tabViewState 交给 restoreTabLocked，
-// 新增字段时只需在 save/restore 一处补齐，不必再同步第三份清单。
-// restoreTabLocked 不写 source，正好保留当前查询文本；它把 aiCancel 与
-// notesCancel 归零，和原先的清理一致。等价性由 x1_tab_field_sync_test.go 断言。
 func (a *app) clearTabLocked() {
 	a.restoreTabLocked(&tabViewState{})
 }

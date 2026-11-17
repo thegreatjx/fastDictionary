@@ -7,8 +7,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// renderHome draws the 查词与翻译 workbench at the main window's default size
-// and returns every string it rendered.
 func renderHome(t *testing.T, a *app) []string {
 	t.Helper()
 	tt := ui.NewTester(func(c *ui.Context) {
@@ -19,8 +17,6 @@ func renderHome(t *testing.T, a *app) []string {
 	return tt.Texts()
 }
 
-// TestHomeReadyStateKeepsTheInputAndAIHint 是首页空态的验收：输入框和语种
-// 提示要在，但侧栏已经常驻的监听状态不应在工作台里再重复一张卡片。
 func TestHomeReadyStateKeepsTheInputAndAIHint(t *testing.T) {
 	a := newTestApp()
 	texts := strings.Join(renderHome(t, a), "")
@@ -35,7 +31,6 @@ func TestHomeReadyStateKeepsTheInputAndAIHint(t *testing.T) {
 	if strings.Contains(texts, "后台划词监听已就绪") {
 		t.Errorf("首页仍在重复侧栏的监听状态：%q", texts)
 	}
-	// 默认配置没有配 AI 服务时，引导必须写出来，否则长难句和润色点了没反应。
 	a.store.Update(func(c *Config) { c.AIEnabled = false })
 	texts = strings.Join(renderHome(t, a), "")
 	if !strings.Contains(texts, "配置 AI 服务后可解锁") {
@@ -43,8 +38,6 @@ func TestHomeReadyStateKeepsTheInputAndAIHint(t *testing.T) {
 	}
 }
 
-// TestHomeGrammarTabExplainsMissingAI 保证页签在没有 AI 配置时给出原因，
-// 而不是留一片空白让人以为坏了。
 func TestHomeGrammarTabExplainsMissingAI(t *testing.T) {
 	a := newTestApp()
 	a.store.Update(func(c *Config) { c.AIEnabled = false })
@@ -57,8 +50,6 @@ func TestHomeGrammarTabExplainsMissingAI(t *testing.T) {
 	}
 }
 
-// TestHomeGrammarTabIsNeverBlank 覆盖另一个洞：AI 已启用、但这一句尚未生成
-// 结果时，页签不能什么都不画。
 func TestHomeGrammarTabIsNeverBlank(t *testing.T) {
 	a := newTestApp()
 	a.home.source = "Only then did she realize the truth."
@@ -70,9 +61,6 @@ func TestHomeGrammarTabIsNeverBlank(t *testing.T) {
 	}
 }
 
-// TestHomeTranslateTabIsNeverBlank covers the same hole on the translate tab:
-// when the engines answer with nothing and there is no error to show, an empty
-// column reads as “the page did not load”.
 func TestHomeTranslateTabIsNeverBlank(t *testing.T) {
 	a := newTestApp()
 	a.home.source = "hello"
@@ -84,9 +72,6 @@ func TestHomeTranslateTabIsNeverBlank(t *testing.T) {
 	}
 }
 
-// TestHomeShowsSaveAndCopyFeedback pins the banner: 复制 / 收藏 write into
-// actionSavedMsg, and the workbench used to render none of it, so a failed
-// save looked exactly like a successful one.
 func TestHomeShowsSaveAndCopyFeedback(t *testing.T) {
 	a := newTestApp()
 	a.actionSavedMsg = "已保存到生词本 ✓"
@@ -97,9 +82,6 @@ func TestHomeShowsSaveAndCopyFeedback(t *testing.T) {
 	}
 }
 
-// TestHomeSwitchTabWithoutSourceStaysLocal pins the state machine: switching a
-// tab with nothing looked up yet must not start a request, and the tab survives
-// a clear so the user keeps the view they chose.
 func TestHomeSwitchTabWithoutSourceStaysLocal(t *testing.T) {
 	a := newTestApp()
 	a.homeSwitchTab("writing")
@@ -126,9 +108,6 @@ func TestHomeSwitchTabWithoutSourceStaysLocal(t *testing.T) {
 	}
 }
 
-// TestMainWindowIsTheDefaultEntry pins the delivery shape: a plain launch opens
-// the workbench, an autostart stays in the tray, and the tray's left click is
-// the way back to the window.
 func TestMainWindowIsTheDefaultEntry(t *testing.T) {
 	src := readSourceFile(t, "main.go")
 	for _, want := range []string{
@@ -145,7 +124,6 @@ func TestMainWindowIsTheDefaultEntry(t *testing.T) {
 	if containsText(src, "t.OnClick(a.toggleTrayFlyout)") {
 		t.Error("托盘左键仍是快捷面板，没有直达主窗口")
 	}
-	// 无头测试与自动启动不能弹窗，否则截图和开机启动都变了行为。
 	if !containsText(src, "else if !headless && !minimizedFlag") {
 		t.Error("启动弹窗没有排除无头模式与最小化启动")
 	}

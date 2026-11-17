@@ -6,14 +6,6 @@ import (
 	"time"
 )
 
-// Vocabulary review uses a small spaced-repetition schedule instead of a
-// separate service: one interval and one due date per entry is enough to make
-// the notebook a study loop, and it survives export/import as plain JSON.
-//
-// The grades are the three answers a learner can actually give after seeing
-// the card: 忘记 (start over tonight), 模糊 (a little longer), 记得 (double).
-// The numbers are intentionally mild; a missed word returning in ten minutes
-// is more useful than a week-long penalty.
 type reviewGrade uint8
 
 const (
@@ -41,8 +33,6 @@ const (
 	reviewGoodFactor      = 2.3
 )
 
-// reviewSchedule is the result of grading one card. It is a value type so the
-// arithmetic can be tested without a store, a lock or a clock.
 type reviewSchedule struct {
 	Due          time.Time
 	IntervalDays int
@@ -80,23 +70,14 @@ func nextReview(intervalDays, count int, grade reviewGrade, now time.Time) revie
 	}
 }
 
-// reviewDue reports whether an entry belongs in today's queue. A zero due date
-// means the file predates the schedule (or came from CSV/TXT import): those
-// entries are treated as due rather than silently excluded from review.
 func (e VocabularyEntry) reviewDue(now time.Time) bool {
 	return e.ReviewDueAt.IsZero() || !e.ReviewDueAt.After(now)
 }
 
-// reviewable keeps grammar and writing notes out of the word queue: their
-// "card" is a sentence analysis, not a term-and-definition pair, so grading it
-// as a vocabulary item would count the same work twice.
 func reviewable(e VocabularyEntry) bool {
 	return classifyVocabEntry(e) == vocabCategoryWords
 }
 
-// DueEntries returns the reviewable entries that are due, oldest first. The
-// store is snapshotted under the read lock so the settings page can paint
-// while a background import runs.
 func (s *VocabularyStore) DueEntries(now time.Time) []VocabularyEntry {
 	s.mu.RLock()
 	out := make([]VocabularyEntry, 0, len(s.entries))
@@ -110,7 +91,7 @@ func (s *VocabularyStore) DueEntries(now time.Time) []VocabularyEntry {
 	sort.SliceStable(out, func(i, j int) bool {
 		zi, zj := out[i].ReviewDueAt.IsZero(), out[j].ReviewDueAt.IsZero()
 		if zi != zj {
-			return zi // unscheduled entries come first
+			return zi
 		}
 		if !out[i].ReviewDueAt.Equal(out[j].ReviewDueAt) {
 			return out[i].ReviewDueAt.Before(out[j].ReviewDueAt)
@@ -120,9 +101,6 @@ func (s *VocabularyStore) DueEntries(now time.Time) []VocabularyEntry {
 	return out
 }
 
-// DueCount is the badge number; it is a plain count instead of len(DueEntries)
-// because the settings page asks on every frame and the queue only needs its
-// ordering once, when a session starts.
 func (s *VocabularyStore) DueCount(now time.Time) int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -135,8 +113,6 @@ func (s *VocabularyStore) DueCount(now time.Time) int {
 	return n
 }
 
-// Get returns one entry by ID. The review queue holds IDs rather than copies,
-// so an entry edited or deleted from another surface is seen as it is now.
 func (s *VocabularyStore) Get(id string) (VocabularyEntry, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -148,9 +124,6 @@ func (s *VocabularyStore) Get(id string) (VocabularyEntry, bool) {
 	return VocabularyEntry{}, false
 }
 
-// ApplyReview schedules the entry after a grade and persists the result. The
-// write happens outside the lock for the same reason Delete does: save()
-// takes the read lock itself.
 func (s *VocabularyStore) ApplyReview(id string, grade reviewGrade, now time.Time) (VocabularyEntry, bool) {
 	s.mu.Lock()
 	idx := -1

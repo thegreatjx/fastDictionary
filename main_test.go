@@ -8,9 +8,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// newTestApp returns an app with an in-memory config: tests must not read
-// or write the user's real config file, and must not leak state into each
-// other through it.
 func newTestApp() *app {
 	return &app{store: newMemoryStore()}
 }
@@ -23,7 +20,6 @@ func TestPopupShowsTranslation(t *testing.T) {
 	if !tt.HasText("你好") {
 		t.Errorf("translation missing, texts %q", tt.Texts())
 	}
-	// Engine tag is present via Translator selector
 	if !tt.HasText("Microsoft") && !tt.HasText("微软") {
 		t.Errorf("engine tag missing, texts %q", tt.Texts())
 	}
@@ -108,9 +104,6 @@ func TestSettingsRendersAllPages(t *testing.T) {
 	}
 }
 
-// The build stamp is how the user tells a fresh binary from the one the
-// shortcut used to launch. If it stops reaching 关于, the only way to answer
-// "did my build take effect" is to compare file timestamps by hand again.
 func TestAboutPageShowsBuildStamp(t *testing.T) {
 	old := buildStamp
 	buildStamp = "2026-10-25T07:23"
@@ -163,14 +156,12 @@ func TestAdaptivePopupHeaderKeepsReadingToolsReachable(t *testing.T) {
 func TestCalcPopupPositionAdaptiveLifting(t *testing.T) {
 	wa := mygo.Rectangle{X: 0, Y: 0, Width: 1920, Height: 1040}
 
-	// 1. Top of screen: place below cursor
 	ptTop := mygo.Point{X: 300, Y: 100}
 	x1, y1 := calcPopupPositionIn(ptTop, 440, 360, wa)
 	if y1 < ptTop.Y {
 		t.Errorf("expected popup below cursor when at top of screen, got y=%d, cursor=%d", y1, ptTop.Y)
 	}
 
-	// 2. Bottom of screen (lower half / tight space): lift/flip above cursor!
 	ptBottom := mygo.Point{X: 300, Y: 900}
 	x2, y2 := calcPopupPositionIn(ptBottom, 440, 360, wa)
 	if y2 >= ptBottom.Y {
@@ -180,14 +171,12 @@ func TestCalcPopupPositionAdaptiveLifting(t *testing.T) {
 		t.Errorf("popup exceeds screen height: y=%d + h=360 > %d", y2, wa.Height)
 	}
 
-	// 3. Right edge of screen: horizontal clamp
 	ptRight := mygo.Point{X: 1900, Y: 300}
 	x3, _ := calcPopupPositionIn(ptRight, 440, 360, wa)
 	if x3+440 > wa.Width {
 		t.Errorf("popup escapes right edge: x=%d + w=440 > %d", x3, wa.Width)
 	}
 
-	// Verify coordinates are bounded and reasonable
 	if x1 < 0 || x2 < 0 || x3 < 0 {
 		t.Errorf("unexpected negative X coordinates: x1=%d, x2=%d, x3=%d", x1, x2, x3)
 	}

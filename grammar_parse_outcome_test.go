@@ -7,7 +7,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// TestParseSentenceAnalysisOutcomes pins where each parse path stops.
 func TestParseSentenceAnalysisOutcomes(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -77,8 +76,6 @@ func TestParseOutcomeString(t *testing.T) {
 	}
 }
 
-// TestGrammarCardExplainsMissingSegments pins that a translation-only answer
-// says why the sentence has no analysis.
 func TestGrammarCardExplainsMissingSegments(t *testing.T) {
 	a := newTestApp()
 	res := &SentenceAnalysisResult{Translation: "只有译文"}

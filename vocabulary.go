@@ -17,7 +17,6 @@ import (
 	"github.com/egoist/mygo"
 )
 
-// VocabularyEntry represents one saved word or sentence item in the fast词典 notebook
 type VocabularyEntry struct {
 	ID                 string    `json:"id"`
 	Term               string    `json:"term"`
@@ -29,29 +28,18 @@ type VocabularyEntry struct {
 	ContextTranslation string    `json:"context_translation"`
 	MemoryTips         string    `json:"memory_tips"`
 	Difficulty         string    `json:"difficulty"`
-	Source             string    `json:"source"` // "dict" | "grammar" | "writing" | "notes" | "import"
+	Source             string    `json:"source"`
 	CreatedAt          time.Time `json:"created_at"`
-	// ReviewDueAt is when the word returns to the 复习 queue. Zero means
-	// "never scheduled" (older files and imports) and is treated as due.
 	ReviewDueAt        time.Time `json:"review_due_at"`
 	ReviewIntervalDays int       `json:"review_interval_days"`
 	ReviewCount        int       `json:"review_count"`
 }
 
-// VocabularyStore manages persistence of vocabulary.json
 type VocabularyStore struct {
-	mu      sync.RWMutex
-	path    string
-	entries []VocabularyEntry
-	// saveMu serialises the file write. Without it two goroutines saving at
-	// the same time both wrote the same .tmp path and raced on the rename:
-	// one rename failed ("being used by another process") and the other
-	// could lose the write entirely. Saves are rare and small, so a plain
-	// mutex around them costs nothing.
-	saveMu sync.Mutex
-	// lastSaveErr 记录最近一次保存的结果。Add / Delete 只返回布尔值，
-	// 界面据此提示「已保存」；磁盘写失败时布尔值仍是 true，用户却会
-	// 在重启后丢词。界面在提示成功前先读这里，失败就如实显示原因。
+	mu          sync.RWMutex
+	path        string
+	entries     []VocabularyEntry
+	saveMu      sync.Mutex
 	lastSaveErr error
 }
 
@@ -60,7 +48,6 @@ var (
 	globalVocabOnce  sync.Once
 )
 
-// GetVocabularyStore returns the singleton vocabulary store instance
 func GetVocabularyStore() *VocabularyStore {
 	globalVocabOnce.Do(func() {
 		globalVocabStore = newVocabularyStore()
@@ -69,11 +56,6 @@ func GetVocabularyStore() *VocabularyStore {
 }
 
 func defaultVocabPath() string {
-	// The notebook follows the app: whatever directory mygo hands out for
-	// this build's name wins. The APPDATA guesses below only matter when the
-	// framework path is unavailable, and they have to stay in step with
-	// naming.go or the store writes one file while the settings page shows
-	// another.
 	if dir, err := mygo.App.Path(mygo.PathUserData); err == nil && dir != "" {
 		return filepath.Join(dir, "vocabulary.json")
 	}
@@ -116,9 +98,6 @@ func (s *VocabularyStore) load() {
 	var entries []VocabularyEntry
 	if err := json.Unmarshal(data, &entries); err != nil {
 		log.Printf("fastDictionary: failed to parse vocabulary.json: %v", err)
-		// 词库损坏时仍按空库启动，但先把损坏原文另存一份。save() 的 .bak
-		// 是滚动单副本，第一次加词就会把它覆盖成新内容，损坏原文会永久丢失。
-		// 副本只在首次损坏时写一次，保留最原始的数据供用户找回。
 		recovery := s.path + ".corrupt"
 		if _, statErr := os.Stat(recovery); os.IsNotExist(statErr) {
 			if writeErr := os.WriteFile(recovery, data, 0o644); writeErr != nil {
@@ -153,7 +132,6 @@ func (s *VocabularyStore) save() error {
 	return atomicWriteFile(path, data, atomicWriteOptions{retries: 6, backup: true})
 }
 
-// dataOfFile reads a file, returning nil when it cannot be read.
 func dataOfFile(path string) []byte {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -162,13 +140,6 @@ func dataOfFile(path string) []byte {
 	return b
 }
 
-// Add appends an entry to the top of the notebook, enriching missing
-// dictionary data if necessary.
-//
-// The enrichment is a network call of up to three seconds, so it happens
-// before the lock is taken: doing it inside meant a save from the popup
-// blocked the tray and the settings list for as long as Youdao took to
-// answer.
 func (s *VocabularyStore) Add(e VocabularyEntry) bool {
 	if (e.Phonetic == "" || e.Difficulty == "") && isWord(e.Term) {
 		EnrichVocabularyEntry(&e)
@@ -182,12 +153,9 @@ func (s *VocabularyStore) Add(e VocabularyEntry) bool {
 		e.CreatedAt = time.Now()
 	}
 	if e.ReviewDueAt.IsZero() {
-		// A newly saved word is due immediately: that is what makes the
-		// notebook pay off the same day instead of after an arbitrary wait.
 		e.ReviewDueAt = e.CreatedAt
 	}
 
-	// If entry with identical term exists, update with new values while preserving existing rich fields
 	for i, existing := range s.entries {
 		if strings.EqualFold(existing.Term, e.Term) && (existing.Context == "" || e.Context == "" || existing.Context == e.Context) {
 			if e.Phonetic != "" {
@@ -221,25 +189,17 @@ func (s *VocabularyStore) Add(e VocabularyEntry) bool {
 		}
 	}
 
-	// Insert at the front (newest first)
 	s.entries = append([]VocabularyEntry{e}, s.entries...)
 	s.mu.Unlock()
 	s.saveOrLog()
 	return true
 }
 
-// AddBatch inserts several entries with a single write to disk.
-//
-// Add() persists on every call, so importing or saving N words rewrote the
-// whole notebook N times and made N network round-trips while the caller
-// waited. AddBatch is the same merge, done once: callers enrich outside the
-// lock, then hand the finished entries over.
 func (s *VocabularyStore) AddBatch(entries []VocabularyEntry) int {
 	n, _ := s.addBatch(entries)
 	return n
 }
 
-// addBatch 与 AddBatch 是同一次合并与写盘，但把持久化错误显式交给导入链路。
 func (s *VocabularyStore) addBatch(entries []VocabularyEntry) (int, error) {
 	if len(entries) == 0 {
 		return 0, nil
@@ -297,7 +257,6 @@ func (s *VocabularyStore) addBatch(entries []VocabularyEntry) (int, error) {
 	return added, s.saveOrLog()
 }
 
-// List returns a copy of all vocabulary entries
 func (s *VocabularyStore) List() []VocabularyEntry {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -306,13 +265,6 @@ func (s *VocabularyStore) List() []VocabularyEntry {
 	return out
 }
 
-// Delete removes an entry by ID.
-//
-// The write lock is released before the notebook is persisted: save() takes
-// s.mu.RLock() itself, and sync.RWMutex is not reentrant, so calling
-// saveOrLog() while still holding the write lock deadlocked the whole process
-// (the UI froze and the window had to be killed). Delete, Clear and Add all
-// follow the same pattern now: mutate under the lock, save outside it.
 func (s *VocabularyStore) Delete(id string) bool {
 	s.mu.Lock()
 	found := false
@@ -335,7 +287,6 @@ func (s *VocabularyStore) Delete(id string) bool {
 	return found
 }
 
-// Clear deletes all entries in the store
 func (s *VocabularyStore) Clear() error {
 	s.mu.Lock()
 	s.entries = []VocabularyEntry{}
@@ -343,11 +294,6 @@ func (s *VocabularyStore) Clear() error {
 	return s.save()
 }
 
-// Path reports where this store persists its entries, so the settings page
-// can show the real file instead of a hardcoded guess. A literal path in the
-// UI drifts from reality the moment the app is renamed, because the directory
-// is derived from the exe name; the user only finds out when they try to back
-// the file up. Empty for the in-memory store used by tests.
 func (s *VocabularyStore) Path() string {
 	if s == nil {
 		return ""
@@ -355,14 +301,12 @@ func (s *VocabularyStore) Path() string {
 	return s.path
 }
 
-// Count returns the number of saved entries
 func (s *VocabularyStore) Count() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.entries)
 }
 
-// Search filters entries matching the query
 func (s *VocabularyStore) Search(query string) []VocabularyEntry {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -385,7 +329,6 @@ func (s *VocabularyStore) Search(query string) []VocabularyEntry {
 	return results
 }
 
-// ExportJSON exports all entries to a JSON file
 func (s *VocabularyStore) ExportJSON(filePath string) error {
 	s.mu.RLock()
 	entries := make([]VocabularyEntry, len(s.entries))
@@ -399,7 +342,6 @@ func (s *VocabularyStore) ExportJSON(filePath string) error {
 	return os.WriteFile(filePath, data, 0o644)
 }
 
-// ExportCSV exports all entries to a CSV file with UTF-8 BOM
 func (s *VocabularyStore) ExportCSV(filePath string) error {
 	s.mu.RLock()
 	entries := make([]VocabularyEntry, len(s.entries))
@@ -412,7 +354,6 @@ func (s *VocabularyStore) ExportCSV(filePath string) error {
 	}
 	defer f.Close()
 
-	// UTF-8 BOM for Microsoft Excel compatibility
 	_, _ = f.Write([]byte{0xEF, 0xBB, 0xBF})
 
 	w := csv.NewWriter(f)
@@ -446,7 +387,6 @@ func (s *VocabularyStore) ExportCSV(filePath string) error {
 	return nil
 }
 
-// ExportAnki exports all entries to an Anki-compatible TSV file with embedded HTML cards and styling
 func (s *VocabularyStore) ExportAnki(filePath string) error {
 	s.mu.RLock()
 	entries := make([]VocabularyEntry, len(s.entries))
@@ -720,8 +660,6 @@ func formatAnkiCard(e VocabularyEntry) (front, back, term, tags string) {
 	return
 }
 
-// readImportFile reads an import file and drops a UTF-8 BOM. Windows editors
-// add one by default, and json.Unmarshal rejects it outright.
 func readImportFile(filePath string) ([]byte, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
@@ -733,7 +671,6 @@ func readImportFile(filePath string) ([]byte, error) {
 	return data, nil
 }
 
-// ImportFile imports vocabulary entries from a .json, .csv, or .txt file
 func (s *VocabularyStore) ImportFile(filePath string) (int, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
 	switch ext {
@@ -746,20 +683,17 @@ func (s *VocabularyStore) ImportFile(filePath string) (int, error) {
 	}
 }
 
-// ImportJSON imports entries from a JSON file
 func (s *VocabularyStore) ImportJSON(filePath string) (int, error) {
 	data, err := readImportFile(filePath)
 	if err != nil {
 		return 0, err
 	}
 
-	// 1. Standard []VocabularyEntry
 	var entries []VocabularyEntry
 	if err := json.Unmarshal(data, &entries); err == nil && len(entries) > 0 && entries[0].Term != "" {
 		return s.importEntries(entries)
 	}
 
-	// 2. Simple word array ["word1", "word2"]
 	var words []string
 	if err := json.Unmarshal(data, &words); err == nil && len(words) > 0 {
 		var list []VocabularyEntry
@@ -771,7 +705,6 @@ func (s *VocabularyStore) ImportJSON(filePath string) (int, error) {
 		return s.importEntries(list)
 	}
 
-	// 3. Array of key-value maps
 	var maps []map[string]any
 	if err := json.Unmarshal(data, &maps); err == nil && len(maps) > 0 {
 		var list []VocabularyEntry
@@ -811,7 +744,6 @@ func (s *VocabularyStore) ImportJSON(filePath string) (int, error) {
 	return 0, fmt.Errorf("无法识别的 JSON 数据格式")
 }
 
-// ImportCSV imports entries from a CSV file
 func (s *VocabularyStore) ImportCSV(filePath string) (int, error) {
 	data, err := readImportFile(filePath)
 	if err != nil {
@@ -895,7 +827,6 @@ func (s *VocabularyStore) ImportCSV(filePath string) (int, error) {
 	return s.importEntries(list)
 }
 
-// ImportTXT imports entries from plain text lines (one word per line or "word - meaning")
 func (s *VocabularyStore) ImportTXT(filePath string) (int, error) {
 	data, err := readImportFile(filePath)
 	if err != nil {
@@ -928,19 +859,11 @@ func (s *VocabularyStore) ImportTXT(filePath string) (int, error) {
 	return s.importEntries(list)
 }
 
-// ImportEntries merges entries and enriches them.
-//
-// Importing a 500-word list used to make 500 dictionary lookups (3 s timeout
-// each) and rewrite the notebook 500 times, all while the settings window
-// waited: a quarter of an hour in the worst case, with a half-written
-// notebook if it was interrupted. It now enriches first, outside the store,
-// and persists once.
 func (s *VocabularyStore) ImportEntries(entries []VocabularyEntry) int {
 	n, _ := s.importEntries(entries)
 	return n
 }
 
-// importEntries 与 ImportEntries 是同一次导入，但把持久化错误显式交给 ImportFile。
 func (s *VocabularyStore) importEntries(entries []VocabularyEntry) (int, error) {
 	clean := make([]VocabularyEntry, 0, len(entries))
 	for _, e := range entries {
@@ -955,18 +878,9 @@ func (s *VocabularyStore) importEntries(entries []VocabularyEntry) (int, error) 
 	if len(clean) == 0 {
 		return 0, nil
 	}
-	// AddBatch reports how many were genuinely new (merges do not count),
-	// which is the honest number for the "成功导入 N 条" toast: it used to
-	// report the attempted count, duplicates included.
 	return s.addBatch(clean)
 }
 
-// EnrichAll scans the entire notebook and enriches missing fields.
-//
-// It used to hold the write lock while it made one network request per
-// entry, which froze the settings page and the tray count for up to three
-// seconds per word. Now it works on a copy and only takes the lock to write
-// the result back.
 func (s *VocabularyStore) EnrichAll() (int, error) {
 	s.mu.RLock()
 	work := make([]VocabularyEntry, len(s.entries))
@@ -985,16 +899,10 @@ func (s *VocabularyStore) EnrichAll() (int, error) {
 		return 0, nil
 	}
 
-	// Merge by id: entries added or edited while the enrichment ran must
-	// survive. Only the fields enrichment owns are copied, so a review grade
-	// (or a manual edit) that happened during the network calls is not
-	// reverted by a stale snapshot.
 	s.mergeEnriched(work)
 	return count, s.saveOrLog()
 }
 
-// mergeEnriched writes the enrichment-owned fields back by ID. It is separate
-// from EnrichAll so the no-clobber rule can be tested without the network.
 func (s *VocabularyStore) mergeEnriched(work []VocabularyEntry) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1032,10 +940,6 @@ func (s *VocabularyStore) mergeEnriched(work []VocabularyEntry) {
 	}
 }
 
-// saveOrLog persists the notebook and reports a failure instead of dropping
-// it. A silently failed save is how a user loses a notebook that the UI said
-// was stored: read-only disks, a full disk and a locked file all end up here.
-// 导入链路靠返回的 error 把失败送到设置页；其他调用点沿用旧的「只记日志」行为。
 func (s *VocabularyStore) saveOrLog() error {
 	err := s.save()
 	s.mu.Lock()
@@ -1047,7 +951,6 @@ func (s *VocabularyStore) saveOrLog() error {
 	return err
 }
 
-// LastSaveError 返回最近一次保存的结果；保存成功时是 nil。
 func (s *VocabularyStore) LastSaveError() error {
 	if s == nil {
 		return nil
@@ -1057,8 +960,6 @@ func (s *VocabularyStore) LastSaveError() error {
 	return s.lastSaveErr
 }
 
-// EnrichVocabularyEntry automatically enriches missing phonetic symbols, CEFR difficulties,
-// example sentences, and etymology memory tips for a vocabulary entry.
 func EnrichVocabularyEntry(e *VocabularyEntry) {
 	if strings.TrimSpace(e.Term) == "" {
 		return
@@ -1068,7 +969,6 @@ func EnrichVocabularyEntry(e *VocabularyEntry) {
 		return
 	}
 
-	// 1. Youdao dictionary enrichment for phonetic, POS, and definitions
 	if e.Phonetic == "" || e.Definition == "" || e.PartOfSpeech == "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		if yd, err := LookupYoudao(ctx, term); err == nil && yd != nil {
@@ -1094,23 +994,19 @@ func EnrichVocabularyEntry(e *VocabularyEntry) {
 		cancel()
 	}
 
-	// 2. CEFR Difficulty estimation
 	if e.Difficulty == "" && !strings.Contains(term, " ") {
 		e.Difficulty = estimateCEFR(term)
 	}
 
-	// 3. Sample context sentence if missing
 	if e.Context == "" && !strings.Contains(term, " ") {
 		e.Context, e.ContextTranslation = generateSampleSentence(term, e.PartOfSpeech, e.Definition)
 	}
 
-	// 4. Memory tips / etymology
 	if e.MemoryTips == "" && !strings.Contains(term, " ") {
 		e.MemoryTips = generateMemoryTip(term, e.PartOfSpeech, e.Definition)
 	}
 }
 
-// estimateCEFR provides realistic CEFR ratings (A1-C2) based on frequency and linguistic complexity
 func estimateCEFR(word string) string {
 	w := strings.ToLower(word)
 	switch w {
@@ -1143,7 +1039,6 @@ func estimateCEFR(word string) string {
 	return "C2"
 }
 
-// generateSampleSentence provides standard context sentence for learner's review
 func generateSampleSentence(word, pos, def string) (string, string) {
 	w := strings.ToLower(word)
 	switch w {
@@ -1159,7 +1054,6 @@ func generateSampleSentence(word, pos, def string) (string, string) {
 	}
 }
 
-// generateMemoryTip provides meaningful etymological and associative memory hooks
 func generateMemoryTip(word, pos, def string) string {
 	w := strings.ToLower(word)
 	switch {

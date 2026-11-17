@@ -6,23 +6,14 @@ import (
 	"time"
 )
 
-// renameFile is the last step of every atomic save. It is a variable so the
-// retry loop can be exercised without relying on a real sharing violation.
 var renameFile = os.Rename
 
 type atomicWriteOptions struct {
-	// retries counts the rename attempts. Windows denies a rename while an
-	// indexer or antivirus scanner still holds the just-closed file, so the
-	// default is a short retry instead of losing the user's data.
+	// Windows 索引/杀软会短暂占用刚关闭的文件，rename 需要重试。
 	retries int
-	// backup keeps the previous good copy next to the file before replacing it.
-	backup bool
+	backup  bool
 }
 
-// atomicWriteFile writes data to a unique temp file in the target directory,
-// flushes it, then renames it into place. A unique temp name per call means two
-// concurrent saves can never write into the same file and rename a half-written
-// mixture; the retry loop absorbs transient sharing violations on Windows.
 func atomicWriteFile(path string, data []byte, opts atomicWriteOptions) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -61,8 +52,6 @@ func atomicWriteFile(path string, data []byte, opts atomicWriteOptions) error {
 
 	if opts.backup {
 		if prev, readErr := os.ReadFile(path); readErr == nil && len(prev) > 0 {
-			// A failed backup must not block the save: the new file is still
-			// better than dropping the user's change.
 			_ = os.WriteFile(path+".bak", prev, 0o644)
 		}
 	}

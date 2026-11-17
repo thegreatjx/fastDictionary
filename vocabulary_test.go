@@ -7,10 +7,6 @@ import (
 	"time"
 )
 
-// TestVocabularyDeleteDoesNotDeadlock guards the bug where Delete() held
-// s.mu.Lock() and then called saveOrLog() -> save(), which itself takes
-// s.mu.RLock(). sync.RWMutex is not reentrant, so deleting an entry from the
-// notebook froze the whole process forever (the user saw it as a crash).
 func TestVocabularyDeleteDoesNotDeadlock(t *testing.T) {
 	dir := t.TempDir()
 	s := &VocabularyStore{path: filepath.Join(dir, "vocabulary.json"), entries: []VocabularyEntry{}}
@@ -36,7 +32,6 @@ func TestVocabularyDeleteDoesNotDeadlock(t *testing.T) {
 	if got := s.Count(); got != 1 {
 		t.Fatalf("after delete: count = %d, want 1", got)
 	}
-	// The removal must also be persisted, not just dropped from memory.
 	reloaded := &VocabularyStore{path: s.path, entries: []VocabularyEntry{}}
 	reloaded.load()
 	if got := reloaded.Count(); got != 1 {

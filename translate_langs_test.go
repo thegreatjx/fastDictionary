@@ -5,11 +5,6 @@ import (
 	"testing"
 )
 
-// TestTranslateLangsFallsBackToTheSecondLanguage is the regression behind
-// "AI 精翻把我翻译好的结果又翻了回去": with the target language equal to the
-// text's own language, a translation has nowhere to go, so every consumer —
-// machine translation, the analysis-card prefill and AI refine — must fall back
-// to SecondLang instead of sending the text back unchanged.
 func TestTranslateLangsFallsBackToTheSecondLanguage(t *testing.T) {
 	base := Config{TargetLang: "zh-Hans", SecondLang: "en"}
 
@@ -28,8 +23,6 @@ func TestTranslateLangsFallsBackToTheSecondLanguage(t *testing.T) {
 			wantTo:   "en",
 		},
 		{
-			// 用户报「划词中文不给我翻译」的那句：英文术语比汉字多，检测曾
-			// 返回空，回退被跳过，目标语言仍是中文，引擎把原文退了回来。
 			name:     "中英混排、英文术语居多时仍译到第二语言",
 			cfg:      base,
 			text:     "Claude 这个 Building Always on Agents，实际是 Personal Agent 的最基本的设计模式。",
@@ -37,7 +30,6 @@ func TestTranslateLangsFallsBackToTheSecondLanguage(t *testing.T) {
 			wantTo:   "en",
 		},
 		{
-			// 拉丁字母的句子不猜语种，交给引擎自己判定；目标语言照原样保留。
 			name:     "英文句子、目标中文时照常译成中文",
 			cfg:      base,
 			text:     "debut work",
@@ -83,9 +75,6 @@ func TestTranslateLangsFallsBackToTheSecondLanguage(t *testing.T) {
 	}
 }
 
-// TestRefineEchoedInput covers the second guard: whatever the reason, a refine
-// that hands the source back must not be written over the translation the user
-// already has.
 func TestRefineEchoedInput(t *testing.T) {
 	cases := []struct {
 		source string
@@ -106,9 +95,6 @@ func TestRefineEchoedInput(t *testing.T) {
 	}
 }
 
-// TestRefineUsesTheResolvedTargetLanguage is the wiring check: both refine
-// paths must translate into the language the fallback picked, not into
-// cfg.TargetLang directly, and both must drop an echo.
 func TestRefineUsesTheResolvedTargetLanguage(t *testing.T) {
 	for _, f := range []string{"home.go", "popup_actions.go"} {
 		src := readSourceFile(t, f)

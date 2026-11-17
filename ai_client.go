@@ -17,19 +17,11 @@ import (
 	"time"
 )
 
-// This file is the OpenAI-compatible client. Magpie and a direct provider use
-// the same request shape; the only differences are the address, the optional
-// bearer key and whether the model accepts reasoning fields. Keeping those
-// differences in aiConn and the preset table is what stops "supports another
-// provider" from becoming another branch in every call site.
-
 const (
 	maxAIResponseBytes = 4 << 20
 	maxAIStreamBytes   = 8 << 20
 )
 
-// aiConn is a snapshot of one request's destination. It is copied by value so
-// a settings change cannot alter a request that is already in flight.
 type aiConn struct {
 	Provider string
 	Endpoint string
@@ -69,18 +61,11 @@ const (
 	aiFailureBadRequest
 	aiFailureServer
 	aiFailureNetwork
-	// aiFailureMagpieDown: the local gateway refused the connection, which
-	// means it is not running. Its fix differs from a network problem.
 	aiFailureMagpieDown
 	aiFailureTimeout
 	aiFailureProtocol
 )
 
-// aiFailure is the one error shape the rest of the app reasons about. String
-// matching on "401" or "timeout" used to decide whether a retry was safe and
-// what the user should do; that broke as soon as a provider phrased it
-// differently. The kind is decided where the status or transport error is
-// still known.
 type aiFailure struct {
 	kind aiFailureKind
 	msg  string
@@ -104,9 +89,6 @@ var aiHTTPClient = &http.Client{
 			return errors.New("拒绝从 HTTPS 降级到 HTTP")
 		}
 		if req.URL.Host != first.URL.Host {
-			// A redirect can carry the Authorization header and, for POST,
-			// the selected text. Sending either to another host is not a
-			// redirect the user asked for.
 			if first.Method != http.MethodGet && first.Method != http.MethodHead ||
 				first.Header.Get("Authorization") != "" {
 				return errors.New("拒绝携带认证或正文的跨站重定向，请直接填写最终地址")
@@ -116,9 +98,6 @@ var aiHTTPClient = &http.Client{
 	},
 }
 
-// StreamAI sends a chat request and calls onDelta for each content chunk.
-// effort is an already-resolved wire value: empty means "send no reasoning
-// field", which is what a direct provider gets by default.
 func StreamAI(ctx context.Context, conn aiConn, system, user, effort string, onDelta func(string)) (string, error) {
 	return streamAI(ctx, conn, []aiMessage{
 		{Role: "system", Content: system},
@@ -126,9 +105,6 @@ func StreamAI(ctx context.Context, conn aiConn, system, user, effort string, onD
 	}, effort, onDelta)
 }
 
-// StreamAIWithImage sends the OCR text plus the screenshot. The client does
-// not guess whether a user-selected model can read images: an incompatible
-// service reports its own error, which keeps the model ID fully user-owned.
 func StreamAIWithImage(ctx context.Context, conn aiConn, system, user, imageDataURL, effort string, onDelta func(string)) (string, error) {
 	if imageDataURL == "" {
 		return "", &aiFailure{kind: aiFailureBadRequest, msg: "截图内容为空，无法发送给模型。"}
@@ -149,8 +125,6 @@ func streamAI(ctx context.Context, conn aiConn, messages []aiMessage, effort str
 		return "", &aiFailure{kind: aiFailureBadRequest, msg: "请先在设置里填写模型 ID。"}
 	}
 	if !conn.IsMagpie() {
-		// A direct provider gets no reasoning field at all, even if a caller
-		// still passes a level. Strict services answer 400 to the unknown key.
 		effort = ""
 	}
 	endpoint, err := aiChatEndpoint(conn.Endpoint, conn.IsMagpie())
@@ -252,9 +226,6 @@ func streamAI(ctx context.Context, conn aiConn, messages []aiMessage, effort str
 	if out == "" {
 		return "", &aiFailure{kind: aiFailureProtocol, msg: "服务没有返回内容。确认地址是 OpenAI 兼容接口，并检查模型是否可用。"}
 	}
-	// Some compatible services close the stream after finish_reason without
-	// sending [DONE]. A clean EOF with content is a complete answer; a broken
-	// read is caught by sc.Err above.
 	complete := sawDone || finishReason != ""
 	if limited.N <= 0 && !complete {
 		return out, &aiFailure{kind: aiFailureProtocol, msg: "服务返回的内容超过 8MB，已停止接收。"}
@@ -290,11 +261,6 @@ func aiModelsEndpoint(raw string, magpie bool) (string, error) {
 	return u.String(), nil
 }
 
-// aiBaseURL accepts the two shapes users actually paste: the provider's base
-// URL (with or without a version segment) and the full chat endpoint copied
-// from documentation. Guessing a path is limited to the empty path, where /v1
-// is the OpenAI convention; a custom provider with a missing address is an
-// error, not a silent fallback to Magpie.
 func aiBaseURL(raw string, magpie bool) (*url.URL, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -319,9 +285,6 @@ func aiBaseURL(raw string, magpie bool) (*url.URL, error) {
 	return u, nil
 }
 
-// FetchAvailableModels lists the models the configured account can use.
-// Callers own the timeout: the settings page uses 15 seconds, tests can use
-// less. A service without /models is a normal outcome, not an error page.
 func FetchAvailableModels(ctx context.Context, conn aiConn) ([]string, error) {
 	endpoint, err := aiModelsEndpoint(conn.Endpoint, conn.IsMagpie())
 	if err != nil {
@@ -393,8 +356,6 @@ func FetchAvailableModels(ctx context.Context, conn aiConn) ([]string, error) {
 		return nil, &aiFailure{kind: aiFailureProtocol, msg: "服务没有返回可用模型，请手动填写模型 ID。"}
 	}
 	sort.Strings(out)
-	// reasoning_levels is Magpie's own metadata. Do not let a direct provider
-	// with a same-named model overwrite what ResolveEffort measured there.
 	if conn.IsMagpie() {
 		modelEfforts.Lock()
 		modelEfforts.m = levels
@@ -464,9 +425,6 @@ func aiTransportFailure(err error, conn aiConn) error {
 	return &aiFailure{kind: aiFailureNetwork, msg: "无法连接 AI 服务。检查地址、网络或代理设置。"}
 }
 
-// isConnRefused matches the errno, not the text. Windows words a refused
-// connection as "actively refused it", so matching "connection refused" never
-// fired there and the Magpie hint was never shown.
 func isConnRefused(err error) bool {
 	const wsaeconnrefused = syscall.Errno(10061)
 	return errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, wsaeconnrefused)
@@ -506,8 +464,6 @@ func redactAIKey(text, key string) string {
 	return text
 }
 
-// aiErrorDetail is the settings-page form: the sentence already says what to
-// do, so there is no second translation layer to get out of sync.
 func aiErrorDetail(err error) string {
 	if err == nil {
 		return ""

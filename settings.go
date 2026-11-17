@@ -10,19 +10,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// langOptions is every language the translator offers, in the order the pickers
-// show them. 菜单只摆 langPrimary 这几门：先前把三十四种语言平铺在一个菜单里，
-// 高过一整屏，当前语言也看不见。其余收在「更多语言」二级菜单。
-//
-// The engines accept far more than anything listed below — both Microsoft and
-// Google take any BCP-47 tag they support, and a test of fourteen of them
-// (Thai, Vietnamese, Indonesian, Turkish, Arabic, Hindi, Portuguese, Italian,
-// Dutch, Polish, Ukrainian, Hebrew, Persian, Swedish) came back translated in
-// under a second each. The limit is this list, not the service.
-
-// langOptions 是语言选择器的完整取值，顺序为：先 langPrimary，再按区域展开
-// langMoreGroups。它是从这两张表算出来的，不再手抄一份，否则改一处忘一处
-// 就会出现「菜单里有、设置页没有」这种不一致。
 var langOptions = func() []string {
 	out := append([]string(nil), langPrimary...)
 	for _, group := range langMoreGroups {
@@ -31,10 +18,8 @@ var langOptions = func() []string {
 	return out
 }()
 
-// langPrimary 是菜单第一层直接摆出来的语言：中文读者真正在用的那几个。
 var langPrimary = []string{"zh-Hans", "zh-Hant", "en", "ja", "ko"}
 
-// langMoreGroups 是收在「更多语言」里的部分，按区域分组，组间一条分隔线。
 var langMoreGroups = [][]string{
 	{"th", "vi", "id", "ms", "tl"},
 	{"fr", "de", "es", "pt", "it", "nl", "ru", "uk", "pl", "sv", "da", "no", "fi", "cs", "ro", "hu", "el", "tr"},
@@ -53,7 +38,6 @@ var langLabels = map[string]string{
 	"ur": "乌尔都语",
 }
 
-// langList returns the labels the language picker shows, in langOptions order.
 func langList() []string {
 	out := make([]string, 0, len(langOptions))
 	for _, l := range langOptions {
@@ -71,11 +55,6 @@ func langFromLabel(label string) string {
 	return "zh-Hans"
 }
 
-// buildLangMenu fills a menu with the target-language choices: the five the
-// reader actually switches between, then one submenu holding the rest.
-//
-// 平铺三十四种语言的菜单占满整屏，当前语言在列表里也看不到；现在常用语言
-// 直接摆出来，其余按区域分组放进二级菜单，当前值在两级里都会打勾。
 func buildLangMenu(m *ui.Menu, current string, onPick func(tag string)) {
 	for _, tag := range langPrimary {
 		if m.Item(langLabels[tag]).Checked(tag == current).Chosen() {
@@ -83,7 +62,6 @@ func buildLangMenu(m *ui.Menu, current string, onPick func(tag string)) {
 		}
 	}
 	if inLangMore(current) {
-		// 当前语言藏在二级菜单里时，父项要写出它是哪个，否则用户看不出自己在用哪门语言。
 		m.Separator()
 		m.Submenu("更多语言（"+langLabels[current]+"）", func(sub *ui.Menu) {
 			addMoreLangItems(sub, current, onPick)
@@ -109,7 +87,6 @@ func addMoreLangItems(sub *ui.Menu, current string, onPick func(tag string)) {
 	}
 }
 
-// inLangMore reports whether tag lives in the submenu rather than the top level.
 func inLangMore(tag string) bool {
 	for _, group := range langMoreGroups {
 		for _, t := range group {
@@ -121,17 +98,12 @@ func inLangMore(tag string) bool {
 	return false
 }
 
-// settingsRefresh repaints the settings window after a change that alters
-// the structure of a page (a list that grew or shrank).
 func (a *app) settingsRefresh() {
 	if a.cfgWin != nil && !a.cfgWin.IsDestroyed() {
 		a.cfgWin.Update(func() {})
 	}
 }
 
-// refreshThemeWindows repaints the open windows after the accent changes. The
-// popup keeps its content; only the accent-derived states (focus, selection,
-// links) have to be redrawn.
 func (a *app) refreshThemeWindows() {
 	for _, w := range []*mygo.Window{a.win, a.cfgWin} {
 		if w != nil && !w.IsDestroyed() {
@@ -151,9 +123,7 @@ type settingsNavGroup struct {
 	items []settingsNavEntry
 }
 
-// 导航按用户心智分组。分组只影响侧栏，页面路由仍由 id 决定。
 var settingsNavGroups = []settingsNavGroup{
-	// 工作台放最上面：主窗口默认打开的就是这一页，关掉浮窗后也能直接回来。
 	{"工作台", []settingsNavEntry{
 		{"home", "查词翻译", iconTranslate},
 		{"vocabulary", "生词本", iconBookmark},
@@ -176,8 +146,6 @@ var settingsNavGroups = []settingsNavGroup{
 	}},
 }
 
-// settingsNavItem 是 32px 的导航行：图标占固定列宽并左对齐，选中态用
-// 圆角淡蓝整行高亮，不再靠外置竖条区分。
 func (a *app) settingsNavItem(c *ui.Context, t *ui.Theme, at AppTheme, item settingsNavEntry) {
 	active := a.page == item.id
 	b := ui.ButtonBase(c).Height(HeightControl).Radius(RadiusSM).
@@ -194,7 +162,6 @@ func (a *app) settingsNavItem(c *ui.Context, t *ui.Theme, at AppTheme, item sett
 	if active {
 		iconCol, textCol, weight = at.Accent, at.Accent, 600
 	}
-	// 生词本后面直接带数量：侧栏是唯一能看到「存了多少」的地方。
 	label := item.label
 	if item.id == "vocabulary" {
 		if n := GetVocabularyStore().Count(); n > 0 {
@@ -214,7 +181,6 @@ func (a *app) settingsNavItem(c *ui.Context, t *ui.Theme, at AppTheme, item sett
 	}
 }
 
-// settingsView renders the settings window: a sidebar of pages and a form.
 func (a *app) settingsView(c *ui.Context) {
 	cfg := a.store.Get()
 	applyTheme(c, cfg.ThemeMode, c.Theme().Dark, cfg.AccentTheme)
@@ -229,16 +195,9 @@ func (a *app) settingsView(c *ui.Context) {
 		a.settingsScroll.Y = 0
 	}
 
-	// The root row must fill the window in both directions. With only
-	// FillWidth the row is as tall as its tallest child, the scroll view
-	// then measures against an unbounded height, and the page can neither
-	// scroll nor fit a small window: the content is simply cut off.
 	ui.Row(c).FillWidth().FillHeight().Children(func() {
-		// 自定义导航：框架 ui.Sidebar 的选中态是实心 accent 块，无法改成
-		// 「浅底 + 左侧竖条」。用 ButtonBase + RoleTreeItem 保留焦点与辅助技术。
 		ui.Column(c).Width(NavWidth).FillHeight().Padding(Space3).Gap(Space1).
 			Background(at.Canvas).Children(func() {
-			// 主窗口标识：右上角的状态胶囊是常驻的，标题行只是把身份说清楚。
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Padding(Space1, Space2).Children(func() {
 				ui.Box(c).Size(24, 24).Radius(RadiusSM).Background(at.AccentSoft).Center().Shrink(0).Children(func() {
 					ui.Icon(c, iconDict).Size(14, 14).TextColor(at.Accent)
@@ -246,8 +205,6 @@ func (a *app) settingsView(c *ui.Context) {
 				ui.Text(c, appTitle).Font(fontUI).FontSize(FontControl).FontWeight(600).
 					TextColor(at.Text).SingleLine()
 			})
-			// 导航组单独滚动：窗口压到最小高度时，五组入口加底部胶囊装不下，
-			// 没有这个滚动区最后几项就会被直接裁掉。标题行和胶囊保持常驻。
 			ui.Scroll(c).TrackScroll(&a.navScroll).Grow(1).FillWidth().
 				ScrollbarInsets(0, 0, Space2).Children(func() {
 				ui.Column(c).FillWidth().Gap(Space1).Children(func() {
@@ -260,7 +217,6 @@ func (a *app) settingsView(c *ui.Context) {
 					}
 				})
 			})
-			// 常驻状态胶囊：不管用户停在哪一页，都能看到划词监听是否真的在跑。
 			paused := !a.selectionPausedUntil().IsZero()
 			dotCol := at.Success
 			statusText := "划词监听中"
@@ -294,12 +250,7 @@ func (a *app) settingsView(c *ui.Context) {
 
 		ui.Scroll(c).TrackScroll(&a.settingsScroll).Grow(1).FillHeight().
 			Padding(Space6, Space8, Space8+Space4, Space8).ScrollbarInsets(0, 0, Space2).Children(func() {
-			// One measured column instead of controls stretched across the
-			// whole window: a form reads as a form, not as a spreadsheet.
 			ui.Column(c).FillWidth().MaxWidth(ContentMaxWidth).Gap(Space6).Children(func() {
-				// A failed save used to be only a log line: the switch moved,
-				// the window looked saved, and the setting vanished on restart.
-				// Keep the error visible until a retry actually succeeds.
 				if saveErr := a.store.LastSaveError(); saveErr != nil {
 					SurfaceCard(c, t).Background(dangerSoft(t)).Border(1, dangerLine(t)).Children(func() {
 						ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
@@ -344,13 +295,6 @@ func (a *app) settingsView(c *ui.Context) {
 		})
 	})
 
-	// Outcomes of the page's own actions are shown as toasts (mygo v0.5.5)
-	// instead of inline banners that pushed the form down and stayed on
-	// screen. This runs after the page rendered, so the message the page
-	// just set is the one shown.
-	// Both fields are written from background goroutines (import, export,
-	// enrich, delete) under a.mu; reading and clearing them here without the
-	// lock was a data race that could also lose the message.
 	a.mu.Lock()
 	feedback, savedMsg := a.actionSaveFeedback, a.actionSavedMsg
 	a.actionSaveFeedback, a.actionSavedMsg = "", ""
@@ -439,7 +383,6 @@ func normalizeHotkey(s string) string {
 	return canonicalHotkey(s)
 }
 
-// checkHotkeyConflict reports whether any two non-empty shortcuts are identical.
 func checkHotkeyConflict(sel, inp, ocr string) string {
 	nSel := canonicalHotkey(sel)
 	nInp := canonicalHotkey(inp)
@@ -457,7 +400,6 @@ func checkHotkeyConflict(sel, inp, ocr string) string {
 	return ""
 }
 
-// applyHotkeys re-registers global shortcuts from the pending fields.
 func (a *app) applyHotkeys() {
 	if !a.hotkeyDraftsInit {
 		a.initHotkeyDrafts()
@@ -481,13 +423,10 @@ func (a *app) applyHotkeys() {
 		a.pendingHotkeyInput = inp
 		a.pendingHotkeyScreenshot = ocr
 		a.setHotkeyMsg(hotkeyMsgSuccess, "快捷键已成功生效 ✓")
-		// 托盘菜单标签里写着快捷键，菜单只在重建时读取配置。
 		go a.rebuildTray()
 		return
 	}
 
-	// 新的一组注册失败：重新注册旧的一组，磁盘上保留旧值。
-	// 旧键可能已被别的程序占走，回滚失败时必须告诉用户快捷键已失效。
 	log.Printf("fastDictionary: shortcut update rejected: %s", msg)
 	if rollback := registerHotkeys(prev.HotkeySelection, prev.HotkeyInput, prev.HotkeyScreenshot, a); rollback != "" {
 		msg += "原快捷键也未能恢复：" + rollback
@@ -495,7 +434,6 @@ func (a *app) applyHotkeys() {
 	a.setHotkeyMsg(hotkeyMsgError, msg)
 }
 
-// setHotkeyMsg records the 快捷键 page message and repaints the settings window.
 func (a *app) setHotkeyMsg(kind hotkeyMsgKind, msg string) {
 	a.mu.Lock()
 	a.setHotkeyMsgLocked(kind, msg)
@@ -524,35 +462,21 @@ func (a *app) resetHotkeysToDefault() {
 	a.applyHotkeys()
 }
 
-// openAISettings jumps straight to the AI page. A failed AI refine should lead
-// to the setting that can fix it, not to a generic settings page the user then
-// has to search.
 func (a *app) openAISettings() {
 	a.showMainWindow("ai")
 }
 
-// showMainWindow opens or focuses the one main window, on the given page.
-// The main window now carries the workbench home page as well as the
-// settings, so every entry point (tray, chip menu, startup) comes through
-// here instead of building its own page state.
 func (a *app) showMainWindow(page string) {
 	if page != "" {
 		a.page = page
 	} else if a.page == "" {
 		a.page = "home"
 	}
-	// The tray flyout duplicates the main window's home page; leaving it open
-	// behind the window reads as a second, stale copy.
 	if a.trayFlyout != nil && !a.trayFlyout.IsDestroyed() {
 		a.trayFlyout.Close()
 		a.trayFlyout = nil
 	}
 	if a.cfgWin != nil && !a.cfgWin.IsDestroyed() {
-		// Coming back to a window that is already there is a refocus, not a
-		// fresh start: the hotkey drafts the user typed and the entry they
-		// expanded must survive it. Only the destructive two-step
-		// confirmations are dropped, and only because an armed "确认清空"
-		// left behind is a trap.
 		a.resetVocabularyConfirmations()
 		if a.page == "ai" {
 			a.loadAIModels()
@@ -579,8 +503,6 @@ func (a *app) showMainWindow(page string) {
 		if a.isQuitting.Load() {
 			return
 		}
-		// Closing the main window is not quitting: the selection trigger keeps
-		// working in the tray, which is what makes the window safe to close.
 		e.PreventDefault()
 		a.mainWinVisible = false
 		win.Hide()
@@ -591,8 +513,6 @@ func (a *app) showMainWindow(page string) {
 	win.Focus()
 }
 
-// toggleMainWindow is the tray's left click: show the workbench, or hide the
-// window when it is already in front.
 func (a *app) toggleMainWindow() {
 	if a.cfgWin != nil && !a.cfgWin.IsDestroyed() && a.mainWinVisible {
 		a.mainWinVisible = false
@@ -602,11 +522,6 @@ func (a *app) toggleMainWindow() {
 	a.showMainWindow("home")
 }
 
-// showSettings opens the main window on a settings page.
-//
-// It is kept for the callers that mean "the settings", not "the workbench":
-// the home page is what the tray and a plain start open, and landing there
-// when the user asked for settings would be wrong.
 func (a *app) showSettings() {
 	if a.page == "" || a.page == "home" {
 		a.page = "general"

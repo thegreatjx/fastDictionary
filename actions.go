@@ -9,7 +9,6 @@ import (
 	"strings"
 )
 
-// DictionaryResult models the structured output of the Learner's Dictionary action
 type DictionaryResult struct {
 	Term               string `json:"term"`
 	Phonetic           string `json:"phonetic"`
@@ -23,7 +22,6 @@ type DictionaryResult struct {
 	Raw                string `json:"-"`
 }
 
-// CleanJSONText strips markdown code fences from model outputs
 func CleanJSONText(raw string) string {
 	cleaned := strings.TrimSpace(raw)
 	if strings.HasPrefix(cleaned, "```json") {
@@ -37,7 +35,6 @@ func CleanJSONText(raw string) string {
 	return strings.TrimSpace(cleaned)
 }
 
-// ParseDictionaryResult extracts dictionary fields from raw LLM output
 func ParseDictionaryResult(raw string) *DictionaryResult {
 	cleaned := CleanJSONText(raw)
 	if cleaned == "" {
@@ -60,7 +57,6 @@ func ParseDictionaryResult(raw string) *DictionaryResult {
 		MemoryTipsAlt      any    `json:"memory_tips"`
 		Difficulty         string `json:"difficulty"`
 
-		// Chinese keys fallback
 		TermZH         string `json:"词条"`
 		PhoneticZH     string `json:"音标"`
 		PosZH          string `json:"词性"`
@@ -74,7 +70,6 @@ func ParseDictionaryResult(raw string) *DictionaryResult {
 
 	var d rawDict
 	if err := json.Unmarshal([]byte(cleaned), &d); err != nil {
-		// Fallback: try finding first '{' and last '}'
 		start := strings.Index(cleaned, "{")
 		end := strings.LastIndex(cleaned, "}")
 		if start >= 0 && end > start {
@@ -98,11 +93,9 @@ func ParseDictionaryResult(raw string) *DictionaryResult {
 		Raw:                raw,
 	}
 
-	// Parse context term
 	ctVal := firstNonNil(d.ContextTerm, d.ContextTermAlt, d.ContextTermZH)
 	res.ContextTerm = parseContextTerm(ctVal)
 
-	// Parse memory tips
 	mtVal := firstNonNil(d.MemoryTips, d.MemoryTipsAlt, d.MemTipsZH)
 	res.MemoryTips = parseMemoryTips(mtVal)
 
@@ -118,7 +111,6 @@ func parseContextTerm(v any) string {
 	}
 	if s, ok := v.(string); ok {
 		s = strings.TrimSpace(s)
-		// Check if it's serialized JSON
 		if strings.HasPrefix(s, "[") {
 			var list []map[string]any
 			if err := json.Unmarshal([]byte(s), &list); err == nil && len(list) > 0 {
@@ -172,7 +164,6 @@ func parseMemoryTips(v any) string {
 	return fmt.Sprint(v)
 }
 
-// WritingAnnotation represents one marked change in writing review
 type WritingAnnotation struct {
 	Text       string `json:"text"`
 	Fix        string `json:"fix"`
@@ -182,7 +173,6 @@ type WritingAnnotation struct {
 	Occurrence int    `json:"occurrence,omitempty"`
 }
 
-// ImproveWritingResult represents the structured critique and rewrite
 type ImproveWritingResult struct {
 	Setting     string              `json:"setting"`
 	Annotations []WritingAnnotation `json:"annotations"`
@@ -191,7 +181,6 @@ type ImproveWritingResult struct {
 	Raw         string              `json:"-"`
 }
 
-// ParseImproveWritingResult extracts writing review fields from raw output
 func ParseImproveWritingResult(raw string) *ImproveWritingResult {
 	cleaned := CleanJSONText(raw)
 	if cleaned == "" {
@@ -249,7 +238,6 @@ func parseWritingAnnotations(v any) []WritingAnnotation {
 	if v == nil {
 		return nil
 	}
-	// Case 1: Already a string of JSON array
 	if s, ok := v.(string); ok {
 		s = strings.TrimSpace(s)
 		var list []WritingAnnotation
@@ -258,7 +246,6 @@ func parseWritingAnnotations(v any) []WritingAnnotation {
 		}
 		return nil
 	}
-	// Case 2: Slice of objects
 	data, err := json.Marshal(v)
 	if err != nil {
 		return nil
@@ -270,19 +257,11 @@ func parseWritingAnnotations(v any) []WritingAnnotation {
 	return nil
 }
 
-// writingTypes are the annotation types the card knows how to label. The model
-// is asked for one of these bare words, but it also returns the prose it was
-// given as a definition — "not what a native writer would write in this
-// setting" — which then renders as an unreadable tag chip. Normalising here
-// keeps the card readable even when the model paraphrases.
 var writingTypes = []string{
 	"spelling", "grammar", "punctuation", "word-choice", "logic",
 	"unnatural", "register", "clarity", "good",
 }
 
-// normalizeWritingAnnotations maps each annotation's type onto a known value.
-// An unrecognised type becomes empty rather than leaking prose into the UI; the
-// card then falls back to the tag, or to no chip at all.
 func normalizeWritingAnnotations(list []WritingAnnotation) []WritingAnnotation {
 	out := list[:0]
 	for _, an := range list {
@@ -292,7 +271,6 @@ func normalizeWritingAnnotations(list []WritingAnnotation) []WritingAnnotation {
 	return out
 }
 
-// normalizeWritingType returns the canonical short type for an annotation.
 func normalizeWritingType(raw string) string {
 	s := strings.ToLower(strings.TrimSpace(raw))
 	if s == "" {
@@ -303,9 +281,6 @@ func normalizeWritingType(raw string) string {
 			return known
 		}
 	}
-	// The model paraphrased: match on the definition it was given. "wrong in
-	// any setting" is not quotable as a single type, so the more specific
-	// phrases are tried first.
 	switch {
 	case strings.Contains(s, "good") || strings.Contains(s, "worth keeping"):
 		return "good"
@@ -333,7 +308,6 @@ func normalizeWritingType(raw string) string {
 	return ""
 }
 
-// FormatActionPrompt substitutes {{selection}}, {{paragraphs}}, {{targetLanguage}} in user prompt
 func FormatActionPrompt(template, selection, paragraphs, targetLang string) string {
 	res := template
 	res = strings.ReplaceAll(res, "{{selection}}", selection)
@@ -351,11 +325,6 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
-// firstNonNil returns the first argument that is not nil.
-//
-// A typed nil — a nil *T or nil map/slice stored in an any — is not == nil,
-// so it would be returned and then stringified as "<nil>" by the parsers
-// downstream. reflect keeps that case on the "absent" side where it belongs.
 func firstNonNil(vals ...any) any {
 	for _, v := range vals {
 		if v == nil {
@@ -373,12 +342,6 @@ func firstNonNil(vals ...any) any {
 	return nil
 }
 
-// renderDictionaryCard renders the 1:1 Learner's Dictionary layout.
-//
-// savedTerm is the headword the last save wrote to the notebook. When it
-// matches this card's term the save button turns into a static 已保存 badge:
-// the write already happened, so a live-looking amber button only invites a
-// second click that rewrites the same entry.
 func renderDictionaryCard(c *ui.Context, t *ui.Theme, origText string, res *DictionaryResult, savedTerm string, onSave func()) {
 	termText := res.Term
 	if termText == "" {
@@ -389,7 +352,6 @@ func renderDictionaryCard(c *ui.Context, t *ui.Theme, origText string, res *Dict
 		Background(t.Surface).Border(1, t.Border).
 		Shadow(0, 2, 8, 0, ui.RGBA(0, 0, 0, 0.08)).Children(func() {
 		ui.Column(c).FillWidth().Gap(Space2).Children(func() {
-			// 1. Term Header: [Term] [Phonetic] [speak button] [CEFR Level]
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 				ui.Text(c, termText).FontSize(18).FontWeight(700).TextColor(t.Text)
 
@@ -401,9 +363,6 @@ func renderDictionaryCard(c *ui.Context, t *ui.Theme, origText string, res *Dict
 					ui.Text(c, ph).FontSize(13).TextColor(t.TextMuted)
 				}
 
-				// 28px square: the icon is 15px, but the hit area has to be
-				// large enough to press without aiming. It shares the ghost
-				// icon button used by the card's action row.
 				btnSpeak := renderIconButton(c, iconSpeak, "朗读发音", 28, 15, false)
 				if btnSpeak.Clicked() {
 					PlaySpeechLang(termText, "", false)
@@ -411,8 +370,6 @@ func renderDictionaryCard(c *ui.Context, t *ui.Theme, origText string, res *Dict
 
 				ui.Spacer(c).Grow(1)
 
-				// CEFR Difficulty badge. The colours come from the theme:
-				// fixed pastels went unreadable in dark mode.
 				if res.Difficulty != "" {
 					d := strings.ToUpper(strings.TrimSpace(res.Difficulty))
 					bg, fg := cefrColors(t, d)
@@ -422,7 +379,6 @@ func renderDictionaryCard(c *ui.Context, t *ui.Theme, origText string, res *Dict
 				}
 			})
 
-			// 2. Part of Speech & Definition
 			ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(8).Children(func() {
 				if res.PartOfSpeech != "" {
 					ui.Box(c).Padding(2, 6).Radius(4).Background(t.SurfaceHover).Border(1, t.Border).Children(func() {
@@ -434,7 +390,6 @@ func renderDictionaryCard(c *ui.Context, t *ui.Theme, origText string, res *Dict
 				}
 			})
 
-			// 3. Context Sentence & Translation
 			if res.Context != "" {
 				ui.Box(c).FillWidth().Padding(10, 12).Radius(6).
 					Background(t.SurfaceHover).Border(1, t.Border).Children(func() {
@@ -453,8 +408,6 @@ func renderDictionaryCard(c *ui.Context, t *ui.Theme, origText string, res *Dict
 				})
 			}
 
-			// 4. Memory Tips card. Amber on dark was a bright block with dark
-			// text on it; the tint now follows the theme.
 			if res.MemoryTips != "" {
 				tipBg, tipBorder, tipTitle, tipBody := memoryTipColors(t)
 				ui.Box(c).FillWidth().Padding(10, 12).Radius(6).
@@ -477,16 +430,7 @@ func renderDictionaryCard(c *ui.Context, t *ui.Theme, origText string, res *Dict
 
 			ui.Divider(c).FillWidth()
 
-			// 5. Bottom action bar: [ 保存到生词本 ]
 			ui.Row(c).FillWidth().Justify(ui.End).AlignItems(ui.Center).Children(func() {
-				// A quiet text row, not a disabled button: the height keeps
-				// the action bar from jumping, and 已保存 says the write
-				// already happened without borrowing a second colour.
-				//
-				// onSave is nil where there is nowhere left to save: the
-				// 生词本 renders this card for an entry it already holds.
-				// Drawing a button there offered a click that could only
-				// do nothing, which is the "保存根本点不了" report.
 				if saved || onSave == nil {
 					ui.Row(c).Height(HeightCompact).Gap(Space1).AlignItems(ui.Center).Children(func() {
 						ui.Icon(c, iconCheck).Size(12, 12).TextColor(appTheme(t).TextMuted)
@@ -511,8 +455,6 @@ func renderDictionaryCard(c *ui.Context, t *ui.Theme, origText string, res *Dict
 	})
 }
 
-// writingTone is a semantic surface and its foreground. Keeping the three
-// together prevents a dark button from being placed on a light green card.
 type writingTone struct {
 	background ui.Color
 	border     ui.Color
@@ -533,10 +475,6 @@ type writingTheme struct {
 	improvedTitle ui.Color
 }
 
-// writingThemeFor keeps the writing card in the same cool surface family as
-// the rest of the app. Corrections are marked by a muted danger ink (removed)
-// and the deeper theme accent (added); the "改后版本" surface is the themed
-// soft wash, never a green success block.
 func writingThemeFor(t *ui.Theme) writingTheme {
 	at := newAppTheme(false, defaultAccent(false))
 	if t != nil {
@@ -565,14 +503,12 @@ func writingThemeFor(t *ui.Theme) writingTheme {
 	}
 }
 
-// renderImproveWritingCard renders the 1:1 Improve Writing layout
 func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *ImproveWritingResult, saved bool, onCopy func(string), onSave func()) {
 	w := writingThemeFor(t)
 	ui.Box(c).FillWidth().Padding(Space3, Space4).Radius(8).
 		Background(t.Surface).Border(1, t.Border).
 		Shadow(0, 2, 8, 0, ui.RGBA(0, 0, 0, 0.08)).Children(func() {
 		ui.Column(c).FillWidth().Gap(Space2).Children(func() {
-			// 1. Top bar: Setting capsule & status
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 				settingText := res.Setting
 				if settingText == "" {
@@ -592,7 +528,6 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 				})
 			})
 
-			// 2. Annotations & Corrections List
 			if len(res.Annotations) > 0 {
 				ui.Column(c).FillWidth().Gap(6).Children(func() {
 					for _, ann := range res.Annotations {
@@ -635,7 +570,6 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 				})
 			}
 
-			// 3. Corrected / Improved Full Text Card
 			if res.Improved != "" {
 				ui.Box(c).FillWidth().Padding(10, 12).Radius(6).
 					Background(w.improved.background).Border(1, w.improved.border).Children(func() {
@@ -664,7 +598,6 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 				})
 			}
 
-			// 4. One-sentence summary critique
 			if res.Summary != "" {
 				ui.Box(c).FillWidth().Padding(8, 10).Radius(6).
 					Background(t.SurfaceHover).Children(func() {
@@ -680,7 +613,6 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 
 			ui.Divider(c).FillWidth()
 
-			// 5. Bottom bar: [ 保存到笔记本 ]
 			ui.Row(c).FillWidth().Justify(ui.End).AlignItems(ui.Center).Children(func() {
 				if saved {
 					ui.Row(c).Height(HeightCompact).Gap(Space1).AlignItems(ui.Center).Children(func() {
@@ -709,7 +641,6 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 	})
 }
 
-// renderHighlightedContext renders the context sentence with the target word highlighted
 func renderHighlightedContext(c *ui.Context, t *ui.Theme, sentence, targetWord string) {
 	if targetWord == "" {
 		ui.Text(c, sentence).FontSize(13).TextColor(t.Text).Wrap().Grow(1)

@@ -4,9 +4,6 @@ import (
 	"testing"
 )
 
-// 长难句卡片整段分析：句子仍先切分，只为把硬换行重排成一段干净的原文，
-// 随后的请求、解析和渲染都使用同一份整段文本。
-
 func TestGrammarAnalysisTextJoinsSentencesIntoOneParagraph(t *testing.T) {
 	text := "This is a slide.\nI am confident it works.\n\nThen we stop!"
 	if got, want := grammarAnalysisText(text), "This is a slide. I am confident it works. Then we stop!"; got != want {
@@ -17,8 +14,6 @@ func TestGrammarAnalysisTextJoinsSentencesIntoOneParagraph(t *testing.T) {
 	}
 }
 
-// TestGrammarCardAnalysesTheWholeSelection pins the wiring: one request and one
-// card cover the whole selection, with no sentence pager.
 func TestGrammarCardAnalysesTheWholeSelection(t *testing.T) {
 	src := readSourceFile(t, "popup_view.go")
 	if !containsText(src, "grammarAnalysisText(s.source)") {
@@ -43,7 +38,6 @@ func TestSplitGrammarSentencesSplitsAParagraph(t *testing.T) {
 }
 
 func TestSplitGrammarSentencesKeepsAbbreviationsAndDecimals(t *testing.T) {
-	// 缩写和版本号里的点不是句末：把它们切开，卡片会把 "Mr." 单独当成一句话。
 	for _, text := range []string{
 		"Mr. Smith paid 3.5 dollars.",
 		"Dr. Lee wrote the e.g. example.",
@@ -75,7 +69,6 @@ func TestSplitGrammarSentencesHandlesCJKPunctuationAndBlankLines(t *testing.T) {
 }
 
 func TestSplitGrammarSentencesFallsBackToTheWholeText(t *testing.T) {
-	// 没有句末标点时仍然要有内容，否则卡片会空着。
 	if sents := splitGrammarSentences("a fragment with no punctuation"); len(sents) != 1 {
 		t.Fatalf("got %q, want the text as one sentence", sents)
 	}

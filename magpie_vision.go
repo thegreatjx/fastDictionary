@@ -8,9 +8,6 @@ import (
 	"strings"
 )
 
-// imageFileDataURL reads a screenshot and turns it into the data URL accepted
-// by the OpenAI-compatible vision message format. The screenshot is kept on
-// disk for OCR retry and preview, so this does not add another image cache.
 func imageFileDataURL(path string) (string, error) {
 	if strings.TrimSpace(path) == "" {
 		return "", fmt.Errorf("截图路径为空")

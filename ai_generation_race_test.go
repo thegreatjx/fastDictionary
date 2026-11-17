@@ -13,10 +13,6 @@ import (
 	"time"
 )
 
-// The tests in this file drive the real translate() / runAction() paths through
-// a local server. Earlier generation tests only incremented a counter and
-// asserted that the number changed, so every concurrency bug below stayed green.
-
 func waitForStaleState(t *testing.T, what string, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -29,7 +25,6 @@ func waitForStaleState(t *testing.T, what string, cond func() bool) {
 	t.Fatalf("timed out waiting for %s", what)
 }
 
-// sseDelta builds one OpenAI-style streamed chunk carrying a whole JSON card.
 func sseDelta(content string) string {
 	b, _ := json.Marshal(map[string]any{
 		"choices": []any{map[string]any{"delta": map[string]string{"content": content}}},
@@ -48,10 +43,6 @@ func assertNewPassInFlight(t *testing.T, a *app) {
 	}
 }
 
-// TestRunActionDropsStalePass starts one AI pass, supersedes it while it is
-// still streaming, and holds the new pass open. The cancelled pass used to run
-// its teardown anyway: clear the new pass's cancel func, write "context
-// canceled" into its errText, and cache a mixed answer under the old key.
 func TestRunActionDropsStalePass(t *testing.T) {
 	const oldCard = `{"improved":"OLD-CARD"}`
 	const newCard = `{"improved":"NEW-CARD"}`
@@ -83,9 +74,6 @@ func TestRunActionDropsStalePass(t *testing.T) {
 
 		switch n {
 		case 1:
-			// Stream a partial answer, then hang without [DONE]. Cancelling
-			// this pass makes StreamAI return both text and an error —
-			// exactly the teardown that used to overwrite the new card.
 			write(sseDelta(oldCard))
 			select {
 			case oldStreamed <- struct{}{}:
@@ -139,7 +127,6 @@ func TestRunActionDropsStalePass(t *testing.T) {
 		return strings.Contains(a.aiText, "OLD-CARD")
 	})
 
-	// The second pass cancels the first and owns every shared field.
 	a.runAction("default-improve-writing", "the new sentence")
 	assertNewPassInFlight(t, a)
 	waitForStaleState(t, "the old pass to be cancelled", func() bool {
@@ -159,8 +146,6 @@ func TestRunActionDropsStalePass(t *testing.T) {
 		}
 	})
 
-	// Keep the new pass in flight while the stale teardown would run. With the
-	// generation guard it writes nothing at all.
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(deadline) {
 		assertNewPassInFlight(t, a)
@@ -195,9 +180,6 @@ func TestRunActionDropsStalePass(t *testing.T) {
 	}
 }
 
-// TestTranslateDropsStaleAnswer is the same interleaving for the fast path:
-// the first engine answer is held at the gateway until a second translate()
-// has started, then released. translateGen must drop it.
 func TestTranslateDropsStaleAnswer(t *testing.T) {
 	oldStarted := make(chan struct{}, 1)
 	releaseOld := make(chan struct{})
@@ -283,9 +265,6 @@ func cannedHTTP(status int, body string) *http.Response {
 func stubRaceHTTP(t *testing.T, fn stubRoundTripper) {
 	t.Helper()
 	old := httpClient
-	// No client Timeout: the only thing that should end a loser's request is
-	// TranslateRace's cancel() (or its defer cancel()). A client-side deadline
-	// would make the loser look like a real failure instead of a cancellation.
 	httpClient = &http.Client{Transport: fn}
 	t.Cleanup(func() { httpClient = old })
 }
@@ -309,9 +288,6 @@ func assertBreakerClean(t *testing.T, name string) {
 	}
 }
 
-// TestRaceCancellationIsNotAnEngineFailure covers the healthy-but-slow loser.
-// The winner's cancel() stops its request and the breaker used to count that
-// as a real failure on every race, quietly removing a working engine.
 func TestRaceCancellationIsNotAnEngineFailure(t *testing.T) {
 	t.Run("cancelled in flight", func(t *testing.T) {
 		freshBreakers(t)
@@ -341,8 +317,6 @@ func TestRaceCancellationIsNotAnEngineFailure(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatal("the loser's request was never cancelled")
 		}
-		// The contender records after its request returns, but the race has
-		// already ended. Poll long enough for a stale record to show up.
 		deadline := time.Now().Add(500 * time.Millisecond)
 		for time.Now().Before(deadline) {
 			assertBreakerClean(t, "microsoft")
@@ -350,9 +324,6 @@ func TestRaceCancellationIsNotAnEngineFailure(t *testing.T) {
 		}
 	})
 
-	// A request that returns context.Canceled outright must be skipped too.
-	// Here the loser's result is consumed before the race returns, so the
-	// record (if any) is guaranteed to have happened by assertion time.
 	t.Run("context.Canceled error", func(t *testing.T) {
 		freshBreakers(t)
 		stubRaceHTTP(t, func(req *http.Request) (*http.Response, error) {
@@ -370,8 +341,6 @@ func TestRaceCancellationIsNotAnEngineFailure(t *testing.T) {
 	})
 }
 
-// TestRaceFailureIsRecordedOnce covers the duplicate record: one bad answer
-// used to be counted twice, so a single 429 opened the breaker for a minute.
 func TestRaceFailureIsRecordedOnce(t *testing.T) {
 	freshBreakers(t)
 	stubRaceHTTP(t, func(req *http.Request) (*http.Response, error) {

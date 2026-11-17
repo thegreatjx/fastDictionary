@@ -7,15 +7,6 @@ import (
 	"testing"
 )
 
-// TestOneNameEverywhere pins the rule this rename established: the app has
-// exactly two names, fastDictionary on disk and fast词典 on screen, and no
-// third one survives anywhere.
-//
-// The name is not cosmetic. mygo derives the user data directory, the log
-// directory and the single instance lock from the executable name, so a
-// stale name in the source is a path that points somewhere the app never
-// writes. That is how the settings page ended up showing a directory the
-// store had stopped using.
 func TestOneNameEverywhere(t *testing.T) {
 	if appName != "fastDictionary" {
 		t.Fatalf("appName = %q; the exe name and the module name have to agree", appName)
@@ -24,22 +15,15 @@ func TestOneNameEverywhere(t *testing.T) {
 		t.Fatalf("appTitle = %q; the interface name is fast词典", appTitle)
 	}
 
-	// The module name decides what `go build .` produces, and the produced
-	// file name decides the data directory. A drift here is the bug that
-	// made the shortcut launch a binary reading a different config.
 	gomod, err := os.ReadFile("go.mod")
 	if err != nil {
 		t.Fatalf("read go.mod: %v", err)
 	}
-	// Git on Windows may check the file out with CRLF; the declaration is
-	// still the same line.
 	gomodText := strings.ReplaceAll(string(gomod), "\r\n", "\n")
 	if !strings.Contains(gomodText, "module "+appName+"\n") {
 		t.Fatalf("go.mod does not declare `module %s`", appName)
 	}
 
-	// No source file may still carry the old name. The migration list no
-	// longer includes it: there is no old data to rescue.
 	oldName := "fast" + "pot"
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -63,8 +47,6 @@ func TestOneNameEverywhere(t *testing.T) {
 	}
 }
 
-// TestLegacyDataDirsCoverEveryOldName pins the migration list against the
-// names this app actually used on disk.
 func TestLegacyDataDirsCoverEveryOldName(t *testing.T) {
 	for _, want := range []string{"Dictionary", "fast词典"} {
 		found := false
@@ -84,8 +66,6 @@ func TestLegacyDataDirsCoverEveryOldName(t *testing.T) {
 	}
 }
 
-// TestCopyUserDataBringsTheNotebook is the behaviour the user actually
-// notices: after a rename the words they saved are still there.
 func TestCopyUserDataBringsTheNotebook(t *testing.T) {
 	src := t.TempDir()
 	dst := t.TempDir()
@@ -98,8 +78,6 @@ func TestCopyUserDataBringsTheNotebook(t *testing.T) {
 			t.Fatalf("seed %s: %v", name, err)
 		}
 	}
-	// Disposable directories must not travel: a stale cache copied forward
-	// is indistinguishable from a fresh one.
 	if err := os.MkdirAll(filepath.Join(src, "cache"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -126,8 +104,6 @@ func TestCopyUserDataBringsTheNotebook(t *testing.T) {
 	}
 }
 
-// TestCopyUserDataToleratesPartialLegacyDirs covers the real directory on
-// this machine: it has a config and a notebook but no vocabulary file.
 func TestCopyUserDataToleratesPartialLegacyDirs(t *testing.T) {
 	src := t.TempDir()
 	dst := t.TempDir()
@@ -143,8 +119,6 @@ func TestCopyUserDataToleratesPartialLegacyDirs(t *testing.T) {
 	}
 }
 
-// TestVocabPathFollowsTheAppName pins that the notebook does not point at a
-// directory named after some other build.
 func TestVocabPathFollowsTheAppName(t *testing.T) {
 	p := defaultVocabPath()
 	if !strings.HasSuffix(p, "vocabulary.json") {

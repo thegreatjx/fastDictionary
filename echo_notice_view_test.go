@@ -7,10 +7,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// TestEchoedTranslationRendersAsNotice pins the card the reader complained
-// about: 微软 answered "fastDictionary" with the word itself, and the card
-// showed a red failure plus a 重试 button that reproduced the same text. The
-// echo is now an explanation, not an error.
 func TestEchoedTranslationRendersAsNotice(t *testing.T) {
 	a := newTestApp()
 	a.mode = modeTranslate
@@ -31,9 +27,6 @@ func TestEchoedTranslationRendersAsNotice(t *testing.T) {
 	}
 }
 
-// TestTransportFailureStillRendersAsError keeps the distinction the fix
-// introduced: a request that actually failed keeps the red box and its retry,
-// because retrying can succeed there.
 func TestTransportFailureStillRendersAsError(t *testing.T) {
 	a := newTestApp()
 	a.mode = modeTranslate

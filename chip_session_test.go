@@ -5,9 +5,6 @@ import (
 	"testing"
 )
 
-// TestHideChipTakesTheWindowDown 是残留窗口的守卫：sel.shown 与窗口真实
-// 可见性可能不一致（早先的 Hide 之后又落下一个 ShowInactive），隐藏必须以
-// 窗口为准，不能以标志为准，否则 chip 会永远留在屏幕上。
 func TestHideChipTakesTheWindowDown(t *testing.T) {
 	src := readSourceFile(t, "selicon.go")
 	start := strings.Index(src, "func (a *app) hideSelIcon()")
@@ -24,8 +21,6 @@ func TestHideChipTakesTheWindowDown(t *testing.T) {
 	}
 }
 
-// TestChipSampleIsGenerationScoped 钉住 chip 的 pointer 采样只对当次显示有效：
-// 采样启动后 chip 被收起、或收起后很快又显示，旧采样都不能再碰新会话。
 func TestChipSampleIsGenerationScoped(t *testing.T) {
 	a := &app{}
 	a.mu.Lock()
@@ -37,7 +32,7 @@ func TestChipSampleIsGenerationScoped(t *testing.T) {
 		t.Fatal("当前会话的采样被判为过期")
 	}
 	a.mu.Lock()
-	a.sel.gen = 2 // 收起后又显示
+	a.sel.gen = 2
 	a.mu.Unlock()
 	if a.chipSampleStillCurrent(1) {
 		t.Fatal("旧会话的采样仍被采纳，可能把提示抬到新 chip 上")
@@ -53,8 +48,6 @@ func TestChipSampleIsGenerationScoped(t *testing.T) {
 	}
 }
 
-// TestChipShowHideBumpGeneration 是源码契约：显示与隐藏都必须自增代次，
-// 采样必须拿到显示时的代次。
 func TestChipShowHideBumpGeneration(t *testing.T) {
 	src := readSourceFile(t, "selicon.go")
 	if got := countOccurrences(src, "a.sel.gen++"); got != 2 {

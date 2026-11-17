@@ -19,7 +19,7 @@ func fillRGBA(width, height int, c color.RGBA) *image.RGBA {
 func TestAdaptivePadForOCRUsesEdgeColor(t *testing.T) {
 	src := fillRGBA(100, 80, color.RGBA{R: 31, G: 31, B: 31, A: 255})
 	padded := adaptivePadForOCR(src)
-	wantPad := ocrMinEdgePad // 0.30 * min(100,80) = 24
+	wantPad := ocrMinEdgePad
 	if got := padded.Bounds().Dx(); got != 100+2*wantPad {
 		t.Fatalf("padded width = %d, want %d", got, 100+2*wantPad)
 	}

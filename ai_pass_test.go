@@ -7,9 +7,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// TestClassifyAIResult 是 aiPassPhase 的规格：输入是结果区的真实组合，
-// 期望值是每种组合在界面上应有的名字。它锁定「什么输入算什么状态」，
-// 不照抄 renderAIResultState 的实现。
 func TestClassifyAIResult(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -37,9 +34,6 @@ func TestClassifyAIResult(t *testing.T) {
 	}
 }
 
-// TestAIResultStateRenderingBaseline 把每种 phase 对应的界面输出录下来。
-// 阶段 A 第 2 步把 renderAIResultState 改成按 aiPassPhase 分支后，这张表
-// 必须逐字不变；它是「零行为变化」的判据，不是实现说明。
 func TestAIResultStateRenderingBaseline(t *testing.T) {
 	cases := []struct {
 		phase  aiPassPhase
@@ -96,10 +90,6 @@ func TestAIResultStateRenderingBaseline(t *testing.T) {
 	}
 }
 
-// TestAICardDispatchEquivalence 锁定批次 2 要替换的布尔表达式。
-// popupView 的三个 AI mode 分支原本用 s.aiBusy || s.aiText != "" 决定走
-// 结果区还是空态；切到 classifyAIResult(s) != aiPassIdle 后，所有
-// (aiBusy, aiText) 组合必须给出相同判定。这是「零行为变化」的直接证据。
 func TestAICardDispatchEquivalence(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -124,8 +114,6 @@ func TestAICardDispatchEquivalence(t *testing.T) {
 	}
 }
 
-// TestAIModeDispatchRenderingBaseline 录下三个 AI mode 在两种分发结果下
-// 各自画出的区块。空态按钮文案是各 mode 独有的，不会与顶部标签混淆。
 func TestAIModeDispatchRenderingBaseline(t *testing.T) {
 	cases := []struct {
 		name   string

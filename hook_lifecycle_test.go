@@ -5,14 +5,6 @@ import (
 	"testing"
 )
 
-// TestInstallHooksIsIdempotent pins the guard that keeps a settings change
-// from stacking a second pair of hooks: every applySelectionMode call would
-// otherwise install again, leaking the previous handles and delivering every
-// mouse event twice.
-//
-// The Windows API cannot run on the test machine, so this asserts the shape
-// of installHooks: the "already installed" early return must exist and must
-// come before the first SetWindowsHookEx call.
 func TestInstallHooksIsIdempotent(t *testing.T) {
 	src := readSourceFile(t, "hook.go")
 	start := strings.Index(src, "func installHooks() error {")
@@ -37,8 +29,6 @@ func TestInstallHooksIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestRemoveHooksIsIdempotent pins the matching no-op: removeHooks runs on
-// every switch to hotkey-only mode, including when nothing was installed.
 func TestRemoveHooksIsIdempotent(t *testing.T) {
 	src := readSourceFile(t, "hook.go")
 	start := strings.Index(src, "func removeHooks() {")
@@ -54,7 +44,6 @@ func TestRemoveHooksIsIdempotent(t *testing.T) {
 	if !strings.Contains(body, "if mh == 0 && kh == 0") {
 		t.Fatal("removeHooks calls UnhookWindowsHookEx with zero handles when nothing was installed")
 	}
-	// The early return must precede the unhook calls.
 	early := strings.Index(body, "if mh == 0 && kh == 0")
 	unhook := strings.Index(body, "procUnhookWindowsHook.Call(mh)")
 	if early > unhook {
@@ -62,9 +51,6 @@ func TestRemoveHooksIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestApplySelectionModeTogglesBothWays is the P2-17 idempotency requirement
-// stated end to end: the same mode applied twice must not stack, and applying
-// the opposite mode must actually undo it.
 func TestApplySelectionModeTogglesBothWays(t *testing.T) {
 	src := readSourceFile(t, "selicon.go")
 	start := strings.Index(src, "func (a *app) applySelectionMode() {")
@@ -83,8 +69,6 @@ func TestApplySelectionModeTogglesBothWays(t *testing.T) {
 	if !strings.Contains(body, "removeHooks()") {
 		t.Fatal("applySelectionMode never removes the hooks")
 	}
-	// Both branches must be reachable from the trigger setting, or the mode
-	// is a one-way door again.
 	if !strings.Contains(body, `wantHooks := a.store.Get().SelectionTrigger != "hotkey"`) {
 		t.Fatal("applySelectionMode does not derive wantHooks from the trigger setting")
 	}

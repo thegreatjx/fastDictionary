@@ -11,11 +11,9 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// homeState 保存主窗口「查词翻译工作台」首页的独立状态。
-// 与划词浮窗完全隔离，避免用户在主窗口查词时被后台划词冲掉。
 type homeState struct {
 	input    string
-	tab      string // "translate" | "grammar" | "writing"
+	tab      string
 	source   string
 	target   string
 	engine   string
@@ -50,11 +48,6 @@ type homeState struct {
 	recent []string
 }
 
-// cancelRefineLocked drops the in-flight AI refine together with the button
-// state that belongs to it. A new lookup must call this: the refine result is
-// written into target/engine/elapsed, so letting it land after the user has
-// looked up something else replaces the new translation with the old one's.
-// Caller must hold a.mu.
 func (h *homeState) cancelRefineLocked() {
 	if h.aiRefineCancel != nil {
 		h.aiRefineCancel()
@@ -68,7 +61,6 @@ func (h *homeState) cancelRefineLocked() {
 func (a *app) pageHome(c *ui.Context, t *ui.Theme, cfg Config) {
 	at := appTheme(t)
 
-	// 顶部标题与快捷工具栏
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space3).Children(func() {
 		ui.Column(c).Grow(1).Gap(Space1).Children(func() {
 			PageTitle(c, t, "查词与翻译", "输入或粘贴英文/中文内容即查；划词与截图在后台随时可用。")
@@ -103,7 +95,6 @@ func (a *app) pageHome(c *ui.Context, t *ui.Theme, cfg Config) {
 		})
 	})
 
-	// 输入卡片
 	SurfaceCard(c, t).Children(func() {
 		ui.Column(c).FillWidth().Gap(Space3).Children(func() {
 			ui.TextArea(c, &a.home.input).Height(88).FillWidth().
@@ -148,8 +139,6 @@ func (a *app) pageHome(c *ui.Context, t *ui.Theme, cfg Config) {
 		h.tab = "translate"
 	}
 
-	// 保存/复制的反馈条：与浮窗共用一份文案和两秒时限。以前这些文案只写进
-	// actionSavedMsg，主窗口却从不渲染它们，保存失败也就无声无息。
 	a.mu.Lock()
 	a.noteFeedbackLocked()
 	feedback := ""
@@ -167,13 +156,11 @@ func (a *app) pageHome(c *ui.Context, t *ui.Theme, cfg Config) {
 		})
 	}
 
-	// 空态就绪面板：清晰告诉用户软件已启动、划词监听与快捷键就绪
 	if strings.TrimSpace(h.source) == "" && !h.busy {
 		a.renderHomeReadyState(c, t, at, cfg, h)
 		return
 	}
 
-	// 结果切换标签
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space3).Children(func() {
 		SegmentedControlMapped(c, false, h.tab, func(tab string) {
 			a.homeSwitchTab(tab)
@@ -210,8 +197,6 @@ func (a *app) pageHome(c *ui.Context, t *ui.Theme, cfg Config) {
 }
 
 func (a *app) renderHomeReadyState(c *ui.Context, t *ui.Theme, at AppTheme, cfg Config, h homeState) {
-	// 监听状态常驻在侧栏底部，工作台不再重复一遍；这里只保留真正需要
-	// 用户处理的 AI 配置提示。
 	if prob := cfg.AISetupProblem(); prob != "" {
 		SurfaceCard(c, t).Children(func() {
 			ui.Box(c).FillWidth().Padding(Space2, Space3).Radius(RadiusSM).
@@ -229,7 +214,6 @@ func (a *app) renderHomeReadyState(c *ui.Context, t *ui.Theme, at AppTheme, cfg 
 		})
 	}
 
-	// 最近查询快捷词条
 	recent := h.recent
 	if len(recent) == 0 {
 		entries := GetVocabularyStore().Filter("all", "")
@@ -299,9 +283,6 @@ func (a *app) renderHomeTranslateTab(c *ui.Context, t *ui.Theme, at AppTheme, cf
 						a.mu.Lock()
 						a.actionSavedMsg = "译文已复制到剪贴板 ✓"
 						a.mu.Unlock()
-						// The banner is drawn from the last snapshot; without this
-						// repaint the confirmation only appeared on the next stray
-						// pointer move, which read as a dead button.
 						a.settingsRefresh()
 					}
 					refineLabel := "AI 精翻"
@@ -384,8 +365,6 @@ func (a *app) renderHomeTranslateTab(c *ui.Context, t *ui.Theme, at AppTheme, cf
 		})
 	}
 
-	// 既没有译文也没有词条，且不在查询中：引擎返回空文本时就是这种状态。
-	// 留白会被当成「页面没加载」，所以补一句可执行的话。
 	if h.target == "" && h.dict == nil && h.gdict == nil {
 		SurfaceCard(c, t).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
@@ -453,7 +432,6 @@ func (a *app) renderHomeGrammarTab(c *ui.Context, t *ui.Theme, at AppTheme, cfg 
 		})
 		return
 	}
-	// 没有结果也不在拆解时不能留白：空卡片比一句说明更像坏了。
 	SurfaceCard(c, t).Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
 			ui.Icon(c, iconSearch).Size(IconSize, IconSize).TextColor(at.TextMuted)
@@ -503,7 +481,6 @@ func (a *app) renderHomeWritingTab(c *ui.Context, t *ui.Theme, at AppTheme, cfg 
 		})
 		return
 	}
-	// 与长难句页签同一处理：没有结果也不在批改时，留一句说明而不是一张空卡片。
 	SurfaceCard(c, t).Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
 			ui.Icon(c, iconSearch).Size(IconSize, IconSize).TextColor(at.TextMuted)
@@ -547,9 +524,7 @@ func (a *app) homeSubmit(raw string) {
 		a.home.writingSaved = false
 		a.home.wordSaved = false
 		a.home.transSaved = false
-		// 换了一段文字，在飞的精翻写回来的是上一段的译文。
 		a.home.cancelRefineLocked()
-		// 上一条「已保存 / 已复制」不再指向任何东西，横幅一并清掉。
 		a.actionSavedMsg, a.copiedMsg = "", ""
 	}
 	a.home.source = text
@@ -607,7 +582,6 @@ func (a *app) homeTranslate(text string) {
 	a.home.target = ""
 	a.home.dict = nil
 	a.home.gdict = nil
-	// 新译文还没收藏过：换目标语言或重试都会走到这里。
 	a.home.transSaved = false
 	a.mu.Unlock()
 	a.settingsRefresh()
@@ -620,9 +594,6 @@ func (a *app) homeTranslate(text string) {
 
 		from, to := translateLangs(cfg, text)
 		r := TranslateRace(ctx, text, from, to, cfg.EngineMode)
-		// A pinned engine that answers with the source has no reading to show.
-		// Ask the race for a second opinion, exactly as the popup does, so the
-		// workbench and the card do not disagree about the same word.
 		if r.Err == nil && r.Untranslated && cfg.EngineMode != "race" {
 			if alt, ok := pickEchoAnswer(r, TranslateRace(ctx, text, from, to, "race")); ok {
 				r = alt
@@ -684,8 +655,6 @@ func (a *app) homeRefineWithAI() {
 		a.mu.Unlock()
 		return
 	}
-	// 目标语言与原文同语言时回退到第二语言：否则模型只能把原文再译一遍，
-	// 卡片上的“译文”就变成用户自己输入的字。
 	_, refineTo := translateLangs(cfg, source)
 	if a.home.aiRefineCancel != nil {
 		a.home.aiRefineCancel()
@@ -717,7 +686,6 @@ func (a *app) homeRefineWithAI() {
 			a.home.aiRefineErr = friendlyAIError(err)
 		} else if txt := strings.TrimSpace(out); txt != "" {
 			if refineEchoedInput(source, txt) {
-				// 模型把原文原样退回来了：写入会把已有译文换成一模一样的输入。
 				a.home.aiRefineErr = "模型把原文原样返回了，换个目标语言再试"
 			} else {
 				a.home.target = formatTranslationForLayout(txt, mode, false)
@@ -886,10 +854,6 @@ func (a *app) homeRunWriting(text string, fresh bool) {
 	}()
 }
 
-// homeSaved records the outcome of a vocabulary write: the flag that replaces
-// the button, the banner line, or — when the store could not write — the error
-// card. The three saves below used to announce success before the store had
-// answered, so a full disk still read "已保存 ✓".
 func (a *app) homeSaved(flag *bool, msg string, err error) {
 	a.mu.Lock()
 	*flag = err == nil
@@ -905,9 +869,6 @@ func (a *app) homeSaved(flag *bool, msg string, err error) {
 func (a *app) homeSaveWord() {
 	a.mu.Lock()
 	h := a.home
-	// Optimistic, and reverted below if the write fails: enriching a word hits
-	// the dictionary services, and leaving the button live for a second lets a
-	// double click save the entry twice.
 	a.home.wordSaved = true
 	a.mu.Unlock()
 	if h.source == "" {

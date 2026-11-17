@@ -7,7 +7,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// writingContrast luminance follows WCAG's sRGB relative luminance formula.
 func writingContrastLuminance(c ui.Color) float64 {
 	channel := func(v uint8) float64 {
 		s := float64(v) / 255
@@ -28,9 +27,6 @@ func writingContrastRatio(foreground, background ui.Color) float64 {
 	return (fg + 0.05) / (bg + 0.05)
 }
 
-// writingThemeForTest builds the app's real theme, not the framework default:
-// the writing card's "added" ink follows the user's accent, and the framework
-// default accent is not part of this app's palettes.
 func writingThemeForTest(dark bool) *ui.Theme {
 	var got *ui.Theme
 	tt := ui.NewTester(func(c *ui.Context) {
@@ -52,9 +48,6 @@ func TestWritingThemeContrast(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			w := writingThemeFor(tc.base)
 			base := tc.base
-			// SurfaceHover is a translucent wash. Composite it over the card
-			// surface before measuring contrast; using the raw RGBA treats the
-			// wash as a near-black plate and fails every text colour.
 			hoverBg := base.SurfaceHover.Over(base.Surface)
 			checks := []struct {
 				name       string

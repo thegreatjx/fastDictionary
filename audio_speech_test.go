@@ -21,9 +21,6 @@ func audioFuncBody(t *testing.T, src, signature string) string {
 	return src[start : start+rel]
 }
 
-// TestAudioPlaybackIsGenerationGuarded is the regression: the word fast path
-// used to call playMP3 without checking speakGeneration, so a slow Youdao
-// fetch could start playing over the word the user clicked next.
 func TestAudioPlaybackIsGenerationGuarded(t *testing.T) {
 	src := readSourceFile(t, "audio.go")
 	body := audioFuncBody(t, src, "func PlaySpeechLang(")
@@ -69,10 +66,6 @@ func TestPlaySpeechMP3DropsSuperseded(t *testing.T) {
 	}
 }
 
-// TestSpeechPlaybackSerializesWithNewerRequest proves the newer request cannot
-// jump ahead of a playback that already holds speakMu: it bumps the generation
-// only after the old clip returned, so the old clip finishes first and the new
-// one is the last thing heard.
 func TestSpeechPlaybackSerializesWithNewerRequest(t *testing.T) {
 	oldPlay := playMP3Func
 	defer func() { playMP3Func = oldPlay }()

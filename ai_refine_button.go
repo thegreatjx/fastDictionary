@@ -6,8 +6,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// AI 结果只用一个按钮表达状态：待处理、处理中、已生效。引擎标题只用强调色，
-// 不再另放一个「…已生效」徽标，避免和按钮重复。
 func isAIResultEngine(engine string) bool {
 	return strings.HasPrefix(engine, "AI ")
 }
@@ -49,8 +47,6 @@ func aiRefineViewFor(s snapshot) aiRefineViewState {
 	return aiRefineViewState{label: "AI 精翻", tip: "AI 精翻：术语与长句更准"}
 }
 
-// refineCurrentTranslation 是浮窗里唯一的 AI 动作入口。截图直接发图，
-// 让模型以像素为准纠正 OCR；划词没有图片，只发文字。
 func (a *app) refineCurrentTranslation(s snapshot) {
 	if !s.isScreenshotMode {
 		a.refineWithAI()

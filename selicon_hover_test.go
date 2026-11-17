@@ -6,11 +6,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// TestSelectionChipStaysIconOnly guards the redesign: the chip is a row of
-// icons on one quiet surface. It must not render a persistent text label —
-// the old 64px name box ("悬停查看功能") was the part the user called ugly and
-// unprofessional. Action names survive as button labels, which is what the
-// accessibility tree and the tooltip read.
 func TestSelectionChipStaysIconOnly(t *testing.T) {
 	a := newTestApp()
 	width := a.currentSelectionChipWidth()
@@ -21,7 +16,6 @@ func TestSelectionChipStaysIconOnly(t *testing.T) {
 		t.Errorf("chip still renders the removed name slot: %q", tt.Texts())
 	}
 
-	// Every text left in the tree must be a button label.
 	cfg := a.store.Get()
 	want := 4 + len(cfg.GetEnabledActions())
 	if got := len(tt.Texts()); got != want {
@@ -29,9 +23,6 @@ func TestSelectionChipStaysIconOnly(t *testing.T) {
 	}
 }
 
-// TestSelectionChipButtonsAreComfortableHitTargets enforces the hit-zone rule
-// the user asked for: every icon button is at least 28px and lands inside the
-// chip window, so nothing is clipped and nothing needs a pixel hunt.
 func TestSelectionChipButtonsAreComfortableHitTargets(t *testing.T) {
 	a := newTestApp()
 	width := a.currentSelectionChipWidth()
@@ -67,9 +58,6 @@ func TestSelectionChipButtonsAreComfortableHitTargets(t *testing.T) {
 	}
 }
 
-// TestSelectionChipWidthIsProportional keeps the chip compact: each extra
-// action adds exactly one button plus one gap, and no space is reserved for a
-// name label that no longer exists.
 func TestSelectionChipWidthIsProportional(t *testing.T) {
 	base := selectionChipWidth(0)
 	if got, want := selectionChipWidth(3), base+3*(chipButtonSize+chipRowGap); got != want {
@@ -83,8 +71,6 @@ func TestSelectionChipWidthIsProportional(t *testing.T) {
 	}
 }
 
-// TestChipHeightFitsButtons keeps the window tall enough for the 28px buttons
-// and their padding, so the row is never vertically clipped.
 func TestChipHeightFitsButtons(t *testing.T) {
 	if need := chipButtonSize + 2*chipPadV + 2; selIconHeight < need {
 		t.Errorf("chip window is %vpx tall, needs at least %v", selIconHeight, need)

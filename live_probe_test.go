@@ -54,18 +54,6 @@ func TestLiveMagpieStream(t *testing.T) {
 	t.Logf("magpie in %v (first chunk %dms, %d deltas): %s", time.Since(start), firstAt, deltas, truncateFor(out, 60))
 }
 
-// TestLiveDirectProvider runs one real model list and one real refine
-// through the direct (non-Magpie) client path. Skipped unless
-// FASTDICT_LIVE_AI_PROVIDER is set:
-//
-//	FASTDICT_LIVE_AI_PROVIDER  preset ID, e.g. deepseek or custom
-//	FASTDICT_LIVE_AI_KEY_FILE  file holding the API key (never on the command line)
-//	FASTDICT_LIVE_AI_URL       optional address override (needed for custom)
-//	FASTDICT_LIVE_AI_MODEL     optional model override
-//
-// Without a key file a placeholder key is sent, which only works against a
-// service that ignores keys, such as the local Magpie gateway reached through
-// 自定义. The wrong-key check runs only with a real key.
 func TestLiveDirectProvider(t *testing.T) {
 	providerID := os.Getenv("FASTDICT_LIVE_AI_PROVIDER")
 	if providerID == "" {
@@ -131,7 +119,6 @@ func TestLiveDirectProvider(t *testing.T) {
 	if !realKey {
 		return
 	}
-	// A wrong key must come back as the typed auth failure, not a raw 401.
 	bad := cfg
 	bad.AIKey = "sk-invalid-fastdict-probe"
 	_, err = StreamAI(ctx2, bad.AIConn(cfg.AIModel), refineSystemPrompt, "hi", "", nil)
@@ -141,9 +128,6 @@ func TestLiveDirectProvider(t *testing.T) {
 	}
 }
 
-// TestLiveProvidersRejectBadKey sends a made-up key to every keyed preset and
-// checks the real answer is classified as an auth failure with a usable
-// message. No real key needed. Skipped unless FASTDICT_LIVE_AI_BADKEY=1.
 func TestLiveProvidersRejectBadKey(t *testing.T) {
 	if os.Getenv("FASTDICT_LIVE_AI_BADKEY") != "1" {
 		t.Skip("set FASTDICT_LIVE_AI_BADKEY=1 to run")
@@ -168,7 +152,6 @@ func TestLiveProvidersRejectBadKey(t *testing.T) {
 				var failure *aiFailure
 				switch {
 				case err == nil && name == "models":
-					// OpenRouter 的 /models 公开，不校验 Key：列表拉得到不代表 Key 对。
 					t.Logf("models: public list, key not checked")
 				case errors.Is(err, errAIModelsUnsupported):
 					t.Logf("%s: /models unsupported", name)

@@ -27,8 +27,6 @@ func TestVocabularyViewStateIsResetOnOpenAndFilterChange(t *testing.T) {
 	}
 }
 
-// TestConfirmResetKeepsExpandedEntry 钉住重聚焦时的折中：破坏性确认要清，
-// 用户正在展开的词条不能跟着被收起来。
 func TestConfirmResetKeepsExpandedEntry(t *testing.T) {
 	a := &app{}
 	a.vocabConfirmDeleteID = "word-1"

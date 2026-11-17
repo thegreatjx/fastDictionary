@@ -6,23 +6,12 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// newSettingsTester renders the settings view headlessly at a given size.
 func newSettingsTester(a *app, w, h int) *ui.Tester {
 	return ui.NewTester(func(c *ui.Context) { a.settingsView(c) }, w, h)
 }
 
-// TestSettingsScrollsWhenContentOverflows is the regression test for "the
-// settings window cannot scroll and the page is cut off".
-//
-// The root row of the settings view must fill the window in both directions.
-// With only FillWidth the row grows to its content, the scroll view measures
-// against an unbounded height, and a long page is simply clipped: MaxY stays 0
-// and the bottom of the form can never be reached. The invariant checked here
-// is the one that was broken: when the content is taller than the viewport, the
-// page must report overflow and scrolling to the end must bring the last item
-// into view.
 func TestSettingsScrollsWhenContentOverflows(t *testing.T) {
-	const w, h = 680, 360 // a short window: the form is certainly taller
+	const w, h = 680, 360
 
 	a := newTestApp()
 	a.page = "selection"
@@ -46,7 +35,6 @@ func TestSettingsScrollsWhenContentOverflows(t *testing.T) {
 		t.Skipf("%q is already visible at %dx%d; the page fits, nothing to prove", bottom, w, h)
 	}
 
-	// Scrolling to the end must bring it into the viewport.
 	a.settingsScroll.Y = a.settingsScroll.MaxY
 	v.Frame()
 	after, ok := v.Find(bottom)
@@ -59,9 +47,6 @@ func TestSettingsScrollsWhenContentOverflows(t *testing.T) {
 	}
 }
 
-// TestSettingsScrollKeepsPosition checks the other half of the fix: flipping a
-// switch near the bottom of a page must not throw the user back to the top,
-// which is what happens when the offset lives only in the widget.
 func TestSettingsScrollKeepsPosition(t *testing.T) {
 	a := newTestApp()
 	a.page = "selection"
@@ -79,7 +64,6 @@ func TestSettingsScrollKeepsPosition(t *testing.T) {
 		t.Fatalf("scroll offset reset from %v to %v by a re-render", deep, a.settingsScroll.Y)
 	}
 
-	// Switching page starts the new page at the top.
 	a.page = "general"
 	v.Frame()
 	if a.settingsScroll.Y != 0 {

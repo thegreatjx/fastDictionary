@@ -10,7 +10,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// SegmentRole is the grammatical job of one contiguous slice of the sentence.
 type SegmentRole string
 
 const (
@@ -22,9 +21,6 @@ const (
 	RolePunct     SegmentRole = "punct"
 )
 
-// Segment is one contiguous, verbatim slice of the source sentence. The model
-// never reports character offsets: joining every Text in order has to restore
-// the sentence exactly, and the parser repairs or rejects everything else.
 type Segment struct {
 	Text        string      `json:"text"`
 	Role        SegmentRole `json:"role"`
@@ -34,8 +30,6 @@ type Segment struct {
 	Note        string      `json:"note,omitempty"`
 }
 
-// ClauseInfo describes one clause. Clauses form a flat list with ParentID
-// instead of a recursive tree, which keeps streaming JSON cheap and parseable.
 type ClauseInfo struct {
 	ID       string `json:"id"`
 	ParentID string `json:"parent_id,omitempty"`
@@ -44,15 +38,12 @@ type ClauseInfo struct {
 	Target   string `json:"target,omitempty"`
 }
 
-// DifficultyPoint is one thing that makes the sentence hard to read.
 type DifficultyPoint struct {
 	Title       string `json:"title"`
 	SpanText    string `json:"span_text"`
 	Explanation string `json:"explanation"`
 }
 
-// SentenceAnalysisResult is the structured result returned by the grammar
-// tutor LLM.
 type SentenceAnalysisResult struct {
 	BackboneSummary string            `json:"backbone_summary"`
 	Segments        []Segment         `json:"segments"`
@@ -62,7 +53,6 @@ type SentenceAnalysisResult struct {
 	Raw             string            `json:"-"`
 }
 
-// ParseOutcome records which parse path produced the result.
 type ParseOutcome uint8
 
 const (
@@ -93,14 +83,12 @@ func (o ParseOutcome) String() string {
 	}
 }
 
-// SentenceParseResult carries the result together with where it came from.
 type SentenceParseResult struct {
 	Outcome ParseOutcome
 	Result  *SentenceAnalysisResult
 	Cause   error
 }
 
-// grammarAbbrevs are abbreviations that do not end a sentence.
 var grammarAbbrevs = map[string]bool{
 	"mr.": true, "mrs.": true, "ms.": true, "dr.": true, "prof.": true,
 	"sr.": true, "jr.": true, "st.": true, "vs.": true, "etc.": true,
@@ -108,10 +96,6 @@ var grammarAbbrevs = map[string]bool{
 	"no.": true, "vol.": true, "inc.": true, "ltd.": true,
 }
 
-// splitGrammarSentences splits the selected text into sentences, merging hard
-// line wraps inside a paragraph first. OCR and web pages break a single sentence
-// across lines; treating every line as its own paragraph sent half-sentences to
-// the model, which then reported fragments as complete clauses.
 func splitGrammarSentences(text string) []string {
 	text = strings.ReplaceAll(text, "\r\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "\n")
@@ -129,7 +113,7 @@ func splitGrammarSentences(text string) []string {
 				continue
 			}
 			if r == '.' && i > 0 && i+1 < len(runes) && unicode.IsDigit(runes[i-1]) && unicode.IsDigit(runes[i+1]) {
-				continue // 3.5, 1.000
+				continue
 			}
 			if r == '.' {
 				wordStart := i
@@ -166,8 +150,6 @@ func splitGrammarSentences(text string) []string {
 	return out
 }
 
-// grammarParagraphs joins lines separated by a single newline into one
-// paragraph and keeps blank lines as paragraph boundaries.
 func grammarParagraphs(text string) []string {
 	var out []string
 	var paragraph []string
@@ -190,10 +172,6 @@ func grammarParagraphs(text string) []string {
 	return out
 }
 
-// grammarAnalysisText normalizes a selection into the one piece of text the
-// grammar pass analyses: paragraphs reflowed into single lines, sentences
-// joined with one space. The card and the parser both see this same text, so
-// the model's slices can be aligned against it exactly.
 func grammarAnalysisText(text string) string {
 	sents := splitGrammarSentences(text)
 	if len(sents) == 0 {
@@ -202,15 +180,10 @@ func grammarAnalysisText(text string) string {
 	return strings.Join(sents, " ")
 }
 
-// ParseSentenceAnalysis parses the model output and validates it against the
-// source sentence. The source is optional so a caller that only has the answer
-// can still inspect it; without it, segment alignment cannot be checked.
 func ParseSentenceAnalysis(raw string, original ...string) *SentenceAnalysisResult {
 	return ParseSentenceAnalysisDetailed(raw, original...).Result
 }
 
-// ParseSentenceAnalysisDetailed keeps each parse outcome so callers can tell a
-// translation-only answer from a malformed one.
 func ParseSentenceAnalysisDetailed(raw string, original ...string) SentenceParseResult {
 	cleaned := CleanJSONText(raw)
 	if cleaned == "" {
@@ -242,9 +215,6 @@ func ParseSentenceAnalysisDetailed(raw string, original ...string) SentenceParse
 			res.Segments = aligned
 			return SentenceParseResult{Outcome: parseOutcomeStructured, Result: &res}
 		}
-		// The model rewrote, dropped or reordered text. Showing its slices would
-		// put words on screen that are not in the sentence; drop them and let
-		// the card show the original with whatever analysis survived.
 		res.Segments = nil
 		if res.Translation != "" || len(res.Difficulties) > 0 || len(res.Clauses) > 0 {
 			return SentenceParseResult{Outcome: parseOutcomeFallbackDirect, Result: &res}
@@ -257,8 +227,6 @@ func ParseSentenceAnalysisDetailed(raw string, original ...string) SentenceParse
 	return SentenceParseResult{Outcome: parseOutcomeFailed, Cause: fmt.Errorf("语法解析没有得到可用的标注")}
 }
 
-// normalizeClauses lowercases roles, drops empty clauses and gives every clause
-// a stable ID and short badge.
 func normalizeClauses(res *SentenceAnalysisResult) {
 	for i := range res.Segments {
 		res.Segments[i].Role = normalizeSegmentRole(res.Segments[i].Role)
@@ -281,9 +249,6 @@ func normalizeClauses(res *SentenceAnalysisResult) {
 		c.Type = strings.TrimSpace(c.Type)
 		c.ShortTag = strings.TrimSpace(c.ShortTag)
 		c.Target = strings.TrimSpace(c.Target)
-		// Some models file the main clause as a clause too, with type 主句 and
-		// a 主从 badge. It is already marked by is_backbone; washing the whole
-		// sentence and calling it a subordinate clause is worse than dropping it.
 		if strings.Contains(c.Type, "主句") && !strings.Contains(c.Type, "从句") {
 			dropped[c.ID] = true
 			continue
@@ -300,10 +265,6 @@ func normalizeClauses(res *SentenceAnalysisResult) {
 			res.Segments[i].ClauseID = ""
 		}
 	}
-	// Models often tag only the first two words of a clause. Carry the open
-	// clause across the following non-backbone words until the next clause or
-	// the end of the sentence, so the wash covers one continuous block instead
-	// of stopping in the middle of the clause.
 	active := ""
 	for i := range res.Segments {
 		seg := &res.Segments[i]
@@ -324,8 +285,6 @@ func normalizeClauses(res *SentenceAnalysisResult) {
 	}
 }
 
-// grammarEndsSentence reports whether text closes a sentence, so an open
-// clause does not run into the next one.
 func grammarEndsSentence(text string) bool {
 	text = strings.TrimRightFunc(text, unicode.IsSpace)
 	if text == "" {
@@ -352,14 +311,6 @@ func normalizeSegmentRole(role SegmentRole) SegmentRole {
 	}
 }
 
-// alignSegmentsToSource compares the model's slices with the real sentence.
-//
-// A perfect match is rebuilt from the source's own spacing. Models also
-// reorder a word or two ("will visit" before "first") or change a dash or
-// quote; in that case the exact walk fails, and the fuzzy fallback assigns
-// each source token to the segment that named it, then emits source-order
-// runs. Every returned Text is still cut from the source, so the card never
-// shows words the model invented.
 func alignSegmentsToSource(segments []Segment, source string) ([]Segment, bool) {
 	if len(segments) == 0 {
 		return nil, false
@@ -376,8 +327,6 @@ func alignSegmentsToSource(segments []Segment, source string) ([]Segment, bool) 
 	return alignSegmentsFuzzy(segments, source)
 }
 
-// alignSegmentsExact walks the model's slices over the source's non-space
-// runes. It repairs whitespace-only differences and nothing else.
 func alignSegmentsExact(segments []Segment, source string) ([]Segment, bool) {
 	runes := []rune(source)
 	positions := make([]int, 0, len(runes))
@@ -419,17 +368,11 @@ func alignSegmentsExact(segments []Segment, source string) ([]Segment, bool) {
 	return out, true
 }
 
-// grammarSourceToken is one word or punctuation mark with its rune span in
-// the source.
 type grammarSourceToken struct {
 	text       string
 	start, end int
 }
 
-// grammarTokenSpans splits text into comparable tokens: Latin/digit runs stay
-// whole, Han characters count one by one, and punctuation is its own token.
-// Hyphens and apostrophes are punctuation, so "Asia-Pacific" and "Asia–Pacific"
-// still line up token by token.
 func grammarTokenSpans(text string) []grammarSourceToken {
 	runes := []rune(text)
 	out := make([]grammarSourceToken, 0, len(runes)/3)
@@ -471,9 +414,6 @@ func grammarFoldToken(text string) string {
 	}, text)
 }
 
-// alignSegmentsFuzzy maps source tokens back to the model's segments by token
-// text, so a locally reordered phrase or a changed punctuation mark keeps its
-// role instead of dropping the whole analysis.
 func alignSegmentsFuzzy(segments []Segment, source string) ([]Segment, bool) {
 	srcTokens := grammarTokenSpans(source)
 	if len(srcTokens) == 0 {
@@ -636,7 +576,6 @@ func grammarClauseLabel(info ClauseInfo) string {
 	}
 }
 
-// grammarExplanations are the clause explanations used by tooltips.
 var grammarExplanations = map[string]string{
 	"表语从句":  "【表语从句 (Predicative Clause)】：位于系动词后充当表语，详细解释主语的内容或性质。",
 	"宾语从句":  "【宾语从句 (Object Clause)】：位于及物动词或介词后充当宾语，说明主句主语所想、所说或感知的事实。",
@@ -664,8 +603,6 @@ func grammarClauseTooltip(info ClauseInfo) string {
 	return "从句"
 }
 
-// grammarInk is the grammar card's palette: one ink ladder rather than one
-// saturated colour per role.
 type grammarInk struct {
 	body          ui.Color
 	predicate     ui.Color
@@ -676,8 +613,6 @@ type grammarInk struct {
 	clauseText    ui.Color
 }
 
-// grammarCardState is everything the grammar card reads plus the callbacks it
-// fires.
 type grammarCardState struct {
 	OnlyTrunk     bool
 	ShowSlashes   bool
@@ -690,7 +625,6 @@ type grammarCardState struct {
 	OnSave        func()
 }
 
-// renderGrammarVisualCard renders the read-only card from the app's state.
 func (a *app) renderGrammarVisualCard(c *ui.Context, t *ui.Theme, origText string, res *SentenceAnalysisResult, saved bool, onSave func()) {
 	st := grammarCardState{
 		OnlyTrunk:     a.onlyTrunk,
@@ -704,7 +638,6 @@ func (a *app) renderGrammarVisualCard(c *ui.Context, t *ui.Theme, origText strin
 	renderGrammarVisualCardEx(c, t, origText, res, saved, st)
 }
 
-// renderGrammarVisualCardEx draws the card from an explicit state.
 func renderGrammarVisualCardEx(c *ui.Context, t *ui.Theme, origText string, res *SentenceAnalysisResult, saved bool, st grammarCardState) {
 	at := appTheme(t)
 	ink := grammarInkFor(t)
@@ -779,11 +712,6 @@ func grammarScopeLabel(st grammarCardState) string {
 	return strings.Join(parts, " · ")
 }
 
-// renderGrammarSentence draws the sentence as one wrapping rich text. Each
-// segment is an inline text element, so it keeps the line breaking of the
-// paragraph while still reporting hover and carrying a tooltip. The four
-// visual dimensions are: backbone ink and weight, one accent underline on the
-// main predicate, muted modifiers, and a faint clause wash with a micro badge.
 func renderGrammarSentence(c *ui.Context, t *ui.Theme, res *SentenceAnalysisResult, st grammarCardState) {
 	at := appTheme(t)
 	ink := grammarInkFor(t)
@@ -942,9 +870,6 @@ func renderGrammarSegment(c *ui.Context, t *ui.Theme, at AppTheme, ink grammarIn
 	case seg.Role == RoleConnector:
 		el.TextColor(ink.connector).FontWeight(500)
 	case seg.ClauseID != "" && clause != nil:
-		// The wash already groups the clause; its own content stays body ink so
-		// the reading flow does not drop to grey. Only modifiers inside it step
-		// back, which keeps the clause backbone legible at a glance.
 		if seg.Role == RoleModifier {
 			el.TextColor(ink.clauseText).FontWeight(500)
 		} else {
@@ -963,10 +888,6 @@ func renderGrammarSegment(c *ui.Context, t *ui.Theme, at AppTheme, ink grammarIn
 func renderGrammarClauseBadge(c *ui.Context, t *ui.Theme, clause ClauseInfo) ui.Element {
 	raw := grammarClauseLabel(clause)
 	colors := grammarClausePalette(t, raw)
-	// A RichText span breaks Chinese between any two characters. Two-character
-	// clause tags then split across lines ("宾" at the end of one, "从" at the
-	// start of the next). U+2060 WORD JOINER tells the line breaker not to
-	// break here, so the tag stays one chip.
 	label := strings.Join(strings.Split(raw, ""), "\u2060")
 	el := ui.Text(c, "  "+label+"  ").FontSize(10).FontWeight(600).
 		TextColor(colors.badgeText).Background(colors.badgeBg).Unselectable().
@@ -1221,8 +1142,6 @@ func grammarTrunkKeeps(seg Segment) bool {
 	if strings.TrimSpace(seg.Text) == "" {
 		return false
 	}
-	// A sentence's own punctuation stays; punctuation inside a folded clause
-	// belongs to that clause and disappears with it.
 	return seg.Role == RolePunct && seg.ClauseID == ""
 }
 

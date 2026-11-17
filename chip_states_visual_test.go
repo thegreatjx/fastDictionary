@@ -11,10 +11,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// TestChipStateStrip renders the chip at rest, on hover and pressed into one
-// strip, so the micro-interaction can be looked at rather than only measured.
-// It is opt-in (FASTDICTIONARY_VISUAL=1) because it writes a file; the pixel checks in
-// selicon_tone_test.go are what run in the normal suite.
 func TestChipStateStrip(t *testing.T) {
 	if os.Getenv("FASTDICTIONARY_VISUAL") == "" {
 		t.Skip("set FASTDICTIONARY_VISUAL=1 to write build/chip-states.png")

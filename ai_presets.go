@@ -7,13 +7,6 @@ import (
 	"strings"
 )
 
-// The AI service presets are the only place that knows a provider's default
-// address and model. The settings page renders one select from this table, so
-// adding a provider never means another branch in the form.
-//
-// BaseURL is the address users paste: normally the provider root, but the
-// client also accepts a full chat endpoint and normalises it. A preset with an
-// empty BaseURL (custom) keeps whatever the user already typed.
 const (
 	magpieDefaultEndpoint = "http://127.0.0.1:3425/v1/chat/completions"
 	magpieDefaultModel    = "workbuddy-ai/deepseek-v4.1-flash"
@@ -22,8 +15,6 @@ const (
 	geminiKeyURL          = "https://aistudio.google.com/apikey"
 )
 
-// Google 会调整免费模型范围。这份清单只用于未请求 /models 时离线展示；
-// 点「获取模型」后，设置页改用账号实际可用的实时列表。
 var defaultGeminiModels = []string{
 	geminiDefaultModel,
 	"gemini-3.1-flash-lite",
@@ -130,8 +121,6 @@ func aiPresetNames() []string {
 	return names
 }
 
-// normalizeAIProvider maps anything the app does not know to custom, so an
-// old or hand-edited config never silently inherits Magpie's behaviour.
 func normalizeAIProvider(id string) string {
 	id = strings.ToLower(strings.TrimSpace(id))
 	if id == "" || id == "magpie" {
@@ -143,7 +132,6 @@ func normalizeAIProvider(id string) string {
 	return "custom"
 }
 
-// aiPresetForConfig is the single reading of AIProvider used by the UI.
 func aiPresetForConfig(cfg Config) aiPreset {
 	id := normalizeAIProvider(cfg.AIProvider)
 	if p, ok := aiPresetByID(id); ok {
@@ -153,21 +141,12 @@ func aiPresetForConfig(cfg Config) aiPreset {
 	return p
 }
 
-// applyAIPreset changes the active service. It returns true when the new
-// service needs a key but has none saved, so the page can prompt for one.
-//
-// A provider owns its key, address and model choice. Before switching, all
-// three are stored under the old provider; after the switch, the new provider's
-// own values are restored. This keeps a secret from crossing to another
-// service without resetting the user's model selection when they return.
 func applyAIPreset(c *Config, p aiPreset) bool {
 	oldProvider := normalizeAIProvider(c.AIProvider)
 	if oldProvider == p.ID {
 		return false
 	}
 	c.rememberAISettingsFor(oldProvider)
-	// Best effort on Windows; a DPAPI failure leaves the in-memory key alone
-	// rather than replacing it with an unusable blob.
 	_ = c.sealAIKey()
 
 	c.AIProvider = p.ID
@@ -175,8 +154,6 @@ func applyAIPreset(c *Config, p aiPreset) bool {
 
 	switch p.ID {
 	case "custom":
-		// Keep a typed address and model: the user picked custom to edit them.
-		// Only the Magpie default is meaningless here, so clear that one.
 		if isMagpieEndpoint(c.AIURL) {
 			c.AIURL = ""
 		}
@@ -190,9 +167,6 @@ func applyAIPreset(c *Config, p aiPreset) bool {
 		if p.Model != "" {
 			c.AIModel = p.Model
 		} else if p.BaseURL != "" {
-			// OpenAI and SiliconFlow ship no example model because the list
-			// changes. Carrying the previous provider's model ID over would be
-			// a request that cannot succeed.
 			c.AIModel = ""
 		}
 	}
@@ -203,17 +177,12 @@ func applyAIPreset(c *Config, p aiPreset) bool {
 	}
 	c.rememberAISettingsFor(p.ID)
 	if err := c.restoreAIKeyFor(p.ID); err != nil {
-		// A corrupt blob only disables that provider's saved key. Other
-		// providers stay in the map and remain restorable.
 		c.AIKey = ""
 		c.AIKeyEnc = ""
 	}
 	return p.NeedsKey && p.ID != "custom" && normalizeAPIKey(c.AIKey) == ""
 }
 
-// aiEndpointSource identifies the endpoint a model list belongs to. The key
-// is fingerprinted, never stored, so the state can be compared without keeping
-// a second copy of the secret around.
 func aiEndpointSource(cfg Config) string {
 	endpoint := strings.TrimSpace(cfg.AIURL)
 	if endpoint == "" && cfg.IsMagpie() {

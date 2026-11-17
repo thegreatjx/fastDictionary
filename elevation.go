@@ -8,10 +8,6 @@ import (
 	"unsafe"
 )
 
-// Windows refuses cross-integrity input: a normal process cannot install a
-// hook into, or read the selection of, a window running as administrator.
-// The failure is silent on both sides — the hotkey appears to do nothing —
-// so the app has to recognise the situation and say what is wrong.
 var (
 	advapi32                = syscall.NewLazyDLL("advapi32.dll")
 	shell32                 = syscall.NewLazyDLL("shell32.dll")
@@ -27,16 +23,10 @@ const (
 	swShowNormal            = 1
 )
 
-// tokenElevation mirrors TOKEN_ELEVATION. GetTokenInformation writes a
-// DWORD; the struct keeps the call site readable and the size explicit.
 type tokenElevation struct {
 	IsElevated uint32
 }
 
-// processElevated asks the kernel whether pid belongs to an elevated token.
-// Query-limited access is enough for this question and is granted across
-// integrity levels, which is exactly why it is used instead of querying the
-// process image or its window title.
 func processElevated(pid uint32) bool {
 	h, _, _ := procOpenProcess.Call(processQueryLimitedInfo, 0, uintptr(pid))
 	if h == 0 {
@@ -60,14 +50,10 @@ func processElevated(pid uint32) bool {
 	return info.IsElevated != 0
 }
 
-// currentProcessElevated reports whether fastDictionary itself is elevated.
-// Elevation solves the problem for every window, so the detection is skipped.
 func currentProcessElevated() bool {
 	return processElevated(uint32(os.Getpid()))
 }
 
-// foregroundProcessElevated reports whether the window that owns the
-// selection runs with a higher integrity level than this process.
 func foregroundProcessElevated() bool {
 	hwnd, _, _ := procGetForegroundWnd.Call()
 	if hwnd == 0 {
@@ -81,9 +67,6 @@ func foregroundProcessElevated() bool {
 	return processElevated(pid)
 }
 
-// elevationNotice is the sentence shown instead of the generic "nothing was
-// selected" when Windows blocked the read. Empty means elevation is not the
-// explanation and the caller should keep its normal message.
 func elevationNotice(app string, blocked, selfElevated bool) string {
 	if !blocked || selfElevated {
 		return ""
@@ -95,10 +78,6 @@ func elevationNotice(app string, blocked, selfElevated bool) string {
 		"可以在下面直接输入，或从托盘菜单选「以管理员身份重启」。"
 }
 
-// relaunchElevated starts a second copy through the UAC prompt and leaves
-// this one running: the user may cancel the prompt. The old process quits
-// after the new one reports success, so a cancelled UAC never leaves the user
-// without an app.
 func relaunchElevated() error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -124,9 +103,6 @@ func relaunchElevated() error {
 
 const elevatedTakeoverArg = "--elevated-takeover"
 
-// elevatedTakeoverRequested reports whether this process was started by the
-// tray's restart action. Such an instance deliberately skips the single
-// instance lock: the instance it replaces is still exiting at that moment.
 func elevatedTakeoverRequested() bool {
 	for _, arg := range os.Args[1:] {
 		if arg == elevatedTakeoverArg {

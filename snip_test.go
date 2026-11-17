@@ -54,7 +54,6 @@ func TestSnipMetricsAndCapture(t *testing.T) {
 	}
 	t.Logf("AlphaBlend found successfully")
 
-	// Test 1x1 stretch AlphaBlend on memory DC
 	hdcScreen, _, _ := procGetDC.Call(0)
 	hdcMem, _, _ := procCreateCompatibleDC.Call(hdcScreen)
 	hbm, _, _ := procCreateCompatibleBitmap.Call(hdcScreen, 100, 100)
@@ -64,7 +63,6 @@ func TestSnipMetricsAndCapture(t *testing.T) {
 	hbmDark, _, _ := procCreateCompatibleBitmap.Call(hdcScreen, 1, 1)
 	procSelectObject.Call(hdcDark, hbmDark)
 
-	// AlphaBlend 1x1 onto hdcMem with 100/255 opacity
 	blendVal := uint32(0) | (uint32(0) << 8) | (uint32(100) << 16) | (uint32(0) << 24)
 	ret, _, err := procAlphaBlend.Call(
 		hdcMem, 0, 0, 100, 100,
@@ -83,10 +81,6 @@ func TestSnipMetricsAndCapture(t *testing.T) {
 }
 
 func TestCaptureAndOCR(t *testing.T) {
-	// The capture is of the real desktop, so it can legitimately fail when
-	// the session is locked or a full-screen exclusive window owns the
-	// display — neither is a bug in this code. Retry briefly, then skip
-	// rather than report a red suite that says nothing about the program.
 	var imgReal *image.RGBA
 	var errCap error
 	for attempt := 0; attempt < 5; attempt++ {

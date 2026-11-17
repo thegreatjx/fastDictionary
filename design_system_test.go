@@ -8,8 +8,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// TestDesignSystemScale 钉住唯一几何标尺，避免圆角、高度、间距再漂回
-// 4/5/6/8/10 混用。
 func TestDesignSystemScale(t *testing.T) {
 	for _, v := range []float32{Space1, Space2, Space3, Space4, Space6, Space8} {
 		if v != float32(int(v)) || int(v)%4 != 0 {
@@ -27,8 +25,6 @@ func TestDesignSystemScale(t *testing.T) {
 	}
 }
 
-// TestAppThemeDerivesBothPalettes 确认明暗两套色板都给出显式色阶与主题微底，
-// 禁用态和 hover 不用容器 Opacity 顶替。
 func TestAppThemeDerivesBothPalettes(t *testing.T) {
 	for _, dark := range []bool{false, true} {
 		at := newAppTheme(dark, defaultAccent(dark))
@@ -60,8 +56,6 @@ func themeModeFor(dark bool) string {
 	return "light"
 }
 
-// TestTrayPanelRendersInBothThemes 用 headless 渲染确认两套主题下托盘结构
-// 完整，且结构图标不再用 emoji。
 func TestTrayPanelRendersInBothThemes(t *testing.T) {
 	for _, dark := range []bool{false, true} {
 		a := newTestApp()
@@ -81,8 +75,6 @@ func TestTrayPanelRendersInBothThemes(t *testing.T) {
 	}
 }
 
-// TestAIPageRendersGroupedCardsInBothThemes 确认 AI 页脱离 ui.Form 后，
-// 分组卡片与短/长字段在两套主题下都能渲染。
 func TestAIPageRendersGroupedCardsInBothThemes(t *testing.T) {
 	for _, dark := range []bool{false, true} {
 		a := newTestApp()
@@ -98,8 +90,6 @@ func TestAIPageRendersGroupedCardsInBothThemes(t *testing.T) {
 	}
 }
 
-// TestTraySourceHasNoHardcodedColor 是红线的静态护栏：退出按钮常态不能
-// 出现红底填充，托盘里也不能再写散落色值。
 func TestTraySourceHasNoHardcodedColor(t *testing.T) {
 	src, err := os.ReadFile("tray.go")
 	if err != nil {
@@ -123,8 +113,6 @@ func TestTraySourceHasNoHardcodedColor(t *testing.T) {
 	}
 }
 
-// TestSegmentedControlGeometry 钉住第 1 批的两个结论：轨道不随父列横拉，
-// 白滑块严格居中不压底边。
 func TestSegmentedControlGeometry(t *testing.T) {
 	for _, dark := range []bool{false, true} {
 		t.Run(map[bool]string{false: "light", true: "dark"}[dark], func(t *testing.T) {
@@ -169,8 +157,6 @@ func TestSegmentedControlGeometry(t *testing.T) {
 	}
 }
 
-// TestChipPaletteCoolSurface 防止悬浮条退回暖色纸面：底色必须是冷白或
-// 深海蓝，允许的色相只能是冷调；只有主图标使用主题色，hover 微底必须可见。
 func TestChipPaletteCoolSurface(t *testing.T) {
 	for _, dark := range []bool{false, true} {
 		th := ui.Theme{Dark: dark, Accent: defaultAccent(dark)}
@@ -205,8 +191,6 @@ func TestChipPaletteCoolSurface(t *testing.T) {
 	}
 }
 
-// TestSettingsNavIsGroupedAndAligned 确认侧栏按 5 组呈现，且所有图标后的
-// 文本左缘在同一列。工作台放在最前：主窗口默认打开的就是这一页。
 func TestSettingsNavIsGroupedAndAligned(t *testing.T) {
 	a := newTestApp()
 	a.page = "general"
@@ -219,7 +203,6 @@ func TestSettingsNavIsGroupedAndAligned(t *testing.T) {
 		}
 	}
 
-	// 默认窗口（920×660）一屏放得下：不需要滚动，最末入口完整可见。
 	tall, ok := tt.Find("关于")
 	if !ok || tall.H == 0 || tall.Y+tall.H > 660 {
 		t.Errorf("默认窗口下侧栏最后一项被裁切：ok=%v rect=%+v", ok, tall)
@@ -228,8 +211,6 @@ func TestSettingsNavIsGroupedAndAligned(t *testing.T) {
 		t.Errorf("默认窗口下侧栏仍需要滚动（MaxY=%v）", a.navScroll.MaxY)
 	}
 
-	// 最小尺寸（700×500）时五组入口加底部胶囊装不下：多出的部分交给侧栏
-	// 滚动承载，不能像以前那样被直接裁掉。
 	small := ui.NewTester(a.settingsView, 700, 500)
 	small.Frame()
 	if !small.HasText("关于") {
@@ -286,12 +267,6 @@ func TestUIFilesHaveNoEmojiOrHardcodedColors(t *testing.T) {
 	}
 }
 
-// TestCleanedCardsHaveNoEmoji 钉住本轮收口的三个文件：词卡、生词本与复习页里
-// 不再用 Emoji 当图标。Emoji 的字形随系统字体走，字号和行高对不上 4px 栅格，
-// 同一个语义在别的页面已经由 icons.go 的 Lucide 图标画了。
-//
-// 只查图像字符区，不查 ui.Hex：actions.go 的 writingThemeFor 还留着一套柔性
-// 配色，整体搬进 theme.go 是另一件事。✓ 与 • 是正文标点，不在收回范围内。
 func TestCleanedCardsHaveNoEmoji(t *testing.T) {
 	files := []string{"actions.go", "settings_vocab.go", "vocab_review_view.go"}
 	for _, f := range files {
@@ -327,8 +302,6 @@ func TestNotesViewPhaseIsExplicit(t *testing.T) {
 	}
 }
 
-// TestAllSettingsPagesRenderInBothThemes 用 headless 渲染覆盖 9 个子页、
-// 托盘与浮窗的明暗两套主题：不 panic、不残留 Emoji，且每个页面都有文本。
 func TestAllSettingsPagesRenderInBothThemes(t *testing.T) {
 	pages := []string{"general", "selection", "actions", "vocabulary", "translate", "dict", "ai", "hotkey", "about"}
 	for _, dark := range []bool{false, true} {

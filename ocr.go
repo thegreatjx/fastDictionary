@@ -18,8 +18,6 @@ import (
 	xdraw "golang.org/x/image/draw"
 )
 
-// unwrapOCRText removes the PowerShell transport markers. They delimit stdout
-// for reliable extraction; they are not part of the selected image's text.
 func unwrapOCRText(raw string) string {
 	const start, end = "EXTRACTED_TEXT_START", "EXTRACTED_TEXT_END"
 	_, body, found := strings.Cut(raw, start)
@@ -30,7 +28,6 @@ func unwrapOCRText(raw string) string {
 	return strings.Trim(body, "\r\n")
 }
 
-// ensureOCRScript writes the WinRT OCR runner to the app cache directory if not present
 func ensureOCRScript() (string, error) {
 	cacheDir, err := mygo.App.Path(mygo.PathCache)
 	if err != nil {
@@ -41,9 +38,6 @@ func ensureOCRScript() (string, error) {
 		return "", err
 	}
 	scriptPath := filepath.Join(ocrDir, "ocr.ps1")
-	// Always sync with the embedded resource (or bundled file) so the OCR script
-	// can be updated without requiring the user to clear the cache.
-	// For development, read from resources/ocr.ps1.
 	data, err := os.ReadFile("resources/ocr.ps1")
 	if err != nil {
 		resDir, err2 := mygo.App.Path(mygo.PathResources)
@@ -61,26 +55,6 @@ func ensureOCRScript() (string, error) {
 	return scriptPath, nil
 }
 
-// prepareOCRImage returns a path to a version of the image scaled for the OCR
-// engine, plus a cleanup to call when recognition is done.
-//
-// Windows.Media.Ocr reads small type badly, and screen type is small: a 12px
-// CJK glyph is about 12 device pixels tall, which the engine misreads most of
-// the time. Measured on a 900x200 crop of real Windows text: 1x turned
-// “微软翻译可以识别图片中的文字内容” into “胡译可以识凵片中的文字内冒” — six
-// wrong glyphs in fourteen; at 2x the same crop read correctly apart from one
-// glyph. English went from “The quick brown ×” to the exact sentence.
-//
-// Bicubic, not nearest: nearest is visibly worse. Grayscale, contrast and
-// thresholding were measured too and none helped — grayscale produced output
-// identical to scaling alone, and thresholding made 12px Chinese worse. 2x is
-// the sweet spot; 3x and 4x score worse again and cost more.
-//
-// The scaled copy is written beside the original rather than replacing it: the
-// preview shown to the user, and the crop bounds recorded for the next snip,
-// both have to stay at native size.
-// ocrPreprocessResult 记录预处理实际走了哪条路。Degraded 为真表示没能
-// 生成放大图、只能把原图交给识别引擎；Reason 用于给用户一句能行动的提示。
 type ocrPreprocessResult struct {
 	Path     string
 	Cleanup  func()
@@ -112,8 +86,6 @@ func prepareOCRImageDetailed(path string) (ocrPreprocessResult, error) {
 
 	b := src.Bounds()
 	if b.Dx()*snipOCRScale > maxOCRSide || b.Dy()*snipOCRScale > maxOCRSide {
-		// Too large to scale: the engine throws instead of returning text, and
-		// a 1x read of a huge image still beats an error.
 		return ocrPreprocessResult{Path: path, Cleanup: func() {}, Degraded: true, Reason: "图片较大，已按原尺寸识别"}, nil
 	}
 
@@ -122,8 +94,6 @@ func prepareOCRImageDetailed(path string) (ocrPreprocessResult, error) {
 
 	out, err := os.CreateTemp(filepath.Dir(path), "ocr-*.png")
 	if err != nil {
-		// A read-only cache dir must not cost the user the translation: fall
-		// back to the original image and let the engine do its best.
 		return ocrPreprocessResult{Path: path, Cleanup: func() {}, Degraded: true, Reason: "放大图无法写入临时目录"}, nil
 	}
 	name := out.Name()
@@ -139,8 +109,6 @@ func prepareOCRImageDetailed(path string) (ocrPreprocessResult, error) {
 	return ocrPreprocessResult{Path: name, Cleanup: func() { os.Remove(name) }}, nil
 }
 
-// ocrEmptyTextMessage 在识别不到文字时按预处理是否降级给不同提示：
-// 图片过大时让用户知道可以缩小截图范围，而不是只看到「没有识别到文字」。
 func ocrEmptyTextMessage(degraded bool) string {
 	if degraded {
 		return "没有识别到文字：图片较大，已按原尺寸识别；可以缩小截图范围后重试"
@@ -148,26 +116,10 @@ func ocrEmptyTextMessage(degraded bool) string {
 	return "没有识别到文字，请重新框选清晰文本"
 }
 
-// RecognizeImageFile extracts text with Windows OCR and honors cancellation.
 func RecognizeImageFile(ctx context.Context, path string) (string, error) {
 	return RecognizeImageFileIn(ctx, path, "auto")
 }
 
-// RecognizeImageFileIn is RecognizeImageFile with an explicit OCR language.
-//
-// The tag is passed to the engine, so an English screenshot can be read by the
-// English recognizer on a Chinese Windows install; "auto" keeps the engine's
-// own choice from the user's Windows language list. A tag with no recognizer
-// installed reports a clear error instead of silently falling back to another
-// language, which used to turn Japanese text into Chinese glyph noise.
-//
-// Indra runs first, because it reads stylised and small type that
-// Windows.Media.Ocr turns into noise: on the public "Plaid" OCR test image it
-// returns "Fridays & Saturdays at 8 pm" where Windows returns "Fridays U
-// Saturdays at 8 pm". Windows OCR stays as the fallback — if the models or the
-// runtime are missing, or Indra finds nothing, the screenshot still translates.
-// recognizeImageFileIn 是识别引擎的调用点，做成变量是为了让取消与代次路径
-// 能在不启动 PowerShell 的前提下被测试验证。
 var recognizeImageFileIn = RecognizeImageFileIn
 
 func RecognizeImageFileIn(ctx context.Context, path, language string) (string, error) {
@@ -199,8 +151,6 @@ func RecognizeImageFileIn(ctx context.Context, path, language string) (string, e
 	return "", fmt.Errorf("没有识别到文字")
 }
 
-// decodeOCRImage 只解码一次截图。边缘填充、色距和背景减除都在内存里做，
-// 不再为每种重试写临时文件。
 func decodeOCRImage(path string) (image.Image, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -214,9 +164,6 @@ func decodeOCRImage(path string) (image.Image, error) {
 	return img, nil
 }
 
-// indraRecognizeFile keeps the single-pass path for tests and callers that
-// only need the original recognizer. The production entry uses adaptive
-// padding and guarded retry variants instead.
 func indraRecognizeFile(ctx context.Context, path string) (string, error) {
 	img, err := decodeOCRImage(path)
 	if err != nil {
@@ -256,17 +203,12 @@ func recognizeIndraWithRetries(ctx context.Context, img image.Image) (string, er
 	return best, nil
 }
 
-// windowsRecognizeFileIn is the Windows.Media.Ocr path through PowerShell.
 func windowsRecognizeFileIn(ctx context.Context, path, language string) (string, error) {
 	scriptPath, err := ensureOCRScript()
 	if err != nil {
 		return "", fmt.Errorf("准备本地 OCR 失败：%w", err)
 	}
 
-	// Scaling happens here rather than at capture time so that it covers the
-	// retry path too: a failed recognition retries the file already on disk,
-	// and a capture-time-only scale would leave that retry reading the
-	// original small image and failing the same way.
 	prep, err := prepareOCRImageDetailed(path)
 	if err != nil {
 		return "", err
@@ -299,8 +241,6 @@ func windowsRecognizeFileIn(ctx context.Context, path, language string) (string,
 		}
 		return "", fmt.Errorf("无法启动本地识别：%w", err)
 	}
-	// OCR keeps the image's own line breaks; CleanSelectionText would
-	// collapse them and turn a multi-line snip into an unreadable blob.
 	text := CleanOcrText(unwrapOCRText(string(out)))
 	if text == "" {
 		return "", fmt.Errorf("%s", ocrEmptyTextMessage(prep.Degraded))
@@ -308,8 +248,6 @@ func windowsRecognizeFileIn(ctx context.Context, path, language string) (string,
 	return text, nil
 }
 
-// TriggerScreenshotOCR opens the snipper. The translation window appears as
-// soon as a crop is available, not after the potentially slow OCR finishes.
 func (a *app) TriggerScreenshotOCR() {
 	a.hideSelIcon()
 	StartNativeSnip(func(rect winRect, imgPath string) {
@@ -333,8 +271,6 @@ func (a *app) beginScreenshotOCR(rect winRect, imgPath string) {
 	a.recognizeScreenshot(imgPath)
 }
 
-// openPinnedScreenshot places the window beside the original snip and puts
-// it into a structured OCR state. Errors are never stored as source text.
 func (a *app) openPinnedScreenshot(rect winRect, imgPath string, bmp *ui.Bitmap) {
 	win := a.win
 	if win == nil {
@@ -350,8 +286,6 @@ func (a *app) openPinnedScreenshot(rect winRect, imgPath string, bmp *ui.Bitmap)
 		y = int(rect.Top)
 	}
 	a.mu.Lock()
-	// A screenshot preview is a new card; do not let the previous popup's AI
-	// pass or note extraction write into it while OCR is running.
 	a.stopAIPassLocked()
 	a.stopNotesLocked()
 	a.mode = modeTranslate
@@ -379,8 +313,6 @@ func (a *app) openPinnedScreenshot(rect winRect, imgPath string, bmp *ui.Bitmap)
 	win.Update(func() {})
 }
 
-// stopScreenshotOCR cancels PowerShell as well as making its late result
-// stale. Merely hiding a busy message would leave an invisible OCR running.
 func (a *app) stopScreenshotOCR() {
 	a.mu.Lock()
 	cancel := a.ocrCancel
@@ -404,8 +336,6 @@ func (a *app) recognizeScreenshot(imgPath string) {
 	a.ocrCancel = cancel
 	a.ocrBusy, a.ocrError = true, ""
 	a.busy = false
-	// 新截图是一张新卡片，必须让上一轮 OCR 译文的在飞翻译失效，
-	// 否则旧译文、引擎与词典会写回这张刚清空的卡片。
 	a.translateGen++
 	a.source, a.target = "", ""
 	a.rawSource = ""
@@ -485,8 +415,6 @@ func (a *app) translateEditedScreenshot() {
 	a.translateKeepingLines(text)
 }
 
-// renderScreenshotSource keeps the image optional and makes the OCR result
-// editable. Correcting one wrong character must not require another snip.
 func (a *app) renderScreenshotSource(c *ui.Context, t *ui.Theme, s snapshot) {
 	if s.snipBitmap != nil {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {

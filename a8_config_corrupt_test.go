@@ -7,9 +7,6 @@ import (
 	"testing"
 )
 
-// swapConfigPath points newStore at a temp path so its on-disk decision can
-// be tested without touching the real user data directory. No test in this
-// package calls t.Parallel(), so swapping and restoring is safe.
 func swapConfigPath(t *testing.T, path string) {
 	t.Helper()
 	old := resolveConfigPath
@@ -17,10 +14,6 @@ func swapConfigPath(t *testing.T, path string) {
 	t.Cleanup(func() { resolveConfigPath = old })
 }
 
-// TestCorruptConfigIsNotOverwritten pins the data-loss defect behind A8.
-// load() returns false both when the file is absent and when it exists but
-// cannot be parsed; newStore used to treat both as a first run and replace
-// the file with DefaultConfig(), erasing the user's settings with no copy.
 func TestCorruptConfigIsNotOverwritten(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
@@ -41,12 +34,9 @@ func TestCorruptConfigIsNotOverwritten(t *testing.T) {
 	}
 }
 
-// TestFirstRunStillWritesDefaults is the other half of the contract: a
-// genuinely missing file must still be created with valid defaults, so the
-// fix does not break a fresh install.
 func TestFirstRunStillWritesDefaults(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "config.json") // 不存在
+	path := filepath.Join(dir, "config.json")
 	swapConfigPath(t, path)
 
 	newStore()
@@ -60,7 +50,7 @@ func TestFirstRunStillWritesDefaults(t *testing.T) {
 		t.Fatalf("写出的默认配置不是合法 JSON：%v", err)
 	}
 	want := DefaultConfig()
-	applyFirstRunAIDefaults(&want) // 新装不预设 Magpie，见 TestFirstRunAIIsUnconfigured
+	applyFirstRunAIDefaults(&want)
 	if cfg.AIURL != want.AIURL || cfg.AIModel != want.AIModel {
 		t.Fatalf("首次运行写出的不是默认值：AIURL=%q AIModel=%q", cfg.AIURL, cfg.AIModel)
 	}

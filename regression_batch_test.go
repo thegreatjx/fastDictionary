@@ -8,14 +8,6 @@ import (
 	"time"
 )
 
-// TestUIACaptureHasTimeout guards the frozen-app case: the UIA round trip
-// must be bounded, because a misbehaving provider used to block the whole
-// capture path for seconds.
-//
-// The bound lives in uia.go now: captureUIA calls SelectionUIA directly, and
-// SelectionUIA gives the worker two uiaTimeout budgets — one to hand the job
-// over, one to wait for the answer — then retires it and falls back to a
-// simulated copy.
 func TestUIACaptureHasTimeout(t *testing.T) {
 	src, err := os.ReadFile("uia.go")
 	if err != nil {
@@ -33,9 +25,6 @@ func TestUIACaptureHasTimeout(t *testing.T) {
 	}
 }
 
-// TestRenderViewsArePanicSafe: every window view must be wrapped in
-// safeView, so one bad snapshot renders an error box instead of killing
-// the tray-resident process.
 func TestRenderViewsArePanicSafe(t *testing.T) {
 	for name, path := range map[string]string{
 		"popup":    "main.go",
@@ -54,9 +43,6 @@ func TestRenderViewsArePanicSafe(t *testing.T) {
 	}
 }
 
-// TestTranslateNilWindowGuard: translate() used to call win.Update without
-// a nil check; a translation landing after the window was torn down
-// crashed instead of being dropped.
 func TestTranslateNilWindowGuard(t *testing.T) {
 	src, err := os.ReadFile("popup_actions.go")
 	if err != nil {
@@ -72,16 +58,11 @@ func TestTranslateNilWindowGuard(t *testing.T) {
 		t.Fatal("translate body not delimited")
 	}
 	fn := body[start : start+end]
-	// The guarded call is indented inside an "if win != nil" block; a bare
-	// call would appear at exactly one tab of depth relative to the func.
 	if strings.Contains(fn, "\n\twin.Update(func() {})\n") {
 		t.Fatal("translate still calls win.Update unguarded")
 	}
 }
 
-// TestVocabularyListIsVirtualized: the settings page used to render every
-// entry as a full card tree each frame; the ui.List keeps a thousand
-// entries smooth, and the tab counters are one pass, not four.
 func TestVocabularyListIsVirtualized(t *testing.T) {
 	src, err := os.ReadFile("settings_vocab.go")
 	if err != nil {
@@ -99,13 +80,12 @@ func TestVocabularyListIsVirtualized(t *testing.T) {
 	}
 }
 
-// TestCategoryCountsSinglePass verifies the one-pass counter directly.
 func TestCategoryCountsSinglePass(t *testing.T) {
 	s := &VocabularyStore{path: filepath.Join(t.TempDir(), "vocabulary.json"), entries: []VocabularyEntry{
-		{ID: "1", Term: "alpha", Source: "dict"},                      // words
-		{ID: "2", Term: "a longer sentence entry", Source: "grammar"}, // sentences
-		{ID: "3", Term: "polished text", Source: "writing"},           // writing
-		{ID: "4", Term: "beta", Source: "notes"},                      // words
+		{ID: "1", Term: "alpha", Source: "dict"},
+		{ID: "2", Term: "a longer sentence entry", Source: "grammar"},
+		{ID: "3", Term: "polished text", Source: "writing"},
+		{ID: "4", Term: "beta", Source: "notes"},
 	}}
 	all, words, sentences, writing := s.CategoryCounts()
 	if all != 4 || words != 2 || sentences != 1 || writing != 1 {
@@ -113,8 +93,6 @@ func TestCategoryCountsSinglePass(t *testing.T) {
 	}
 }
 
-// TestHTMLExportEscapesScriptTag: an entry containing </script> must not
-// break the exported notebook page.
 func TestHTMLExportEscapesScriptTag(t *testing.T) {
 	dir := t.TempDir()
 	s := &VocabularyStore{path: filepath.Join(dir, "vocabulary.json"), entries: []VocabularyEntry{
@@ -131,7 +109,6 @@ func TestHTMLExportEscapesScriptTag(t *testing.T) {
 	}
 	page := string(data)
 	if strings.Count(page, "</script>") != 1 {
-		// exactly one: the page's own closing tag
 		t.Fatalf("exported page has %d </script> occurrences, want 1 (unescaped entry leaked into the script block)", strings.Count(page, "</script>"))
 	}
 	if !strings.Contains(page, "&lt;/script&gt;") {
@@ -139,8 +116,6 @@ func TestHTMLExportEscapesScriptTag(t *testing.T) {
 	}
 }
 
-// TestExportHTMLRefusesMemoryStore: an in-memory store must not write the
-// notebook into whatever the current working directory happens to be.
 func TestExportHTMLRefusesMemoryStore(t *testing.T) {
 	s := &VocabularyStore{path: "", entries: []VocabularyEntry{{ID: "x", Term: "alpha"}}}
 	if _, err := s.ExportHTML(); err == nil {
@@ -148,8 +123,6 @@ func TestExportHTMLRefusesMemoryStore(t *testing.T) {
 	}
 }
 
-// TestImportEntriesReportsRealAdditions: the toast must say how many were
-// new, not how many were attempted (duplicates merge silently).
 func TestImportEntriesReportsRealAdditions(t *testing.T) {
 	dir := t.TempDir()
 	s := &VocabularyStore{path: filepath.Join(dir, "vocabulary.json"), entries: []VocabularyEntry{}}
@@ -161,7 +134,7 @@ func TestImportEntriesReportsRealAdditions(t *testing.T) {
 		t.Fatalf("first import added %d, want 2", first)
 	}
 	second := s.ImportEntries([]VocabularyEntry{
-		{Term: "alpha", Definition: "d", Difficulty: "A1", Phonetic: "/a/"}, // duplicate: merges
+		{Term: "alpha", Definition: "d", Difficulty: "A1", Phonetic: "/a/"},
 		{Term: "gamma", Definition: "d", Difficulty: "A1", Phonetic: "/g/"},
 	})
 	if second != 1 {
@@ -169,8 +142,6 @@ func TestImportEntriesReportsRealAdditions(t *testing.T) {
 	}
 }
 
-// TestOcrTextKeepsLines: OCR output keeps its line structure; folding the
-// breaks away turned a paragraph into one unwieldy line.
 func TestOcrTextKeepsLines(t *testing.T) {
 	got := CleanOcrText("  first line  \r\nsecond\tline\r\n\r\nthird  ")
 	want := "first line\nsecond line\n\nthird"
@@ -182,8 +153,6 @@ func TestOcrTextKeepsLines(t *testing.T) {
 	}
 }
 
-// TestQuitCleansUpAudioAndHooks: quitApp used to leave a playing sound and
-// the low-level hooks behind.
 func TestQuitCleansUpAudioAndHooks(t *testing.T) {
 	src, err := os.ReadFile("main.go")
 	if err != nil {
@@ -207,8 +176,6 @@ func TestQuitCleansUpAudioAndHooks(t *testing.T) {
 	}
 }
 
-// TestAudioCacheUsesPartFile: a crash mid-download used to leave a
-// truncated mp3 that the size check then treated as a valid cache hit.
 func TestAudioCacheUsesPartFile(t *testing.T) {
 	src, err := os.ReadFile("audio.go")
 	if err != nil {
@@ -226,8 +193,6 @@ func TestAudioCacheUsesPartFile(t *testing.T) {
 	}
 }
 
-// TestGooglePinnedModeIsNotGlobal: the pinned-engine timeout used to be a
-// global atomic, so a pinned translation raced a concurrent race-mode one.
 func TestGooglePinnedModeIsNotGlobal(t *testing.T) {
 	src, err := os.ReadFile("services.go")
 	if err != nil {
@@ -238,8 +203,6 @@ func TestGooglePinnedModeIsNotGlobal(t *testing.T) {
 	}
 }
 
-// TestDoubleClickUsesSystemThreshold: the hook's double-click window must
-// come from GetDoubleClickTime, not a hardcoded 500ms.
 func TestDoubleClickUsesSystemThreshold(t *testing.T) {
 	src, err := os.ReadFile("hook.go")
 	if err != nil {
@@ -254,8 +217,6 @@ func TestDoubleClickUsesSystemThreshold(t *testing.T) {
 	}
 }
 
-// TestSettingsShowsRealVocabPath guards the display of where the notebook
-// actually lives, rather than a path that can drift from reality.
 func TestSettingsShowsRealVocabPath(t *testing.T) {
 	src := readSourceFile(t, "settings_vocab.go")
 	if containsText(src, `%AppData%\\Dictionary\\vocabulary.json`) {
@@ -264,7 +225,6 @@ func TestSettingsShowsRealVocabPath(t *testing.T) {
 	if !containsText(src, "vocabStore.Path()") {
 		t.Fatal("the vocabulary page does not ask the store where it saves")
 	}
-	// And the store has to answer with something real.
 	s := newMemoryVocabularyStore()
 	if s.Path() != "" {
 		t.Fatalf("the in-memory store reports a path (%q); it must not pretend", s.Path())
@@ -274,7 +234,6 @@ func TestSettingsShowsRealVocabPath(t *testing.T) {
 	}
 }
 
-// TestVocabularyStoreReportsItsPath pins the accessor the settings page uses.
 func TestVocabularyStoreReportsItsPath(t *testing.T) {
 	dir := t.TempDir()
 	s := &VocabularyStore{path: filepath.Join(dir, "vocabulary.json"), entries: []VocabularyEntry{}}
@@ -287,16 +246,12 @@ func TestVocabularyStoreReportsItsPath(t *testing.T) {
 	}
 }
 
-// TestUIATimeoutValueIsSane pins the chosen bound.
 func TestUIATimeoutValueIsSane(t *testing.T) {
 	if uiaTimeout < 100*time.Millisecond || uiaTimeout > time.Second {
 		t.Fatalf("uiaTimeout = %v, outside the sane 100ms..1s window", uiaTimeout)
 	}
 }
 
-// TestAIModeSelectsTheOpeningCard covers the setting that used to be inert:
-// "默认模式" was persisted and rendered but never read, so choosing 长难句分析
-// changed nothing about what a fresh selection opened.
 func TestAIModeSelectsTheOpeningCard(t *testing.T) {
 	cases := []struct {
 		aiMode  string
@@ -310,16 +265,8 @@ func TestAIModeSelectsTheOpeningCard(t *testing.T) {
 		{"polish", true, true, modeWriting, true},
 		{"", true, true, modeTranslate, false},
 		{"nonsense", true, true, modeTranslate, false},
-		// 词典精读 is retired with its tab; a file that still spells "dict"
-		// must fall back to translating rather than open a view that no longer
-		// exists. normalizeInitialAIMode erases the value on load.
 		{"dict", true, true, modeTranslate, false},
-		// With AI off the actions cannot run, so the preference must not
-		// apply: opening an empty AI card is worse than translating.
 		{"grammar", false, true, modeTranslate, false},
-		// A stored ai_mode without an explicit choice is just the shipped
-		// default ("grammar"), not a request for 长难句分析 on every
-		// selection. Honouring it would reroute every existing install.
 		{"grammar", true, false, modeTranslate, false},
 	}
 	for _, tc := range cases {
@@ -335,9 +282,6 @@ func TestAIModeSelectsTheOpeningCard(t *testing.T) {
 	}
 }
 
-// TestDefaultConfigDoesNotClaimAModeChoice pins that the shipped default does
-// not masquerade as a user preference: DefaultConfig sets AIMode to "grammar"
-// for the settings page, and InitialAIMode must still decline to apply it.
 func TestDefaultConfigDoesNotClaimAModeChoice(t *testing.T) {
 	cfg := DefaultConfig()
 	if cfg.AIModeIsChoice {
@@ -348,9 +292,6 @@ func TestDefaultConfigDoesNotClaimAModeChoice(t *testing.T) {
 	}
 }
 
-// TestSettingsRecordsTheModeChoice keeps the settings page honest: it has to
-// flip AIModeIsChoice when a mode is picked, and offer a way back to plain
-// translation, otherwise the preference can never be cleared again.
 func TestSettingsRecordsTheModeChoice(t *testing.T) {
 	src := readSourceFile(t, "settings_pages.go")
 	if !containsText(src, "c.AIModeIsChoice = true") {
@@ -364,26 +305,16 @@ func TestSettingsRecordsTheModeChoice(t *testing.T) {
 	}
 }
 
-// TestAIModeIsWiredIntoThePopup makes sure the preference is actually consulted
-// where the selection popup opens, not merely computed and dropped.
 func TestAIModeIsWiredIntoThePopup(t *testing.T) {
 	src := readSourceFile(t, "popup.go")
 	if !containsText(src, "InitialAIMode()") {
 		t.Fatal("openPopup never asks the config which card to open")
 	}
-	// The mode must be dispatched through rerunCurrentMode: calling
-	// translate() unconditionally is exactly the bug this replaced.
 	if countOccurrences(src, "a.rerunCurrentMode(text)") < 2 {
 		t.Fatal("openPopupWithText does not dispatch on the mode it just set")
 	}
 }
 
-// TestCopyGivesFeedback covers the silent clipboard: both copy buttons wrote
-// the clipboard and showed nothing, which reads as a dead button.
-//
-// The popup is split by responsibility: translation controls live in
-// popup_translation.go, shared feedback in popup_view.go, and the clipboard
-// action in popup_actions.go.
 func TestCopyGivesFeedback(t *testing.T) {
 	translation := readSourceFile(t, "popup_translation.go")
 	view := readSourceFile(t, "popup_view.go")
@@ -406,8 +337,6 @@ func TestCopyGivesFeedback(t *testing.T) {
 	}
 }
 
-// TestCopyToClipboardHandlesEmptyText pins the guard that keeps the button from
-// reporting "copied 0 characters" on an empty result.
 func TestCopyToClipboardHandlesEmptyText(t *testing.T) {
 	a := newTestApp()
 	a.copyToClipboard("   ")
@@ -416,8 +345,6 @@ func TestCopyToClipboardHandlesEmptyText(t *testing.T) {
 	}
 }
 
-// TestNoOrphanedRefineComment keeps the leftover doc comment of a deleted
-// function from coming back: it documented nothing and confused readers.
 func TestNoOrphanedRefineComment(t *testing.T) {
 	src := readSourceFile(t, "popup.go")
 	if containsText(src, "// refine streams an AI re-translation") {

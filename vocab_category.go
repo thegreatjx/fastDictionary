@@ -2,9 +2,6 @@ package main
 
 import "strings"
 
-// vocabCategory is the notebook tab an entry belongs to. The source is
-// authoritative; the word-count heuristic only decides for entries whose
-// source cannot be mapped (imports and older files).
 type vocabCategory uint8
 
 const (
@@ -25,8 +22,6 @@ func (c vocabCategory) String() string {
 	return "words"
 }
 
-// vocabCategoryFromKey maps the tab keys used by the settings page and the
-// exported page back to the enum.
 func vocabCategoryFromKey(key string) (vocabCategory, bool) {
 	switch key {
 	case "words":
@@ -39,10 +34,6 @@ func vocabCategoryFromKey(key string) (vocabCategory, bool) {
 	return vocabCategoryWords, false
 }
 
-// classifyVocabEntry is the single classification rule. Every surface that
-// groups entries — the tab counters, the filter, the row badges, the exported
-// notebook page and the Anki export — calls it, so one entry can no longer
-// land in different tabs on different surfaces.
 func classifyVocabEntry(e VocabularyEntry) vocabCategory {
 	switch e.Source {
 	case "writing":

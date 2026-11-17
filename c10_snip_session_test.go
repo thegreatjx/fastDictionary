@@ -5,10 +5,6 @@ import (
 	"testing"
 )
 
-// TestStartNativeSnipGuardsSingleton pins the session-boundary contract for the
-// native snipping overlay. The overlay owns an OS thread and a Win32 message
-// pump, so a headless test cannot drive its windows; the boundary guard itself
-// is ordinary Go and can be asserted structurally.
 func TestStartNativeSnipGuardsSingleton(t *testing.T) {
 	src := readSourceFile(t, "snip.go")
 
@@ -39,7 +35,6 @@ func TestStartNativeSnipGuardsSingleton(t *testing.T) {
 		t.Fatal("StartNativeSnip 没有用 defer 覆盖所有早退路径")
 	}
 
-	// snipWndProc must still read the session pointer under snipMu.
 	wnd := strings.Index(src, "func snipWndProc(")
 	if wnd < 0 {
 		t.Fatal("snipWndProc not found")
@@ -52,9 +47,6 @@ func TestStartNativeSnipGuardsSingleton(t *testing.T) {
 	}
 }
 
-// TestBeginSnipSessionLocked exercises the boundary as an ordinary Go function,
-// with no Win32 message pump. It walks one session's lifetime and isolates the
-// package-level currentSnip so other tests are unaffected.
 func TestBeginSnipSessionLocked(t *testing.T) {
 	snipMu.Lock()
 	saved := currentSnip
@@ -86,7 +78,7 @@ func TestBeginSnipSessionLocked(t *testing.T) {
 	}
 
 	snipMu.Lock()
-	endSnipSessionLocked(s2) // 错配 session 不应误清
+	endSnipSessionLocked(s2)
 	gotMismatch := currentSnip
 	snipMu.Unlock()
 	if gotMismatch != s1 {
@@ -104,7 +96,7 @@ func TestBeginSnipSessionLocked(t *testing.T) {
 	snipMu.Lock()
 	okAgain := beginSnipSessionLocked(s1)
 	gotAgain := currentSnip
-	endSnipSessionLocked(s1) // 重复清理应保持幂等
+	endSnipSessionLocked(s1)
 	endSnipSessionLocked(s1)
 	gotIdempotent := currentSnip
 	snipMu.Unlock()

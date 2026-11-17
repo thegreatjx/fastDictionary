@@ -39,16 +39,12 @@ func TestElevationNoticeExplainsOnlyRealBlocking(t *testing.T) {
 	}
 }
 
-// The Win32 wiring has to agree with itself: both entry points query the same
-// token, so they must return the same answer for this process. This catches a
-// wrong access mask or struct size that pure Go tests cannot see.
 func TestProcessElevationQueriesAgreeForOwnProcess(t *testing.T) {
 	self := currentProcessElevated()
 	t.Logf("running elevated: %v", self)
 	if got := processElevated(uint32(os.Getpid())); got != self {
 		t.Fatalf("processElevated(self) = %v, currentProcessElevated = %v", got, self)
 	}
-	// Must not panic or block when there is no foreground window (CI).
 	_ = foregroundProcessElevated()
 }
 

@@ -6,11 +6,6 @@ import (
 	"testing"
 )
 
-// TestVocabJobsUseSingleGuard is a source-contract test: the four long-running
-// vocabulary actions must all go through the one shared job guard instead of
-// each starting a bare goroutine. A window-level reproduction is impossible
-// headlessly (each action opens a real file dialog), so the guard's own state
-// transitions are covered by the behaviour tests below.
 func TestVocabJobsUseSingleGuard(t *testing.T) {
 	vocab := readSourceFile(t, "settings_vocab.go")
 	if got := countOccurrences(vocab, "a.tryBeginVocabJob()"); got != 4 {
@@ -28,8 +23,6 @@ func TestVocabJobsUseSingleGuard(t *testing.T) {
 	}
 }
 
-// resetVocabJobForTest clears the shared slot and restores it afterwards so
-// the package-level state cannot leak into other tests.
 func resetVocabJobForTest(t *testing.T) {
 	t.Helper()
 	vocabJobMu.Lock()
@@ -58,7 +51,7 @@ func TestVocabJobGuardTransitions(t *testing.T) {
 		t.Fatal("结束后应能再次 begin")
 	}
 	endVocabJob()
-	endVocabJob() // 重复释放应保持幂等
+	endVocabJob()
 	if !a.tryBeginVocabJob() {
 		t.Fatal("重复释放后仍应能 begin")
 	}

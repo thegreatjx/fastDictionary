@@ -70,9 +70,6 @@ func TestClipboardTransactionRestoresOnce(t *testing.T) {
 	}
 }
 
-// TestCaptureByCopyDefersRestore is the source contract for the clipboard
-// transaction: the restore must be deferred, not a trailing call that an early
-// return can skip.
 func TestCaptureByCopyDefersRestore(t *testing.T) {
 	src := readSourceFile(t, "capture.go")
 	start := strings.Index(src, "func captureByCopy() string {")

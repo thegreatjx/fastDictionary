@@ -28,10 +28,6 @@ func TestTencentLangMapsChineseTags(t *testing.T) {
 	}
 }
 
-// TestTencentSupportsTargetOnlyListsMeasuredLanguages pins the whitelist to the
-// set that was actually verified against the live service. Widening it without
-// testing means the engine answers "Unsupported-Language" on every request and
-// its circuit breaker opens for a language it could have served.
 func TestTencentSupportsTargetOnlyListsMeasuredLanguages(t *testing.T) {
 	for _, tag := range []string{"zh-Hans", "zh-Hant", "en", "ja", "ko", "fr", "de", "ru", "ar"} {
 		if !tencentSupportsTarget(tag) {
@@ -60,10 +56,6 @@ func TestTencentDetectedNormalisesChinese(t *testing.T) {
 	}
 }
 
-// TestTencentTranslateRejectsRefusalInBody covers the failure mode that makes
-// this endpoint different: it answers HTTP 200 with ret_code "error", so a
-// status-code-only check would hand an empty translation to the race and let
-// it win.
 func TestTencentTranslateRejectsRefusalInBody(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -132,9 +124,6 @@ func TestTencentTranslateSendsBareLanguageCodes(t *testing.T) {
 	}
 }
 
-// TestTencentTranslateAsksServiceToDetect keeps the documented fallback: with
-// no local detection the engine is asked to detect, instead of being sent an
-// empty language.
 func TestTencentTranslateAsksServiceToDetect(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {

@@ -7,8 +7,6 @@ import (
 	"testing"
 )
 
-// TestClassifyVocabEntry pins the single classification rule: the source wins,
-// and only entries without a known source fall back to the word count.
 func TestClassifyVocabEntry(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -37,9 +35,6 @@ func TestClassifyVocabEntry(t *testing.T) {
 	}
 }
 
-// TestVocabCategorySurfacesAgree is the regression for the three divergent
-// copies of the rule: counters, filters, row badges and the exported notebook
-// page must all put a writing entry with a long term in 写作批改.
 func TestVocabCategorySurfacesAgree(t *testing.T) {
 	entries := []VocabularyEntry{
 		{ID: "1", Term: "alpha", Source: "dict"},
@@ -57,8 +52,6 @@ func TestVocabCategorySurfacesAgree(t *testing.T) {
 		t.Fatalf("CategoryCounts all = %d, want %d", all, len(entries))
 	}
 
-	// Every entry must appear in exactly one tab, and the per-tab sizes must
-	// equal the counters.
 	wantCounts := map[string]int{"words": 0, "sentences": 0, "writing": 0}
 	for _, e := range entries {
 		hits := 0
@@ -83,7 +76,6 @@ func TestVocabCategorySurfacesAgree(t *testing.T) {
 		t.Fatalf("counters = words:%d sentences:%d writing:%d, filters = %v", words, sentences, writing, wantCounts)
 	}
 
-	// The exported page must carry the same category on each card.
 	path, err := s.ExportHTML()
 	if err != nil {
 		t.Fatalf("ExportHTML: %v", err)
@@ -121,8 +113,6 @@ func TestVocabCategorySurfacesAgree(t *testing.T) {
 	}
 }
 
-// TestVocabBadgesUseCanonicalClassifier keeps the row badge and the export
-// from growing their own copy of the rule again.
 func TestVocabBadgesUseCanonicalClassifier(t *testing.T) {
 	settingsSrc := readSourceFile(t, "settings_vocab.go")
 	if !containsText(settingsSrc, "switch classifyVocabEntry(entry)") {

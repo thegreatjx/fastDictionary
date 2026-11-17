@@ -10,7 +10,6 @@ import (
 	"time"
 )
 
-// CountByCategory returns the number of entries in a specific category
 func (s *VocabularyStore) CountByCategory(category string) int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -26,10 +25,6 @@ func (s *VocabularyStore) CountByCategory(category string) int {
 	return count
 }
 
-// CategoryCounts counts every tab in one pass. The settings page rendered
-// four separate counters per frame, each a full scan under the read lock:
-// with a thousand entries that is four thousand matches per keystroke in
-// the search box.
 func (s *VocabularyStore) CategoryCounts() (all, words, sentences, writing int) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -55,7 +50,6 @@ func (s *VocabularyStore) matchesCategory(e VocabularyEntry, category string) bo
 	return classifyVocabEntry(e) == cat
 }
 
-// Filter filters entries by category and keyword query
 func (s *VocabularyStore) Filter(category string, query string) []VocabularyEntry {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -79,7 +73,6 @@ func (s *VocabularyStore) Filter(category string, query string) []VocabularyEntr
 	return results
 }
 
-// ExportHTML exports all vocabulary entries into an interactive, standalone HTML notebase page
 func (s *VocabularyStore) ExportHTML() (string, error) {
 	s.mu.RLock()
 	entries := make([]VocabularyEntry, len(s.entries))
@@ -87,8 +80,6 @@ func (s *VocabularyStore) ExportHTML() (string, error) {
 	baseDir := filepath.Dir(s.path)
 	s.mu.RUnlock()
 
-	// An in-memory store (tests) has no file behind it: writing next to the
-	// user's current working directory is worse than refusing.
 	if s.path == "" {
 		return "", fmt.Errorf("vocabulary store has no backing file")
 	}
@@ -141,15 +132,10 @@ func (s *VocabularyStore) ExportHTML() (string, error) {
 	sb.WriteString("<input type=\"text\" id=\"search\" class=\"search\" placeholder=\"搜索词条、释义或例句...\" oninput=\"doSearch()\">\n")
 	sb.WriteString("<div id=\"list\">\n")
 
-	// allCats mirrors allEntries so the page's own scripts group entries with
-	// the same rule as the desktop app instead of re-implementing it in JS.
 	allCats := make([]string, len(entries))
 	for i, e := range entries {
 		cat := classifyVocabEntry(e)
 		allCats[i] = cat.String()
-		// Every field is user data: a saved sentence containing markup (or
-		// the literal </script> the AI sometimes emits) used to break the
-		// whole page. Escape for text and attributes alike.
 		esc := html.EscapeString
 		searchContent := strings.ToLower(strings.Join([]string{e.Term, e.Definition, e.Context, e.ContextTranslation, e.MemoryTips}, " "))
 		sb.WriteString(fmt.Sprintf("<div class=\"card\" data-cat=\"%s\" data-text=\"%s\">", cat.String(), esc(searchContent)))
@@ -188,9 +174,6 @@ func (s *VocabularyStore) ExportHTML() (string, error) {
 	sb.WriteString("<div id=\"noResult\" style=\"display:none;text-align:center;padding:48px 16px;color:#94A3B8;font-size:14px;\"><div style=\"font-size:28px;margin-bottom:8px;\">🔍</div><div>未找到匹配的笔记</div><div style=\"font-size:12px;margin-top:4px;\">尝试缩短搜索词或切换上方分类</div></div>\n")
 	sb.WriteString("</div></div>\n")
 	sb.WriteString("<script>\n")
-	// The JSON blob inside <script> needs </ escaped (a term or example
-	// containing </script> would otherwise end the script tag and break the
-	// whole page); html.EscapeString is not enough inside a script element.
 	sb.WriteString(fmt.Sprintf("let allEntries = %s;\n", strings.ReplaceAll(string(entriesJSON), "</", "<\\/")))
 	sb.WriteString(fmt.Sprintf("let allCats = %s;\n", strings.Join(allCats, ",")))
 	sb.WriteString("const CAT=Object.freeze({ALL:'all',WORDS:'words',SENTENCES:'sentences',WRITING:'writing'});\n")

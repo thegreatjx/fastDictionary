@@ -22,9 +22,6 @@ func newImportStore(t *testing.T) *VocabularyStore {
 	return &VocabularyStore{path: filepath.Join(t.TempDir(), "vocabulary.json")}
 }
 
-// TestImportJSONWithUTF8BOM is the regression: Notepad and many exporters put a
-// UTF-8 BOM in front of the file, and json.Unmarshal rejects it, so a perfectly
-// good export failed with "无法识别的 JSON 数据格式".
 func TestImportJSONWithUTF8BOM(t *testing.T) {
 	body := append(append([]byte{}, utf8BOM...),
 		[]byte(`[{"term":"alpha","definition":"第一个","phonetic":"/a/","difficulty":"A1"}]`)...)

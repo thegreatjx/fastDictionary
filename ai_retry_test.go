@@ -6,8 +6,6 @@ import (
 	"testing"
 )
 
-// TestIsTransientAIError: only failures a short retry can fix are retried.
-// A cancelled request was stopped on purpose; resending it is wasted work.
 func TestIsTransientAIError(t *testing.T) {
 	cases := []struct {
 		name string
@@ -32,8 +30,6 @@ func TestIsTransientAIError(t *testing.T) {
 	}
 }
 
-// A refused connection to Magpie is its own kind: the popup tells the user to
-// start Magpie or switch service, and retrying a stopped process is pointless.
 func TestMagpieRefusedIsTyped(t *testing.T) {
 	conn := aiConn{Provider: "magpie", Endpoint: "http://127.0.0.1:1/v1", Model: "m"}
 	_, err := StreamAI(context.Background(), conn, "s", "u", "", nil)

@@ -8,8 +8,6 @@ import (
 	"time"
 )
 
-// swapEdgeTTSAuthForTest installs a known cached token and generation counter,
-// restoring the previous values when the test ends.
 func swapEdgeTTSAuthForTest(t *testing.T, auth edgeTTSAuth, gen uint64) {
 	t.Helper()
 	edgeTTSMu.Lock()
@@ -23,8 +21,6 @@ func swapEdgeTTSAuthForTest(t *testing.T, auth edgeTTSAuth, gen uint64) {
 	})
 }
 
-// swapEdgeTTSFetchForTest replaces the token handshake with a stub so the
-// cache rules can be tested without network access.
 func swapEdgeTTSFetchForTest(t *testing.T, fetch func(context.Context) (edgeTTSAuth, error)) {
 	t.Helper()
 	old := edgeTTSFetchAuthFunc

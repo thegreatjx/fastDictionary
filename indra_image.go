@@ -5,58 +5,26 @@ import (
 	"math"
 )
 
-// Image handling for the Indra recognizer.
-//
-// This mirrors read-frog-style preprocessing in the Indra package
-// (indra_ocr/rec_preproc.py and det_post.py). The recognizers were trained on
-// crops made by exactly these rules, so the margins and the ink-map convention
-// have to match: a line fed with different padding reads worse even though
-// nothing is "wrong" with it.
-
-// Recognizer geometry, from Indra's rec_preproc.py.
 const (
-	// indraLineHeight is the height a line crop is resized to. rec_cjk.onnx
-	// declares [B,1,32,W]; the Latin recognizer wants 96, see indraRecHeight.
-	indraLineHeight = 32
-	// indraLatinHeight is rec.onnx's input height. It is trained at a larger
-	// scale than the CJK recognizer, so the same line is cropped taller.
-	indraLatinHeight = 96
-	// indraPadY and indraPadX are margins around the ink box, as a fraction of
-	// the line's height. They give the recognizer context above and below.
-	indraPadY = 0.2
-	// indraWidthMultiple is the timestep stride: widths are padded up to a
-	// multiple of it.
+	indraLineHeight    = 32
+	indraLatinHeight   = 96
+	indraPadY          = 0.2
 	indraWidthMultiple = 8
-	// indraMaxLineWidth caps a single crop, from the original's max_width.
-	indraMaxLineWidth = 4096
+	indraMaxLineWidth  = 4096
 )
 
-// indraPadX is the horizontal margin around the ink box, as a fraction of the
-// line's height. It is a variable, not a constant, because it is the knob the
-// doubling sweep turns; 0.3 is the original Python value.
 var indraPadX = 0.3
 
-// grayImage is a single-channel page, the form both models take.
 type grayImage struct {
 	W, H int
-	Pix  []uint8 // row-major, 0 = black
+	Pix  []uint8
 }
 
-// toGray converts an image to 8-bit grayscale.
-//
-// The recognizers read dark ink on light paper, and the detector works on an
-// inverted map, so a single gray buffer serves both.
-//
-// The concrete types are handled directly rather than through image.Image.At:
-// At is an interface call per pixel, and on a 640x940 screenshot that alone cost
-// 166ms — twenty times the cost of the recognition it fed. Decoded screenshots
-// are almost always one of these three, so the slow path is rare.
 func toGray(src image.Image) grayImage {
 	b := src.Bounds()
 	w, h := b.Dx(), b.Dy()
 	g := grayImage{W: w, H: h, Pix: make([]uint8, w*h)}
 
-	// Rec.601 luma, the same weights cv2's BGR2GRAY uses.
 	luma := func(r, gg, bb uint8) uint8 {
 		return uint8((299*uint32(r) + 587*uint32(gg) + 114*uint32(bb)) / 1000)
 	}
@@ -86,7 +54,6 @@ func toGray(src image.Image) grayImage {
 					row[x] = 255
 					continue
 				}
-				// NRGBA is already non-premultiplied.
 				row[x] = luma(p[0], p[1], p[2])
 			}
 		}
@@ -99,7 +66,6 @@ func toGray(src image.Image) grayImage {
 		return g
 	}
 
-	// Anything else: ask the pixel. Slower, but correct.
 	for y := 0; y < h; y++ {
 		row := g.Pix[y*w : (y+1)*w]
 		for x := 0; x < w; x++ {
@@ -114,9 +80,6 @@ func toGray(src image.Image) grayImage {
 	return g
 }
 
-// resizeGray resizes with the same choices as the original: area averaging when
-// shrinking (which is what keeps small text readable instead of aliasing it
-// away) and bilinear when growing.
 func resizeGray(src grayImage, w, h int) grayImage {
 	if w == src.W && h == src.H {
 		return src
@@ -134,8 +97,6 @@ func resizeGray(src grayImage, w, h int) grayImage {
 	return dst
 }
 
-// resizeArea averages the source pixels that fall inside each destination pixel,
-// the way cv2.INTER_AREA does. This is the mode that preserves thin strokes.
 func resizeArea(src, dst grayImage) {
 	sx := float64(src.W) / float64(dst.W)
 	sy := float64(src.H) / float64(dst.H)
@@ -174,7 +135,6 @@ func resizeArea(src, dst grayImage) {
 	}
 }
 
-// resizeBilinear is the plain bilinear interpolation cv2.INTER_LINEAR does.
 func resizeBilinear(src, dst grayImage) {
 	sx := float64(src.W) / float64(dst.W)
 	sy := float64(src.H) / float64(dst.H)
@@ -211,32 +171,16 @@ func resizeBilinear(src, dst grayImage) {
 	}
 }
 
-// lineBox is a detected text line, in page pixels.
 type lineBox struct {
 	X0, Y0, X1, Y1 float64
 	Score          float64
 }
 
-// cropLine cuts one line and returns it as the recognizer's ink map: a
-// row-major [height][w] float32 where 1 is ink and 0 is paper.
-//
-// window is how many line-heights of page the crop covers, from meta.json's
-// rec_window. The Latin recognizer reads a tall window — it wants the line plus
-// the page above and below it, which is why rec.onnx declares an input height of
-// 96 while rec_cjk.onnx declares 32: 3 x 32 = 96. Cropping a Latin line at 32
-// without the surrounding context made it read far worse than the CJK model
-// ("January 6-29" came back as "danuar\forall -20"), which is how this was found.
-//
-// The remaining steps match Indra's crop_line: pad the ink box by a fraction of
-// its height, fill outside the page with paper, resize keeping the aspect ratio,
-// then invert unless the line was light text on a dark ground.
 func cropLine(page grayImage, box lineBox, height int, window int) ([]float32, int) {
 	if window < 1 {
 		window = 1
 	}
 	h := math.Max(1, box.Y1-box.Y0)
-	// A window of n line-heights is centred on the line: the padding grows so
-	// that the line keeps its scale inside the taller crop.
 	padY := (float64(window)*(1+2*indraPadY) - 1) / 2
 	height *= window
 
@@ -293,13 +237,6 @@ func cropLine(page grayImage, box lineBox, height int, window int) ([]float32, i
 	return ink, outW
 }
 
-// isDarkLine reports light text on a dark ground.
-//
-// It compares the line's median luminance against its dark and bright tails: if
-// the bright tail is further from the median than the dark tail is, the ground
-// is the dark part and the text is light. This is what lets a line of white
-// text on a coloured banner be recognised at all, since the recognizers only
-// read dark on light.
 func isDarkLine(page grayImage, box lineBox) bool {
 	x0, y0 := int(box.X0), int(box.Y0)
 	x1, y1 := int(box.X1), int(box.Y1)
@@ -333,7 +270,6 @@ func isDarkLine(page grayImage, box lineBox) bool {
 	return hi-med > 2*(med-lo)+8
 }
 
-// histPercentile reads a percentile out of a 256-bin histogram without sorting.
 func histPercentile(hist *[256]int, n int, q float64) float64 {
 	x := q * float64(n-1)
 	i := int(math.Floor(x))
@@ -347,8 +283,6 @@ func histPercentile(hist *[256]int, n int, q float64) float64 {
 	return lo + d*g
 }
 
-// histSearch returns the value whose cumulative count first exceeds idx,
-// matching numpy.searchsorted(..., side="right").
 func histSearch(hist *[256]int, idx int) float64 {
 	cum := 0
 	for v := 0; v < 256; v++ {

@@ -8,9 +8,6 @@ import (
 	"testing"
 )
 
-// TestTranslationReflowsEngineLineBreaks verifies that multi-line translation
-// answers that copy paragraph/line breaks from the source are flattened so the
-// card wraps naturally without leaving blank bands between sentences.
 func TestTranslationReflowsEngineLineBreaks(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

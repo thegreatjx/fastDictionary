@@ -12,8 +12,6 @@ import (
 	xdraw "golang.org/x/image/draw"
 )
 
-// 截图比整页扫描件更容易贴边、深底或使用等亮度彩色字。这里只做可疑重试用的
-// 像素变换；正常路径不跑这些滤波，避免破坏已经清晰的检测框。
 const (
 	ocrMinEdgePad     = 24
 	ocrMaxEdgePad     = 64
@@ -23,7 +21,6 @@ const (
 	ocrColorSpread    = 25
 )
 
-// flattenRGBA 把透明像素铺到白底，后面的边缘采样和 JPEG 编码都按不透明图处理。
 func flattenRGBA(src image.Image) *image.RGBA {
 	b := src.Bounds()
 	out := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
@@ -32,8 +29,6 @@ func flattenRGBA(src image.Image) *image.RGBA {
 	return out
 }
 
-// adaptivePadForOCR 用边缘像素向外延展，而不是硬拼白边。深底截图不会多出一条
-// 黑白交界线；贴边的首字母也能落进检测器的感受野。
 func adaptivePadForOCR(src image.Image) image.Image {
 	flat := flattenRGBA(src)
 	w, h := flat.Bounds().Dx(), flat.Bounds().Dy()
@@ -76,8 +71,6 @@ func adaptivePadForOCR(src image.Image) image.Image {
 	return out
 }
 
-// colorDistanceForOCR 按 RGB 通道距离抠字。等亮度红底绿字在灰度图里会消失，
-// 但通道距离仍能分开前景和背景。
 func colorDistanceForOCR(src image.Image) image.Image {
 	flat := flattenRGBA(src)
 	bg := borderMedianRGB(flat)
@@ -94,8 +87,6 @@ func colorDistanceForOCR(src image.Image) image.Image {
 	return out
 }
 
-// backgroundSubtractForOCR 用缩小再放大的平滑图近似背景，差分后把渐变或双色块
-// 压成统一底色。复杂纹理交给 AI 看图，不在这里继续堆滤波。
 func backgroundSubtractForOCR(src image.Image) image.Image {
 	flat := flattenRGBA(src)
 	w, h := flat.Bounds().Dx(), flat.Bounds().Dy()
@@ -150,15 +141,11 @@ func inspectOCRImage(src image.Image) ocrImageStats {
 	}
 }
 
-// needsColorRetry 只在这些像素条件成立时允许色距/背景减除重试。清晰白底黑字
-// 不进入慢支路。
 func needsColorRetry(src image.Image) bool {
 	s := inspectOCRImage(src)
 	return s.dynamicRange < ocrLowContrast || s.background < ocrDarkBackground || s.colorSpread > ocrColorSpread
 }
 
-// isSuspiciousOCRText 用文本形状判断碎框、乱码和异常首词。词库只作提示，
-// 不把专有名词一律判错；调用方还要叠加 needsColorRetry 才触发像素重试。
 func isSuspiciousOCRText(text string) bool {
 	clean := CleanOcrText(text)
 	if clean == "" || strings.ContainsAny(clean, "\uFFFD□") {
@@ -194,7 +181,6 @@ func isSuspiciousOCRText(text string) bool {
 	return !ok
 }
 
-// scoreOCRText 在同一张图的多个 OCR 候选之间挑更完整、更像正常文本的结果。
 func scoreOCRText(text string) int {
 	clean := CleanOcrText(text)
 	score := utf8.RuneCountInString(clean)

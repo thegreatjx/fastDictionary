@@ -6,12 +6,7 @@ import (
 	"testing"
 )
 
-// 词库文件损坏时，load() 只打日志并让 entries 保持为空；随后任何一次
-// save() 都会把滚动的 .bak 覆盖，损坏原文会永久丢失。这批护栏要求：解析
-// 失败时把损坏原文另存为独立的可恢复副本，同时不改动既有「按空库启动」
-// 和「加词写盘」行为。
-
-const corruptVocabJSON = `[{"id":"keep-1","term":"alpha"` // 截断的 JSON
+const corruptVocabJSON = `[{"id":"keep-1","term":"alpha"`
 
 func writeCorruptVocabulary(t *testing.T, path string) []byte {
 	t.Helper()
@@ -58,8 +53,6 @@ func TestRecoveryCopySurvivesLaterSaves(t *testing.T) {
 	s := &VocabularyStore{path: path, entries: []VocabularyEntry{}}
 	s.load()
 
-	// 两次写盘：第一次 .bak 是损坏原文，第二次 .bak 被「加词后的内容」覆盖。
-	// 没有独立恢复副本时，损坏原文此刻已永久丢失。
 	for _, term := range []string{"alpha", "beta"} {
 		s.Add(VocabularyEntry{Term: term, Phonetic: "/p/", Difficulty: "A1"})
 	}

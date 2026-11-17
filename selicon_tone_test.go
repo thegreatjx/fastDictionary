@@ -8,7 +8,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// chipTestTips returns every chip button's label, in render order.
 func chipTestTips(t *testing.T, a *app) []string {
 	t.Helper()
 	cfg := a.store.Get()
@@ -23,8 +22,6 @@ func chipTestTips(t *testing.T, a *app) []string {
 	return append(tips, "复制与更多功能")
 }
 
-// chipTestTones lists the tone of each tip above, in the same order: the first
-// button is the primary action, every other one shares the slate ink.
 func chipTestTones() []chipTone {
 	return []chipTone{
 		chipTonePrimary, chipToneInk, chipToneInk,
@@ -33,9 +30,6 @@ func chipTestTones() []chipTone {
 	}
 }
 
-// chipThemeForTest returns the theme the chip really draws with, taken through
-// applyTheme rather than rebuilt by hand, so a change to the palette reaches
-// these checks instead of leaving them asserting stale hex values.
 func chipThemeForTest(t *testing.T, dark bool) *ui.Theme {
 	t.Helper()
 	var got *ui.Theme
@@ -53,7 +47,6 @@ func chipThemeForTest(t *testing.T, dark bool) *ui.Theme {
 	return got
 }
 
-// relativeLuminance is the WCAG 2.x definition, used to check icon contrast.
 func relativeLuminance(c ui.Color) float64 {
 	lin := func(v uint8) float64 {
 		s := float64(v) / 255
@@ -65,7 +58,6 @@ func relativeLuminance(c ui.Color) float64 {
 	return 0.2126*lin(c.R) + 0.7152*lin(c.G) + 0.0722*lin(c.B)
 }
 
-// contrastRatio is the WCAG contrast of two opaque colours.
 func contrastRatio(a, b ui.Color) float64 {
 	la, lb := relativeLuminance(a), relativeLuminance(b)
 	if la < lb {
@@ -74,8 +66,6 @@ func contrastRatio(a, b ui.Color) float64 {
 	return (la + 0.05) / (lb + 0.05)
 }
 
-// rectDigest sums the pixels inside r, so two renders of the same button can be
-// compared without depending on which single pixel the icon happens to cover.
 func rectDigest(img *image.RGBA, r ui.Rect) uint64 {
 	var sum uint64
 	for y := int(r.Y); y < int(r.Y+r.H); y++ {
@@ -87,15 +77,6 @@ func rectDigest(img *image.RGBA, r ui.Rect) uint64 {
 	return sum
 }
 
-// TestChipTonesAreDistinct guarded the old per-action palette: six hues so the
-// row could be read by colour. The redesign spends colour once, on the primary
-// action, so the check that matters is now the opposite one — see
-// TestChipSpendsColourOnlyOnThePrimaryAction.
-//
-// TestChipTonesContrastTheSurface keeps every icon legible on the chip in both
-// themes. 3:1 is the non-text contrast floor: below it an icon that carries
-// meaning stops being reliably visible. With the hues gone, this is the check
-// that stops the redesign from going too pale to read.
 func TestChipTonesContrastTheSurface(t *testing.T) {
 	for _, dark := range []bool{false, true} {
 		theme := chipThemeForTest(t, dark)
@@ -108,9 +89,6 @@ func TestChipTonesContrastTheSurface(t *testing.T) {
 	}
 }
 
-// TestChipHoverUsesOneQuietWash replaces the old per-tone wash check. A single
-// slate wash for every button is what makes the row read as one toolbar; the
-// primary action is the only one allowed a different tint.
 func TestChipHoverUsesOneQuietWash(t *testing.T) {
 	for _, dark := range []bool{false, true} {
 		theme := chipThemeForTest(t, dark)
@@ -119,7 +97,6 @@ func TestChipHoverUsesOneQuietWash(t *testing.T) {
 		if inkWash == accentWash {
 			t.Errorf("dark=%v: the primary action's wash is the same as every other button's, so it is no longer findable", dark)
 		}
-		// Every ink button must share one wash.
 		for _, tone := range chipTestTones() {
 			if tone != chipToneInk {
 				continue
@@ -131,11 +108,6 @@ func TestChipHoverUsesOneQuietWash(t *testing.T) {
 	}
 }
 
-// TestChipHoverChangesTheRenderedPixels is the end-to-end check: the same
-// button draws differently with the pointer on it. A hover state that only
-// exists in the source but never reaches the screen is the failure this
-// catches. The clock advances past chipHoverMotion, because the wash is
-// animated rather than switched on.
 func TestChipHoverChangesTheRenderedPixels(t *testing.T) {
 	a := newTestApp()
 	tt := ui.NewTester(a.selIconView, chipWindowWidth(a.currentSelectionChipWidth()), chipWindowHeight())
@@ -157,9 +129,6 @@ func TestChipHoverChangesTheRenderedPixels(t *testing.T) {
 	}
 }
 
-// TestChipPressedShrinksTheIcon keeps the press feedback from shifting the
-// layout: the icon scales around its own centre, so no neighbour moves and the
-// row cannot jitter as the pointer crosses it.
 func TestChipPressedShrinksTheIcon(t *testing.T) {
 	src := readSourceFile(t, "selicon.go")
 	if !containsText(src, "iconEl.Scale(0.88, 0.88)") {
@@ -170,8 +139,6 @@ func TestChipPressedShrinksTheIcon(t *testing.T) {
 	}
 }
 
-// TestChipIconsStayOneSize keeps the visual rhythm: every icon is drawn at the
-// same size, so the colours differentiate the actions and the size does not.
 func TestChipIconsStayOneSize(t *testing.T) {
 	src := readSourceFile(t, "selicon.go")
 	if got := countOccurrences(src, ".Size(chipIconSize, chipIconSize)"); got != 1 {

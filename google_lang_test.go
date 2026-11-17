@@ -7,11 +7,6 @@ import (
 	"testing"
 )
 
-// TestGoogleTranslateSendsAutoForUndetectedText is the regression test for the
-// bug the user reported as "谷歌翻译又是400". detectLocal returns "" for plain
-// English, googleTranslate used to send that empty value as sl, and Google
-// answers an empty sl with HTTP 400 — so Google failed on every English
-// sentence and the race silently became Microsoft-only.
 func TestGoogleTranslateSendsAutoForUndetectedText(t *testing.T) {
 	var gotSl string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -40,8 +35,6 @@ func TestGoogleTranslateSendsAutoForUndetectedText(t *testing.T) {
 	}
 }
 
-// TestGoogleTranslateKeepsDetectedSource keeps the other half: when the local
-// detector does know the language, that knowledge is sent as-is.
 func TestGoogleTranslateKeepsDetectedSource(t *testing.T) {
 	var gotSl string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -62,12 +55,6 @@ func TestGoogleTranslateKeepsDetectedSource(t *testing.T) {
 	}
 }
 
-// TestGoogleDictSendsAutoForUndetectedWord covers the second call site that had
-// the same empty-parameter bug. It only asserts on the request: the response
-// parser has a separate pre-existing problem with dt=bd replies (it reads the
-// group's entries as plain strings, while Google sends
-// ["抢占", ["seize"], null, 0.11] tuples), so a successful parse is not what
-// this test is about.
 func TestGoogleDictSendsAutoForUndetectedWord(t *testing.T) {
 	var gotSl string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -2,29 +2,20 @@ package main
 
 import "testing"
 
-// TestSourceLangForLoneWord pins the fix for "fast" coming back as 几乎: a
-// single ASCII word carries no language evidence, the engines detect it
-// themselves, and 微软 read 8 of 25 common English words as German, Spanish or
-// Dutch. A lone word is what this app is opened for, so it goes out as English.
 func TestSourceLangForLoneWord(t *testing.T) {
 	cases := map[string]string{
-		"fast":           "en",
-		"Fast":           "en",
-		"fastDictionary": "en",
-		"war":            "en",
-		// Sentences keep the old behaviour: the engines detect these, and
-		// guessing "en" for ASCII was the bug that read French with an
-		// English voice.
+		"fast":                            "en",
+		"Fast":                            "en",
+		"fastDictionary":                  "en",
+		"war":                             "en",
 		"fast dictionary":                 "",
 		"I use fastDictionary every day.": "",
-		// Anything the script settles is left alone.
-		"你好":    "zh-Hans",
-		"こんにちは": "ja",
-		// Not one plain word: punctuation, digits, accented letters, empty.
-		"don't": "",
-		"fast2": "",
-		"café":  "",
-		"":      "",
+		"你好":                              "zh-Hans",
+		"こんにちは":                           "ja",
+		"don't":                           "",
+		"fast2":                           "",
+		"café":                            "",
+		"":                                "",
 	}
 	for in, want := range cases {
 		if got := sourceLangFor(in); got != want {

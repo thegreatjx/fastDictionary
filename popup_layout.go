@@ -7,30 +7,21 @@ import (
 	"github.com/egoist/mygo"
 )
 
-// calcPopupPosition calculates the ideal position for the popup window,
-// proactively lifting it upwards (翻转置于选区上方或向上抬高) when the cursor
-// is in the lower half of the screen or near the bottom, matching Read-Frog's behaviour.
 func (a *app) calcPopupPosition(pt mygo.Point, targetW, targetH int) (int, int) {
 	x, y, _ := a.calcPopupPlacement(pt, targetW, targetH)
 	return x, y
 }
 
-// calcPopupPlacement is calcPopupPosition plus the answer to "was this card
-// flipped above the cursor?". The caller records that so a later height change
-// can grow the card upwards instead of down over the text.
 func (a *app) calcPopupPlacement(pt mygo.Point, targetW, targetH int) (int, int, bool) {
 	d := mygo.Screen.DisplayNearestPoint(pt)
 	return calcPopupPlacementIn(pt, targetW, targetH, d.WorkArea)
 }
 
-// calcPopupPositionIn calculates the ideal position for the popup window inside a given work area.
-// It is a pure function of its inputs so its behaviour is verifiable without a screen.
 func calcPopupPositionIn(pt mygo.Point, targetW, targetH int, wa mygo.Rectangle) (int, int) {
 	x, y, _ := calcPopupPlacementIn(pt, targetW, targetH, wa)
 	return x, y
 }
 
-// calcPopupPlacementIn is calcPopupPositionIn keeping the flip decision.
 func calcPopupPlacementIn(pt mygo.Point, targetW, targetH int, wa mygo.Rectangle) (int, int, bool) {
 	waX := wa.X
 	waY := wa.Y
@@ -41,7 +32,6 @@ func calcPopupPlacementIn(pt mygo.Point, targetW, targetH int, wa mygo.Rectangle
 
 	const margin = 14
 
-	// Horizontal: offset slightly to the left of the cursor, clamped to work area
 	x := pt.X - 20
 	if x+targetW > waRight-margin {
 		x = waRight - targetW - margin
@@ -50,23 +40,18 @@ func calcPopupPlacementIn(pt mygo.Point, targetW, targetH int, wa mygo.Rectangle
 		x = waX + margin
 	}
 
-	// Vertical (主动抬高):
-	// Check if cursor is in the lower half of the screen or if downward space is tight
 	spaceBelow := waBottom - (pt.Y + 14)
 	isLowerHalf := pt.Y > waY+int(float32(waH)*0.50)
 
 	var y int
 	anchoredAbove := false
 	if isLowerHalf || spaceBelow < targetH+margin {
-		// Flip ABOVE the cursor/selection!
 		y = pt.Y - targetH - 14
 		anchoredAbove = true
 	} else {
-		// Place BELOW the cursor/selection
 		y = pt.Y + 14
 	}
 
-	// Clamp vertically within screen boundaries
 	if y+targetH > waBottom-margin {
 		y = waBottom - targetH - margin
 	}
@@ -77,8 +62,6 @@ func calcPopupPlacementIn(pt mygo.Point, targetW, targetH int, wa mygo.Rectangle
 	return x, y, anchoredAbove
 }
 
-// popupWidth keeps every popup entry point inside the range offered by the
-// settings page. A second, higher minimum used to silently undo 360–430px.
 func popupWidth(width float32) float32 {
 	if width < 360 {
 		return 360
@@ -89,26 +72,17 @@ func popupWidth(width float32) float32 {
 	return width
 }
 
-// popupContentHeight estimates how tall the popup needs to be for the current
-// snapshot. It is a pure function of the snapshot so its boundaries (the 260
-// floor, the per-mode estimates, the wrap maths) are verifiable without a
-// window or a screen.
 func popupContentHeight(s snapshot, w float32) float32 {
 	h := float32(160)
 	switch s.mode {
 	case modeDictionary:
-		// Estimate from the card that is actually rendered. A fixed 460 was
-		// shorter than a full card — wrapped definition, context block,
-		// memory tips — so the 保存到笔记本 row ended up below the visible
-		// area: the button worked, but it could not be seen or pressed.
-		h = 150 // window chrome, card padding and the gaps between rows
+		h = 150
 		if !cardReadyForMode(s) {
-			// Loading placeholder or the parse-failure notice.
 			h += 160
 			break
 		}
 		dr := s.dictResult
-		h += 34 // headword row: term, phonetics, speaker button
+		h += 34
 		if dr.Definition != "" {
 			lines := wrappedLines(dr.Definition, w-80, 14)
 			if lines < 1 {
@@ -117,7 +91,7 @@ func popupContentHeight(s snapshot, w float32) float32 {
 			h += 10 + float32(lines)*20
 		}
 		if dr.Context != "" {
-			h += 20 // box padding
+			h += 20
 			lines := wrappedLines(dr.Context, w-110, 13)
 			if lines < 1 {
 				lines = 1
@@ -132,24 +106,17 @@ func popupContentHeight(s snapshot, w float32) float32 {
 			}
 		}
 		if dr.MemoryTips != "" {
-			// The card splits the tips on the escaped \n it gets from the
-			// model, so count those breaks too.
 			tips := strings.ReplaceAll(dr.MemoryTips, `\n`, "\n")
 			n := wrappedLines(tips, w-80, 12)
 			if n < 1 {
 				n = 1
 			}
-			h += 36 + float32(n)*18 // box padding and the 记忆技巧 title row
+			h += 36 + float32(n)*18
 		}
-		h += 48 // save button row
+		h += 48
 	case modeGrammar:
-		// The card draws a header, the sentence card with its one-line hint,
-		// the two switches, the translation and up to three difficulty rows.
-		// autofitHeight corrects the remainder; this keeps the first frame in
-		// the right neighbourhood instead of reserving a fixed 420 DIP.
 		h = 300
 		if s.source != "" {
-			// 卡片整段渲染，按整段文字估高，避免首帧把底部保存按钮挤出可视区。
 			text := grammarAnalysisText(s.source)
 			h += float32(wrappedLines(text, w-56, 14)) * 22
 		}
@@ -172,9 +139,6 @@ func popupContentHeight(s snapshot, w float32) float32 {
 			}
 		}
 	case modeWriting:
-		// Estimate from the text that is actually rendered: a fixed 40px
-		// per annotation was too small for any annotation that wraps, which
-		// left the save button below the visible area.
 		h = 130
 		if cardReadyForMode(s) {
 			wr := s.writingResult
@@ -194,7 +158,7 @@ func popupContentHeight(s snapshot, w float32) float32 {
 					}
 					h += float32(n) * 18
 				}
-				h += 8 // card padding and gap
+				h += 8
 			}
 			if wr.Improved != "" {
 				h += 44 + float32(wrappedLines(wr.Improved, w-72, 14))*22
@@ -202,7 +166,7 @@ func popupContentHeight(s snapshot, w float32) float32 {
 			if wr.Summary != "" {
 				h += 40 + float32(wrappedLines(wr.Summary, w-72, 12))*18
 			}
-			h += 48 // save button row
+			h += 48
 		}
 	case modeInput:
 		h += 60
@@ -211,19 +175,14 @@ func popupContentHeight(s snapshot, w float32) float32 {
 		}
 	default:
 		if s.isScreenshotMode {
-			// Collapsed image, editable OCR text and correction actions.
 			h = 430
 			if s.snipExpanded {
 				h += 124
 			}
 		} else {
-			// Translation mode:
-			// Base window chrome: header (36), footer (30), dividers (14), padding (16) = 96
 			h = 96
 			if s.source != "" {
 				srcText := s.source
-				// If source is not expanded, renderTranslationSource truncates it to 110 chars.
-				// Accounting for full text when truncated creates massive ghost whitespace.
 				if !s.sourceExpanded && (len([]rune(srcText)) > 110 || strings.Contains(srcText, "\n")) {
 					srcText = TruncateEllipsis(flattenTranslation(srcText), 110)
 				}
@@ -236,12 +195,8 @@ func popupContentHeight(s snapshot, w float32) float32 {
 				if s.isWord {
 					sz = 16
 				}
-				// Paragraph breaks are drawn as Space2 gaps, not as an empty
-				// text line: counting them as full lines made the first frame
-				// reserve a screenful of blank space before autofit corrected it.
 				paras := splitDisplayParagraphs(s.target)
 				lines := wrappedLines(strings.Join(paras, "\n"), w-48, sz)
-				// 40 covers target card padding and action bar row with gaps
 				h += 40 + float32(lines)*20 + float32(len(paras)-1)*Space2
 			}
 			if s.dict != nil || s.gdict != nil {
@@ -259,36 +214,12 @@ func popupContentHeight(s snapshot, w float32) float32 {
 	return h
 }
 
-// 浮窗高度只有两个边界，入口和模式共用，避免各页面再各自加减常量。
 const (
-	// popupMinHeight 是收起后的下限：原文、译文与底部操作栏要同时可读。
-	// 更长的内容交给正文 Scroll，不再把窗口压缩到只剩一条缝。
-	popupMinHeight float32 = 260
-	// popupMaxAutoHeight 是自动增高的上限。长回答在正文内滚动，
-	// 不把浮窗撑成整屏面板。
+	popupMinHeight     float32 = 260
 	popupMaxAutoHeight float32 = 580
 )
 
-// autofitHeight corrects the estimated height with what the last frame
-// actually laid out.
-//
-// popupContentHeight guesses; the guess is often far too tall (a long
-// paragraph with three blank lines was reserving a screenful of empty space
-// below the text). The Scroll always fills its parent, so
-//
-//	contentHeight - viewportHeight
-//
-// is how much the window has to grow (negative: shrink) for the viewport to
-// wrap the content exactly. It needs no knowledge of the header, footer or
-// padding sizes, which is what made a hand-written chrome constant drift out
-// of date.
-//
-// A difference is returned rather than an absolute height because the window
-// is a few DIPs taller than the layout root; the caller adds it to the real
-// window height. The value is the previous frame's, so the caller applies it
-// one frame later. Overflow is rounded up and never ignored: content below the
-// viewport's bottom edge is a clipped row, not noise. Only spare space is left
-// alone, since a few empty DIPs cost nothing and stop a resize every frame.
+// viewportH/contentH 都是 DIP 布局值；内容高出 1 DIP 也必须撑开，否则描边被 Scroll 裁掉。
 func autofitHeight(viewportH, contentH float32) (float32, bool) {
 	if viewportH <= 0 || contentH <= 0 {
 		return 0, false
@@ -303,16 +234,11 @@ func autofitHeight(viewportH, contentH float32) (float32, bool) {
 	return delta, true
 }
 
-// applyPopupHeight grows (or shrinks) the window by delta and keeps it inside
-// the work area. It must run outside a render pass, so callers post it through
-// Window.Update.
 func (a *app) applyPopupHeight(delta float32) {
 	win := a.win
 	if win == nil {
 		return
 	}
-	// A window the user sized keeps that size: the autofit corrects an
-	// estimate, and there is no estimate to correct any more.
 	a.mu.Lock()
 	resized := a.userResized
 	a.mu.Unlock()
@@ -320,15 +246,8 @@ func (a *app) applyPopupHeight(delta float32) {
 		return
 	}
 	curW, curH := win.Size()
-	// The user can drag the window, so the cached position goes stale: resizing
-	// from it would snap the window back to where it was opened. Read where it
-	// actually is.
 	curX, curY := win.Position()
 	actualY := curY
-	// A card flipped above the cursor keeps its bottom edge: it explains text
-	// that sits under it, so growing downwards would walk it over that text.
-	// The anchor is dropped the moment the window is no longer where this code
-	// left it — a drag wins over the automatic rule.
 	a.mu.Lock()
 	anchoredAbove := a.popupAnchoredAbove
 	anchorBottom := a.popupAnchorBottom
@@ -338,11 +257,6 @@ func (a *app) applyPopupHeight(delta float32) {
 	}
 	a.popupX, a.popupY = curX, curY
 	a.mu.Unlock()
-	// delta is measured in layout units, but the window is a few DIPs taller
-	// than the layout root (frameless panels still carry a thin border), so
-	// the target is applied as a difference. Using it as an absolute height
-	// left the window exactly that border shorter than the content and clipped
-	// the last row.
 	target := float32(curH) + delta
 	if target < popupMinHeight {
 		target = popupMinHeight
@@ -361,8 +275,6 @@ func (a *app) applyPopupHeight(delta float32) {
 	h := int(target)
 	y := curY
 	if anchoredAbove {
-		// The height is the variable here and the bottom edge is the fixed
-		// one: place the top so that the bottom lands back on the anchor.
 		y = anchorBottom - h
 	}
 	newY, h := liftPopupY(y, h, waTop, waBottom)
@@ -373,19 +285,11 @@ func (a *app) applyPopupHeight(delta float32) {
 	a.mu.Lock()
 	a.popupY = newY
 	a.popupH = h
-	// Record the width too: scheduleAutofit compares the window against these
-	// fields to tell its own resizes from the user's.
 	a.popupW = curW
 	a.mu.Unlock()
-	// One call for both: SetSize and SetPosition each move the window on their
-	// own, so pairing them makes the window appear at the new size before it
-	// has moved — two repaints where the user sees one.
 	win.SetBounds(mygo.Rectangle{X: curX, Y: newY, Width: curW, Height: h})
 }
 
-// clampPopupHeight caps an automatic height to 62% of the work area and to
-// popupMaxAutoHeight, whichever is smaller. The two margins are already
-// subtracted by the caller, so the ratio stays conservative on small screens.
 func clampPopupHeight(h float32, waTop, waBottom float32) float32 {
 	avail := waBottom - waTop
 	if avail <= 0 {
@@ -401,9 +305,6 @@ func clampPopupHeight(h float32, waTop, waBottom float32) float32 {
 	return h
 }
 
-// liftPopupY keeps the popup inside [waTop, waBottom]: it first pushes the
-// window up so it fits above the bottom edge, then pins it to the top and
-// shrinks the height when the work area itself is too small.
 func liftPopupY(curY, targetH, waTop, waBottom int) (int, int) {
 	if curY+targetH > waBottom {
 		curY = waBottom - targetH
@@ -417,13 +318,6 @@ func liftPopupY(curY, targetH, waTop, waBottom int) (int, int) {
 	return curY, targetH
 }
 
-// fitHeight resizes the popup according to its current active mode,
-// and proactively lifts the window upwards if expanding downward would exceed the screen.
-// heightHeldWhileBusy 报告当前是否有可见的进行中内容，使窗口不该缩小。
-//
-// 流式回答还在长，高度估算会随增量抖动，先不缩；但生词推荐在面板收起后
-// 不可见，它的进行中状态不该把展开时的尺寸留在窗口上 —— 那样用户折叠
-// 面板会看到一整块空白。
 func heightHeldWhileBusy(s snapshot) bool {
 	return s.busy || s.aiBusy || (s.notesBusy && s.notesExpanded)
 }
@@ -433,8 +327,6 @@ func (a *app) fitHeight() {
 	if win == nil {
 		return
 	}
-	// The user sized this window by hand: refresh the content and leave the
-	// bounds alone, or the next page change undoes the drag.
 	a.mu.Lock()
 	resized := a.userResized
 	a.mu.Unlock()
@@ -445,15 +337,9 @@ func (a *app) fitHeight() {
 	cfg := a.store.Get()
 	s := a.snap()
 
-	// The config clamps PopupWidth at load; honour the user's choice down
-	// to that floor instead of forcing the old 440 minimum back on them.
 	w := popupWidth(cfg.PopupWidth)
 
-	// The user can drag the window, so the cached position goes stale. Read
-	// where it actually is; resizing from the cached one would snap it back.
 	curX, curY := win.Position()
-	// Same bottom-edge rule as applyPopupHeight: a card flipped above the
-	// cursor grows upwards, and a drag releases the anchor.
 	a.mu.Lock()
 	anchoredAbove := a.popupAnchoredAbove
 	anchorBottom := a.popupAnchorBottom
@@ -465,7 +351,6 @@ func (a *app) fitHeight() {
 	a.mu.Unlock()
 	h := popupContentHeight(s, w)
 
-	// Query monitor work area for adaptive lifting
 	pt := mygo.Point{X: curX, Y: curY}
 	if curX == 0 && curY == 0 {
 		pt = mygo.Screen.CursorScreenPoint()
@@ -477,9 +362,6 @@ func (a *app) fitHeight() {
 	h = clampPopupHeight(h, float32(waTop), float32(waBottom))
 
 	targetH := int(h)
-	// fitHeight 在换页、折叠和结果落地时调用。流式回答尚未结束时，
-	// 估算会随增量抖动，先不缩；一旦结果落地或用户折叠面板，就按
-	// 新的内容高度回落，而不是把展开时的尺寸永久留在窗口上。
 	if _, curH := win.Size(); targetH < curH {
 		if heightHeldWhileBusy(s) {
 			targetH = curH
@@ -495,9 +377,6 @@ func (a *app) fitHeight() {
 	a.popupY = newY
 	a.popupH = targetH
 	a.popupW = int(w)
-	// fitHeight is called when the content changes, not by the autofit
-	// feedback loop, so it is the one place that knows the measured content
-	// is about to be different: let scheduleAutofit take a fresh decision.
 	a.autofit.reset()
 	a.mu.Unlock()
 
@@ -505,8 +384,6 @@ func (a *app) fitHeight() {
 	win.Update(func() {})
 }
 
-// wrappedLines estimates how many lines text needs: CJK glyphs are about a
-// font size wide, latin about 0.55 of it.
 func wrappedLines(text string, width, fontSize float32) int {
 	if text == "" {
 		return 0

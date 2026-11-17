@@ -7,9 +7,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// renderPopupHeader keeps the four reading tools in the same place as the
-// original popup. Only narrow windows fold them into a menu; moving them
-// below the translation made the most common navigation needlessly indirect.
 func (a *app) renderPopupHeader(c *ui.Context, t *ui.Theme, cfg Config, s snapshot) {
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).DragWindow().Children(func() {
 		if a.popupW > 0 && a.popupW < 440 {
@@ -49,9 +46,6 @@ func (a *app) renderPopupHeader(c *ui.Context, t *ui.Theme, cfg Config, s snapsh
 	})
 }
 
-// togglePopupPin flips the pin and re-applies the window's always-on-top
-// state. Both the pin button and Ctrl+P go through here, so the two cannot
-// disagree about what a pinned card does when the config says always-on-top.
 func (a *app) togglePopupPin(cfg Config) {
 	a.mu.Lock()
 	a.pinned = !a.pinned
@@ -65,10 +59,6 @@ func (a *app) togglePopupPin(cfg Config) {
 
 var popupModeLabels = [...]string{"翻译", "长难句", "写作"}
 
-// popupModeIndex maps a mode onto its tab. 词典 is not a tab any more: a word's
-// full card (phonetic, examples, memory tips) belongs next to the entry that
-// keeps it, so it lives in 生词本, and the popup keeps the three views a reader
-// actually reads in.
 func popupModeIndex(mode, target popupMode) int {
 	if mode == modeInput {
 		mode = target
@@ -111,9 +101,6 @@ func (a *app) renderCompactModeMenu(c *ui.Context, s snapshot) {
 	}).Height(30).FontSize(12).Shrink(0).Label("切换阅读工具")
 }
 
-// renderTranslationContent keeps the source quiet and gives the result the
-// strongest type on the surface. Copy, speech and saving sit beside the text
-// they act on instead of competing with the engine selector in the footer.
 func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s snapshot) {
 	if s.mode == modeInput {
 		placeholder := "输入要翻译的内容 · 回车翻译 · Shift+回车换行"
@@ -179,9 +166,6 @@ func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s
 				}
 			}
 			ui.Column(c).FillWidth().Gap(8).Children(func() {
-				// The result carries the strongest type on the surface. A word
-				// gets a larger, heavier face than a sentence: it is a headword,
-				// not prose.
 				fontSize := float32(15)
 				fontWeight := 400
 				lineHeight := float32(1.55)
@@ -206,7 +190,6 @@ func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s
 					if renderIconButton(c, copyIcon, copyTip, 28, 14, false).Clicked() {
 						a.copyToClipboard(s.target)
 					}
-					// Pronunciation: for Chinese users, always pronounce the English/foreign language (never recite Chinese translation)
 					spText, spLang, spTip := primarySpeechTarget(s.source, s.target)
 					if spText != "" {
 						if renderIconButton(c, iconSpeak, spTip, 28, 14, false).Clicked() {
@@ -215,13 +198,11 @@ func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s
 					}
 					a.renderLayoutMenu(c, cfg)
 					renderAIRefineControls(c, t, a, s)
-					// The spacer pushes engine caption and notes controls to the right.
 					ui.Spacer(c).Grow(1)
 
 					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 						renderEngineCaptionWithAIState(c, t, s, cfg)
 
-						// 猜你想存：靠右展示。AI提取时显示原生 Spinner 圈，提取就绪后显示带文字的卡片展开/收起按钮
 						if cfg.ShowNotes && shouldExtractNotes(s.source) {
 							switch notesViewPhase(s) {
 							case notesLoading:
@@ -273,10 +254,6 @@ func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s
 	a.renderNotesSummary(c, t, cfg, s)
 }
 
-// splitDisplayParagraphs divides text on blank lines so the card can draw a
-// small gap between paragraphs instead of an empty line's full height. It is
-// only a render-time split: s.target keeps its newlines, so copying the
-// translation still preserves the original paragraph breaks.
 func splitDisplayParagraphs(s string) []string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\r", "\n")
@@ -310,11 +287,6 @@ func layoutModeLabel(mode string) string {
 	return layoutModeOptions[1].label
 }
 
-// renderLayoutMenu puts the layout switch next to copy and speak, where the
-// user notices that the card is too tall. Changing it re-runs a machine
-// translation so paragraph breaks come back from the engine; a model result is
-// reflowed in place instead, because re-running the model would be slow and
-// would replace the answer the user is reading.
 func (a *app) renderLayoutMenu(c *ui.Context, cfg Config) {
 	mode := normalizeLayoutMode(cfg.LayoutMode)
 	btn := renderIconButton(c, iconLayout, "排版："+layoutModeLabel(mode), 28, 14, mode != layoutSmart)
@@ -342,8 +314,6 @@ func (a *app) applyLayoutMode(mode string) {
 	busy := a.busy
 	hasTarget := a.target != ""
 	if mode == layoutCompact {
-		// Compact leaves no paragraphs to compare, and the pair view would
-		// otherwise survive the re-translation.
 		a.ocrCompare = false
 	}
 	a.mu.Unlock()
@@ -360,8 +330,6 @@ func (a *app) applyLayoutMode(mode string) {
 		return
 	}
 
-	// A card that is still loading, or an answer from the model, has no raw
-	// engine text to reflow: format what is on screen.
 	a.mu.Lock()
 	if raw != "" {
 		a.source = cleanSourceForLayout(raw, mode, screenshot)
@@ -371,13 +339,6 @@ func (a *app) applyLayoutMode(mode string) {
 	a.fitHeight()
 }
 
-// translationEngineCaption labels the result row with where the text came from.
-//
-// It used to print the raw detection tag — 检测 en — which reads as machine
-// output rather than as an answer to "what language was this?". The source
-// language is now spelled out (翻译自 英语), the way Grok's 翻译自 西班牙语
-// does, and the engine and timing follow it because they answer the same
-// question: where did the text on screen come from.
 func translationEngineCaption(s snapshot, targetLang string) string {
 	parts := make([]string, 0, 3)
 	if s.detected != "" && !sameLang(s.detected, targetLang) {
@@ -392,17 +353,6 @@ func translationEngineCaption(s snapshot, targetLang string) string {
 	return strings.Join(parts, " · ")
 }
 
-// langDisplayName names a detected language in the reader's language.
-//
-// Engines report tags in their own shape: 微软 gives "en" or "es", DeepL gives
-// "EN", 腾讯 and 百度 give the bare code. A model may hand back "es-419" or
-// "zh-TW", neither of which is a key in langLabels. Prefix matching keeps those
-// readable, and anything still unknown is shown as-is so the caption never
-// claims a language it does not know.
-//
-// Chinese is matched by its own rule rather than by prefix: zh-Hans and zh-Hant
-// share the prefix "zh", so a prefix match would label Traditional text as
-// 简体中文 — a wrong answer, not a missing one.
 func langDisplayName(tag string) string {
 	if name := langLabels[tag]; name != "" {
 		return name
@@ -430,10 +380,6 @@ func (a *app) renderTranslationSource(c *ui.Context, t *ui.Theme, s snapshot) {
 	text := s.source
 	isLong := len([]rune(text)) > 110 || strings.Contains(text, "\n")
 	if isLong && !s.sourceExpanded {
-		// A collapsed preview is one strip: blank lines in it spend a whole
-		// line of height on nothing, which is what made a three-paragraph
-		// selection open a very tall card. The expanded view keeps the
-		// paragraphs, rendered with a gap instead of empty lines.
 		text = TruncateEllipsis(flattenTranslation(text), 110)
 	}
 	ui.Box(c).FillWidth().Padding(Space2, Space3).Radius(RadiusSM).
@@ -469,21 +415,9 @@ func (a *app) renderTranslationSource(c *ui.Context, t *ui.Theme, s snapshot) {
 	})
 }
 
-// primarySpeechTarget picks what the speaker button should read, and in which
-// primarySpeechTarget picks what the speaker button should read, and in which
-// language.
-//
-// For a Chinese reader it never recites the Chinese translation of a foreign
-// sentence: hearing your own language read back is not pronunciation help. The
-// language goes out with the text because the caller cannot tell which of the
-// two strings it got, and passing the wrong tag is what made foreign text read
-// with an English voice.
 func primarySpeechTarget(source, target string) (text, lang, tip string) {
 	srcLang := detectLocal(source)
 	if srcLang == "" && looksEnglish(source) {
-		// Plain ASCII with no accents. English is the best guess for speech,
-		// but only for speech: the translator leaves the source to the engine,
-		// which knows better.
 		srcLang = "en"
 	}
 	if !strings.HasPrefix(srcLang, "zh") && strings.TrimSpace(source) != "" {
@@ -502,13 +436,6 @@ func primarySpeechTarget(source, target string) (text, lang, tip string) {
 	return source, srcLang, "朗读原文"
 }
 
-// englishHints are the words that make plain ASCII text look English. A French
-// or German sentence of the same length almost never contains them, so a short
-// stopword test separates the cases that accented letters cannot.
-// englishWords and their common counterparts in the Latin-script languages a
-// reader is most likely to meet. Plain ASCII cannot be told apart by letters
-// alone, but the words that carry a sentence can: "the/and/of/to" against
-// "het/en/van/te", "le/et/de/à", "der/und/des/zu".
 var (
 	englishWords = map[string]bool{
 		"the": true, "and": true, "of": true, "to": true, "in": true, "that": true,
@@ -520,41 +447,25 @@ var (
 		"why": true, "how": true, "hello": true, "world": true, "yes": true,
 		"there": true, "their": true, "which": true, "been": true, "than": true,
 	}
-	// Words that mark some other Latin-script language. Their presence vetoes
-	// an English reading even when an English-looking word also appears:
-	// Dutch shares "is" with English but not "het".
 	foreignWords = map[string]bool{
-		// Dutch
 		"het": true, "een": true, "van": true, "niet": true, "voor": true,
 		"zijn": true, "maar": true, "ook": true, "nog": true, "wel": true,
-		// French
 		"le": true, "les": true, "des": true, "une": true, "est": true,
 		"pas": true, "pour": true, "dans": true, "sur": true, "avec": true,
 		"mais": true, "vous": true, "nous": true, "bonjour": true,
-		// German
 		"der": true, "die": true, "das": true, "und": true, "ist": true,
 		"nicht": true, "mit": true, "für": true, "auf": true, "sich": true,
 		"ein": true, "eine": true, "dass": true, "wie": true,
-		// Spanish / Portuguese / Italian
 		"el": true, "los": true, "las": true, "una": true, "es": true,
 		"por": true, "para": true, "com": true, "não": true, "que": true,
 		"il": true, "lo": true, "gli": true, "che": true, "per": true,
-		// Scandinavian
 		"och": true, "att": true, "som": true, "med": true, "är": true,
 		"og": true, "ikke": true, "på": true, "av": true,
-		// Polish / Czech / Turkish
 		"jest": true, "nie": true, "się": true, "które": true, "ve": true,
 		"bir": true, "için": true, "ile": true,
 	}
 )
 
-// looksEnglish reports whether plain ASCII text is probably English.
-//
-// It is used only for the speech voice, where some answer beats none. The test
-// is deliberately two-sided: English function words must appear, and words that
-// belong to another Latin-script language must not. Counting English words
-// alone was not enough — Dutch shares "is" and "we" with English, so a Dutch
-// sentence scored as English and was read by an English voice.
 func looksEnglish(s string) bool {
 	if !isPlainLatin(s) {
 		return false
@@ -572,9 +483,6 @@ func looksEnglish(s string) bool {
 	return english > foreign && english > 0
 }
 
-// isPlainLatin reports text made only of ASCII letters, digits, spaces and
-// common punctuation — English and Dutch and German-without-umlauts all look
-// like this, so it is a hint and never a fact.
 func isPlainLatin(s string) bool {
 	letters := 0
 	for _, r := range s {
@@ -595,8 +503,6 @@ func (a *app) renderNotesSummary(c *ui.Context, t *ui.Theme, cfg Config, s snaps
 	renderNotesBlock(c, t, s, a)
 }
 
-// renderPopupFooter keeps engine selection and retry visible. It describes
-// what the user can do, rather than advertising the app's implementation.
 func (a *app) renderPopupFooter(c *ui.Context, t *ui.Theme, cfg Config, s snapshot) {
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
 		if s.mode != modeTranslate && s.mode != modeInput && s.mode != modeSelectionPreview {
@@ -623,10 +529,6 @@ func (a *app) renderPopupFooter(c *ui.Context, t *ui.Theme, cfg Config, s snapsh
 	})
 }
 
-// modelShortName trims a model id down to the part worth reading in a 28px
-// tall footer button. The ids this app is configured with carry a provider
-// prefix ("workbuddy-ai/deepseek-v4.1-flash"), and the footer only has room
-// for the model itself.
 func modelShortName(id string) string {
 	name := strings.TrimSpace(id)
 	if i := strings.LastIndex(name, "/"); i >= 0 && i < len(name)-1 {
@@ -639,14 +541,6 @@ func modelShortName(id string) string {
 }
 
 func (a *app) renderEngineMenu(c *ui.Context, cfg Config, s snapshot) {
-	// An AI refinement replaces the translation without changing the engine
-	// setting, so reading EngineMode alone left the footer saying 微软 / 谷歌 ·
-	// 竞速 after the text on screen had come from the model. The menu is
-	// labelled with where the current text actually came from, and still opens
-	// the engine list so switching back is one click.
-	// The race label lists the engines that are actually in the race. All three
-	// are keyless, so the list is fixed — it is spelled out because "竞速"
-	// alone does not tell the reader what is being raced.
 	raceLabel := "微软 / 谷歌 / 腾讯 · 竞速"
 
 	label := "Microsoft Translator"
@@ -679,8 +573,6 @@ func (a *app) renderEngineMenu(c *ui.Context, cfg Config, s snapshot) {
 	}).Height(28).FontSize(11).Shrink(0).Label("翻译引擎")
 }
 
-// saveTranslationToVocab runs enrichment off the UI thread; Add may make a
-// dictionary request before it writes the local notebook.
 func (a *app) saveTranslationToVocab(source, target string) {
 	if strings.TrimSpace(source) == "" || strings.TrimSpace(target) == "" {
 		return

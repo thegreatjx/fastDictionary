@@ -18,9 +18,6 @@ func sourceFuncBody(t *testing.T, src, signature string) string {
 	return src[start : start+rel]
 }
 
-// TestPauseAndModeChangeResetGestureGate is the regression: only resumeSelection
-// reset the gate, so pausing or switching the trigger mode left the 300ms
-// cooldown behind and the first gesture afterwards was swallowed.
 func TestPauseAndModeChangeResetGestureGate(t *testing.T) {
 	guard := readSourceFile(t, "selection_guard.go")
 	pause := sourceFuncBody(t, guard, "func (a *app) pauseSelection(")
@@ -38,13 +35,8 @@ func TestPauseAndModeChangeResetGestureGate(t *testing.T) {
 	}
 }
 
-// TestTrayFlyoutRebuildsTrayOnModeChange is the other half: the flyout writes
-// the mode but never rebuilt the menu, so the tray radio stayed on the old
-// mode until something else rebuilt it.
 func TestTrayFlyoutRebuildsTrayOnModeChange(t *testing.T) {
 	src := readSourceFile(t, "tray.go")
-	// 模式切换改用显式值映射 SegmentedControlMapped，定位锚点随之更新；
-	// 断言的语义不变：切换后必须重建托盘菜单，否则单选状态会停在旧模式。
 	const anchor = "SegmentedControlMapped(c, true, cfg.SelectionTrigger"
 	idx := strings.Index(src, anchor)
 	if idx < 0 {

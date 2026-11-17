@@ -71,7 +71,7 @@ go test -run 'TestParseSentenceAnalysis|TestParseGrammar|TestEnsureDefaultAction
 - 重绘：状态变更后显式 `win.Update`/快照版本递增；不要假设下一帧会自动来。
 - 回退：`ParseOutcome`、引擎错误、空结果都要转成用户能看懂的原因；不允许“看起来正常”的假成功。
 
-**检查。** 复用 `STATE_MACHINES_FIX_PLAYBOOK.md` 的契约测试；新功能如果新增异步路径，必须复用现有的 token/generation 辅助，不另造一套。
+**检查。** 复用现有异步 token/generation 契约测试（如 `ai_generation_race_test.go`、`a17_vocab_job_test.go`）；新功能如果新增异步路径，必须复用现有的 token/generation 辅助，不另造一套。
 
 ## C5 优先级与回退写成表
 

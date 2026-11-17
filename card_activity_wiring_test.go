@@ -2,9 +2,6 @@ package main
 
 import "testing"
 
-// TestLoadingTabsAreNotCached is the tab-cache half of the card activity work:
-// a tab saved while a translation or OCR pass is still running is not a
-// finished tab, so switchMode must not restore it as if it were.
 func TestLoadingTabsAreNotCached(t *testing.T) {
 	a := newTestApp()
 	a.mu.Lock()
@@ -36,8 +33,6 @@ func TestLoadingTabsAreNotCached(t *testing.T) {
 	}
 }
 
-// TestFreshFlagConsumedOnEarlyReturn pins the other half: a 重新翻译 request
-// must not survive a run that never reaches the cache lookup.
 func TestFreshFlagConsumedOnEarlyReturn(t *testing.T) {
 	a := newTestApp()
 	a.store.mu.Lock()
@@ -56,8 +51,6 @@ func TestFreshFlagConsumedOnEarlyReturn(t *testing.T) {
 	}
 }
 
-// TestFreshFlagNotArmedForTranslateMode: translate() has no AI cache, so the
-// footer refresh must not arm a flag that a later AI pass would consume.
 func TestFreshFlagNotArmedForTranslateMode(t *testing.T) {
 	src := readSourceFile(t, "popup.go")
 	body := sourceFuncBody(t, src, "func (a *app) rerunCurrentModeFresh(")

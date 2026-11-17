@@ -7,8 +7,6 @@ import (
 	"time"
 )
 
-// TestEdgeTTSSignature pins the signature format: appid::base64::date::id,
-// with every component lowercased before signing.
 func TestEdgeTTSSignature(t *testing.T) {
 	now := time.Date(2026, 10, 18, 6, 30, 0, 0, time.UTC)
 	sig, err := edgeTTSSignature(now, "abcdef0123456789")
@@ -28,7 +26,6 @@ func TestEdgeTTSSignature(t *testing.T) {
 	if parts[3] != "abcdef0123456789" {
 		t.Errorf("request id = %q", parts[3])
 	}
-	// The signature is deterministic for the same inputs.
 	again, _ := edgeTTSSignature(now, "abcdef0123456789")
 	if again != sig {
 		t.Errorf("signature is not deterministic")
@@ -51,7 +48,6 @@ func splitSignature(s string) []string {
 	return out
 }
 
-// TestEdgeTTSVoiceMapping keeps the voice choice honest.
 func TestEdgeTTSVoiceMapping(t *testing.T) {
 	cases := []struct {
 		lang string
@@ -73,7 +69,6 @@ func TestEdgeTTSVoiceMapping(t *testing.T) {
 	}
 }
 
-// TestEdgeTTSSSML checks the escaping and locale derivation.
 func TestEdgeTTSSSML(t *testing.T) {
 	got := edgeTTSSSML("a & b < c", "en-US-AriaNeural")
 	if !contains(got, "xml:lang=\"en-US\"") {
@@ -93,8 +88,6 @@ func contains(h, n string) bool {
 	return false
 }
 
-// TestEdgeTTSLive hits the real service. It only runs with FASTDICTIONARY_LIVE=1
-// so the offline suite stays offline.
 func TestEdgeTTSLive(t *testing.T) {
 	if os.Getenv("FASTDICTIONARY_LIVE") != "1" {
 		t.Skip("set FASTDICTIONARY_LIVE=1 to run the live TTS probe")

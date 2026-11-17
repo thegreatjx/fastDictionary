@@ -7,9 +7,6 @@ import (
 	"testing"
 )
 
-// TestPrepareOCRImageReportsOversizeDegradation 钉住「超大图降级」这条路径
-// 会被显式记录下来：调用方需要知道交出去的是原图，才能在识别不到文字时
-// 给用户一句可行动的提示，而不是只说「没有识别到文字」。
 func TestPrepareOCRImageReportsOversizeDegradation(t *testing.T) {
 	dir := t.TempDir()
 	huge := image.NewRGBA(image.Rect(0, 0, maxOCRSide, 10))
@@ -31,7 +28,6 @@ func TestPrepareOCRImageReportsOversizeDegradation(t *testing.T) {
 	}
 }
 
-// TestPrepareOCRImageReportsScaledSuccess 对照：正常放大不应被标记为降级。
 func TestPrepareOCRImageReportsScaledSuccess(t *testing.T) {
 	dir := t.TempDir()
 	src := image.NewRGBA(image.Rect(0, 0, 40, 20))
@@ -51,8 +47,6 @@ func TestPrepareOCRImageReportsScaledSuccess(t *testing.T) {
 	defer res.Cleanup()
 }
 
-// TestOCREmptyTextMessageExplainsOversize 检查空结果提示按降级与否区分：
-// 超大图要告诉用户可以缩小截图范围。
 func TestOCREmptyTextMessageExplainsOversize(t *testing.T) {
 	degraded := ocrEmptyTextMessage(true)
 	if !strings.Contains(degraded, "图片较大") || !strings.Contains(degraded, "缩小截图范围") {

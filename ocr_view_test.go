@@ -2,8 +2,6 @@ package main
 
 import "testing"
 
-// 批次 6c 源码契约：renderScreenshotSource 的 OCR 状态判断应收进
-// classifyOCRView 与两个具名谓词，不再散落成三个裸布尔 if。
 func TestOCRRenderUsesExplicitPhase(t *testing.T) {
 	src := readSourceFile(t, "ocr.go")
 	if !containsText(src, "classifyOCRView(s) == ocrViewRecognizing") {
@@ -20,8 +18,6 @@ func TestOCRRenderUsesExplicitPhase(t *testing.T) {
 	}
 }
 
-// TestClassifyOCRView 钉住主阶段枚举的判定顺序：busy 优先，其次 error，
-// 再次有文本，最后 idle。
 func TestClassifyOCRView(t *testing.T) {
 	cases := []struct {
 		name              string
@@ -62,9 +58,6 @@ func TestOCRViewPhaseString(t *testing.T) {
 	}
 }
 
-// TestOCRRenderDecisionsMatchLegacy 是切换读取点的零行为变化判据：
-// 遍历四个字段的所有组合，把新谓词三元组与改动前 renderScreenshotSource
-// 的三个 if 渲染决策逐项对比。改动前的判断作为规格写在这里。
 func TestOCRRenderDecisionsMatchLegacy(t *testing.T) {
 	values := []string{"", "text"}
 	for _, busy := range []bool{false, true} {
@@ -73,12 +66,10 @@ func TestOCRRenderDecisionsMatchLegacy(t *testing.T) {
 				for _, ocrText := range values {
 					s := snapshot{ocrBusy: busy, ocrError: errText, source: source, ocrText: ocrText}
 
-					// 改动前的渲染决策：busy 命中后 return，后两块不渲染。
 					legacySpinner := s.ocrBusy
 					legacyErrorBox := !s.ocrBusy && s.ocrError != ""
 					legacyEditor := !s.ocrBusy && (s.source != "" || s.ocrText != "" || s.ocrError != "")
 
-					// 改动后：三个具名谓词表达同一组叠加渲染决策。
 					newSpinner := classifyOCRView(s) == ocrViewRecognizing
 					newErrorBox := ocrShowErrorBox(s)
 					newEditor := ocrShowEditor(s)

@@ -61,8 +61,6 @@ func TestStreamAIWithImageSendsMultimodalPayload(t *testing.T) {
 func TestImageFileDataURLReadsScreenshot(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "snip.png")
-	// The PNG signature is enough for http.DetectContentType and keeps this
-	// test independent of the screenshot encoder.
 	if err := os.WriteFile(path, []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}, 0o600); err != nil {
 		t.Fatal(err)
 	}

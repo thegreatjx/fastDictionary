@@ -9,8 +9,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// uiTesterFor renders the settings window, which is the surface the review
-// session lives on.
 func uiTesterFor(a *app) *ui.Tester {
 	return ui.NewTester(a.settingsView, 880, 640)
 }
@@ -115,7 +113,6 @@ func TestApplyReviewPersistsSchedule(t *testing.T) {
 
 func TestAddPutsNewWordInReviewQueue(t *testing.T) {
 	s := &VocabularyStore{path: filepath.Join(t.TempDir(), "vocabulary.json")}
-	// Phonetic + difficulty keep Add from making a network enrichment call.
 	s.Add(VocabularyEntry{ID: "a", Term: "alpha", Phonetic: "/x/", Difficulty: "B1"})
 
 	entry, ok := s.Get("a")
@@ -178,9 +175,6 @@ func TestReviewGradeLabelsStayHuman(t *testing.T) {
 	}
 }
 
-// EnrichAll works on a snapshot and writes the result back later. Replacing
-// the whole entry reverted anything that happened meanwhile — including a
-// review grade — so only the fields enrichment owns may be copied back.
 func TestEnrichmentMergeKeepsReviewSchedule(t *testing.T) {
 	s := &VocabularyStore{entries: []VocabularyEntry{{
 		ID: "a", Term: "alpha", Definition: "first", Source: "dict",

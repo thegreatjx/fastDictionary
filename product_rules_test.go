@@ -11,13 +11,13 @@ func TestShouldExtractNotes(t *testing.T) {
 		text string
 		want bool
 	}{
-		{"hello", false},                  // a single dictionary word is handled by the word card
-		{"hello world", false},            // two words is a phrase, not a sentence
-		{"this is a sentence", true},      // four English words
-		{"今天天气真的非常好", true},               // eight CJK characters
-		{"今天很好", false},                   // too short
-		{"hello-world", false},            // still one token
-		{"a quick brown fox jumps", true}, // five English words
+		{"hello", false},
+		{"hello world", false},
+		{"this is a sentence", true},
+		{"今天天气真的非常好", true},
+		{"今天很好", false},
+		{"hello-world", false},
+		{"a quick brown fox jumps", true},
 	}
 	for _, tc := range cases {
 		if got := shouldExtractNotes(tc.text); got != tc.want {
@@ -50,7 +50,6 @@ func TestFriendlyAIError(t *testing.T) {
 		{&aiFailure{kind: aiFailureAuth}, "API Key 无效或已过期，请在 设置 → AI 精翻 里重新填写。"},
 		{&aiFailure{kind: aiFailureNetwork, msg: "x"}, "无法连接 AI 服务，请检查地址、网络或代理。"},
 		{&aiFailure{kind: aiFailureMagpieDown}, "连不上本机 Magpie，请在设置里换一个服务商，或先启动 Magpie。"},
-		// 不再按字符串猜：没分类的错误原样显示，不冒充成别的原因。
 		{errors.New("HTTP 429: too many requests"), "HTTP 429: too many requests"},
 	}
 	for _, tc := range cases {

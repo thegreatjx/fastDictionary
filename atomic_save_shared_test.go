@@ -14,8 +14,6 @@ func swapRenameFile(t *testing.T, fn func(oldpath, newpath string) error) {
 	t.Cleanup(func() { renameFile = old })
 }
 
-// transientRenameFailure fails the first n renames, then delegates. It models
-// the Windows sharing violation that used to make a wordbook save fail outright.
 func transientRenameFailure(t *testing.T, n int) (*int, func(string, string) error) {
 	t.Helper()
 	var mu sync.Mutex
