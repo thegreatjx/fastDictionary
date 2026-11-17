@@ -61,7 +61,7 @@ func TestSelectionChipButtonsAreComfortableHitTargets(t *testing.T) {
 		if r.W != chipButtonSize || r.H != chipButtonSize {
 			t.Errorf("button %q is %vx%v, want %vx%v", tip, r.W, r.H, chipButtonSize, chipButtonSize)
 		}
-		if r.X < chipShadowMargin || r.X+r.W > float32(chipShadowMargin+width) {
+		if r.X < 0 || r.X+r.W > float32(width) {
 			t.Errorf("button %q is clipped: bounds %+v, pill width %d", tip, r, width)
 		}
 	}

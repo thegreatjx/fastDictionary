@@ -834,15 +834,6 @@ func chipBorderColor(t *ui.Theme) ui.Color {
 	return ui.Hex(chipBorderLight)
 }
 
-// chipShadows 返回贴合阴影与扩散提亮阴影。颜色留在 theme.go，
-// 悬浮条渲染不再写散落色值。
-func chipShadows(t *ui.Theme) (contact, lift ui.Color) {
-	if t.Dark {
-		return ui.RGBA(0, 0, 0, 0.32), ui.RGBA(0, 0, 0, 0.44)
-	}
-	return ui.RGBA(15, 23, 42, 0.06), ui.RGBA(15, 23, 42, 0.10)
-}
-
 // chipToneColors returns the icon colour of a chip action and the wash its
 // button takes on hover.
 //

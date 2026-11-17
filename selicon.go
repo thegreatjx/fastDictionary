@@ -60,13 +60,6 @@ const (
 	// chipTipWarm is how soon after a label goes the next one shows at once,
 	// so sweeping the pointer along the row moves the plate with it.
 	chipTipWarm = 400 * time.Millisecond
-
-	// chipShadowMargin is the transparent margin the window keeps on every
-	// side of the pill. The window clips whatever is painted at its edge, so
-	// the pill's shadows need room; the lift shadow bleeds 8 DIP sideways, 5
-	// above and 11 below. The margin only covers that: anything larger reads
-	// as a translucent plate around a bar that is supposed to float.
-	chipShadowMargin = 12
 )
 
 // chipMoreLabel names the button that opens the more menu.
@@ -161,10 +154,12 @@ func (a *app) currentSelectionChipWidth() int {
 	return selectionChipWidth(len(a.store.Get().GetEnabledActions()))
 }
 
-// chipWindowWidth and chipWindowHeight are the window's size: the pill plus
-// the transparent margin its shadow is painted into.
-func chipWindowWidth(pillWidth int) int { return pillWidth + 2*chipShadowMargin }
-func chipWindowHeight() int             { return selIconHeight + 2*chipShadowMargin }
+// chipWindowWidth and chipWindowHeight are the window's size: exactly the
+// pill. The window once carried a transparent margin for a drop shadow, and
+// that margin is what every capture of the chip showed as a plate behind the
+// bar; a floating accessory is not worth a background of its own.
+func chipWindowWidth(pillWidth int) int { return pillWidth }
+func chipWindowHeight() int             { return selIconHeight }
 
 var selIconOnce sync.Once
 
@@ -235,9 +230,6 @@ func (a *app) showSelIcon(px, py int32, text string) {
 	a.mu.Unlock()
 
 	win.SetSize(chipWindowWidth(width), chipWindowHeight())
-	win.SetInputRegion([]mygo.Rectangle{
-		{X: chipShadowMargin, Y: chipShadowMargin, Width: width, Height: selIconHeight},
-	})
 	win.SetAlwaysOnTop(true)
 	win.ShowInactive() // the whole point: no focus change
 
@@ -329,12 +321,11 @@ func (a *app) chipHitBoxesReady() bool {
 // placeChipWindow puts the chip at a DIP position with Win32 directly. It
 // runs on the main thread. The DPI of the monitor the point is on converts
 // the DIP position the layout uses into the physical pixels SetWindowPos
-// wants. x and y are the pill's top-left; the window starts one shadow margin
-// higher and to the left, so the pill lands where the selection asked for.
+// wants. x and y are the pill's top-left, which is the window's top-left.
 func (a *app) placeChipWindow(hwnd uintptr, x, y int) {
 	dpi := monitorDPIAt(x, y)
-	px := int32(((x-chipShadowMargin)*dpi + 48) / 96)
-	py := int32(((y-chipShadowMargin)*dpi + 48) / 96)
+	px := int32((x*dpi + 48) / 96)
+	py := int32((y*dpi + 48) / 96)
 	w := int32((chipWindowWidth(a.currentSelectionChipWidth())*dpi + 48) / 96)
 	h := int32((chipWindowHeight()*dpi + 48) / 96)
 	const (
@@ -556,8 +547,8 @@ func (a *app) onChipPointer(px, py int32) {
 	t := &a.chipTip
 	t.mu.Lock()
 	// The button boxes are window-local, so the point is measured from the
-	// window's corner, one shadow margin before the pill's.
-	label, inside := t.hitAt(dx, dy, originX-chipShadowMargin, originY-chipShadowMargin)
+	// window's corner, which is the pill's.
+	label, inside := t.hitAt(dx, dy, originX, originY)
 	if !inside {
 		was := t.shown
 		t.key = ""
@@ -1271,19 +1262,12 @@ func (a *app) selIconView(c *ui.Context) {
 	a.chipTip.mu.Unlock()
 
 	enabledActions := cfg.GetEnabledActions()
-	contact, lift := chipShadows(t)
 	pillWidth := a.currentSelectionChipWidth()
-	ui.Row(c).Absolute().Left(chipShadowMargin).Top(chipShadowMargin).
+	ui.Row(c).Absolute().Left(0).Top(0).
 		Width(float32(pillWidth)).Height(selIconHeight).
 		AlignItems(ui.Center).Justify(ui.Center).Gap(chipRowGap).
 		Padding(chipPadV, chipPadH).Radius(11).
 		Background(chipSurface(t)).Border(1, chipBorderColor(t)).
-		// Two shadows instead of one: a tight contact shadow that seats the
-		// pill on the page, and a soft one that lifts it. Both stay close to
-		// the bar — a 20px blur at this size painted a grey band as tall as
-		// the bar itself under it.
-		Shadow(0, 1, 2, 0, contact).
-		Shadow(0, 3, 8, 0, lift).
 		Children(func() {
 			a.chipIconButton(c, t, iconTranslate, chipTonePrimary, "划词翻译（"+cfg.HotkeySelection+"）", func() {
 				a.actOnSelection(func(text string) { a.openPopupAction(modeTranslate, text) })
