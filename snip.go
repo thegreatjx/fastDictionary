@@ -19,6 +19,9 @@ const snipOCRScale = 2
 
 const maxOCRSide = 10000
 
+// 遮罩透明度对齐 PowerToys 文字提取的 40%（Color.FromArgb(102, Color.Black)）。
+const snipMaskAlpha = 102
+
 var (
 	procGetDC                  = user32.NewProc("GetDC")
 	procReleaseDC              = user32.NewProc("ReleaseDC")
@@ -343,10 +346,10 @@ func snipWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				y1 := minI32(s.startY, s.curY)
 				y2 := maxI32(s.startY, s.curY)
 
-				blendDim(0, 0, s.vw, y1, 90)
-				blendDim(0, y2, s.vw, s.vh-y2, 90)
-				blendDim(0, y1, x1, y2-y1, 90)
-				blendDim(x2, y1, s.vw-x2, y2-y1, 90)
+				blendDim(0, 0, s.vw, y1, snipMaskAlpha)
+				blendDim(0, y2, s.vw, s.vh-y2, snipMaskAlpha)
+				blendDim(0, y1, x1, y2-y1, snipMaskAlpha)
+				blendDim(x2, y1, s.vw-x2, y2-y1, snipMaskAlpha)
 
 				blueBrush, _, _ := procCreateSolidBrush.Call(0x00EB6325)
 				rSel := winRect{x1, y1, x2, y2}
@@ -355,7 +358,7 @@ func snipWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				procFrameRect.Call(target, uintptr(unsafe.Pointer(&rSelInner)), blueBrush)
 				procDeleteObject.Call(blueBrush)
 			} else {
-				blendDim(0, 0, s.vw, s.vh, 35)
+				blendDim(0, 0, s.vw, s.vh, snipMaskAlpha)
 			}
 
 			if target != hdc {
