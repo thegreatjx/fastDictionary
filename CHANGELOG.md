@@ -1,5 +1,27 @@
 # 更新日志
 
+## 1.6.0 — 2026-11-19（持久化查询缓存 · 句法笔记独立 · V5 括号法与结构树 · 瘦身发布）
+
+### 变更
+
+- **持久化统一查询缓存（`cache.go`）**：将翻译结果、有道/谷歌词典、未过滤 `DismissedNoteWords` 的「猜你想存」原始生词列表与 `AI 精翻 / 长难句 / 写作` 结果按有界 LRU（每类 `64` 条）异步原子落盘至缓存目录 `query_cache.json`（先持有 `saveMu` 再序列化状态，避免并发写入旧快照覆盖新结果）；未钉住弹窗关闭或再次选中相同文本直接命中缓存零等待、不额外消耗 Token，点击「重新翻译 / 重新生成」主动绕过缓存。
+- **「生词本」与「句法笔记」分库管理（`notebook_store.go` / `settings_notebook.go`）**：主窗口侧栏在「生词本」下方新增「句法笔记」独立入口（写入 `notebook.json`），支持分类过滤（全部 / 长难句 / 写作）、搜索、展开卡片继续交互切换主干/断句/结构树或复盘写作批注、二次确认删除及撤销；首次启动无损将旧版 `vocabulary.json` 中的 `grammar`、`writing` 条目迁移分流，并保留「生词本」专注生词与例句的间隔复习及导入导出；全站保存按钮与文案清晰区分为「存入生词本」「存入句法笔记」「存入写作笔记」，清理 `renderNotesBlock` 残留阴影与「笔记本」旧文案。
+- **英语教学 V5 句法拆解（`config.go` / `grammar.go`）**：升级 `default-sentence-analysis` 默认系统提示词并自动迁移 V1–V4 旧默认提示词；新增 `phrases` 结构，即便句子不含从句，也能对链式介词短语、分词/不定式/动名词、同位语与插入语按层级括号法标注（`(...)` + `介短` / `分词` / `不定式` / `动名` / `同位` / `插入` 微标，非谓语加点状虚线底纹），「只看主干」同时折叠从句 `[短标 …]` 与短语 `(<短标> …)`；新增「结构树」视图，按 `ParentID` 层级缩进展开主干、从句与短语并标明 `↳ 修饰目标`；新增 `--demo-action grammar-news` / `grammar-tree` 典型 37 词零从句新闻长难句演示场景。
+- **弹窗高度防抖与二进制构建瘦身（`autofit_loop.go` / `build.ps1`）**：为 `autofitLoop` 增加 `24` DIP 内容高度稳定阈值与方向反转收敛判断，阻断滚动条出现/消失引起的 `585↔602` 循环拉伸；正式构建启用 `-s -w -H=windowsgui` 剥离调试符号，`fastDictionary.exe` 体积降至 `17,026,048 bytes`，`win64` 分发包体积较 `1.5.0` 的 `33,377,762 B` 降至 `27,533,621 bytes`（同步定位冷启动十余秒原因主要来自安全软件 `HipsDaemon` 首次查杀未签名新版 exe，Go 主程序本地初始化为毫秒级）。
+
+### 验证
+
+- `gofmt -w .` / `go vet ./...` / `go build -tags mygo_nowebview ./...` / `go test -v -count=1 ./...`：584 项顶层用例 + 354 项子测试全部通过（0 失败；8 项依赖外网或系统独占环境的用例跳过：`TestChipStateStrip`、`TestLiveDirectProvider`、`TestLiveProvidersRejectBadKey`、`TestLiveRaceIncludesGoogle`、`TestChipPaletteStrip`、`TestShortcutRegistration`、`TestLiveMicrosoftSplitIsRepaired`、`TestEdgeTTSLive`）。
+- 原生截图与控件树证据：
+  - `build/ui-evidence/20261119-211646-grammar-news-light-sky`、`20261119-211648-grammar-tree-dark-mint`、`20261119-211649-grammar-light-sky`、`20261119-211650-writing-light-coral`、`20261119-211651-settings-light-sky`（exe `E86D3FC4330838D7…`）
+  - `build/ui-evidence/20261119-211851-settings-light-violet`（修正「生词本」副标题单行收口后的最终 Go 二进制 `6A6250CD1AE5D437…`）
+
+### 分发
+
+- 源码提交：`9039831`
+- 包名：`fastDictionary-v2026.11.19-r2-win64.zip`（`27,533,621 bytes`；内含 `fastDictionary.exe` `17,026,048 bytes`）
+- SHA256：`B6C811AD10D7977D7F3036C026B4EEB37EED5A864E09EA5EADAC17154A9DD58D`
+
 ## 1.5.0 — 2026-11-19（MyGo v0.10.0 与全界面 UI/UX 体验升级）
 
 ### 变更
