@@ -1,5 +1,36 @@
 # 更新日志
 
+## 1.5.0 — 2026-11-19（MyGo v0.10.0 与全界面 UI/UX 体验升级）
+
+### 变更
+
+- **框架与无 WebView 构建升级**：`github.com/egoist/mygo` 升级至 `v0.10.0`，迁移自动化工具至 `plugins/automation/cmd/mygo-automation@v0.10.0`；`build.ps1`、`scripts/ui-evidence.ps1` 默认启用 `-tags mygo_nowebview`，应用版本升级至 `1.5.0`，关于页从 `debug.ReadBuildInfo()` 动态读取 MyGo 版本。
+- **WCAG AA 对比度与设计系统收口**：调整深浅双主题次要/辅助文本色阶，升级 `mint`、`coral` 强调色对比度；`SettingCard` 统一构建器消除设置项底部双细线；清除高频率卡片冗余硬阴影与硬编码色彩；统一音标字体 `fontIPA`。
+- **高频浮层与划词工具条优化**：
+  - **长难句卡片**：移除重复角标，将「存入生词本」收拢进顶部紧凑标题栏避免长文溢出视口；主干提示栏支持多行完整展示；弹窗自动适配高度上限提升至 `640` DIP（工作区上限 `0.72`）。
+  - **写作润色卡片**：改用行内 `ui.RichText` 混排替换三列布局，消除长改动串换行与挤压问题；暖珊瑚强调色下删去原文采用中性灰划线，避免与珊瑚新增文本双红冲突；保存文案全站统一为「存入生词本 / 已存入生词本」。
+  - **划词胶囊与翻译底栏**：重绘三层句法树图标 `grammar.svg` 区分截图图标，将「截图翻译」移至已启用 AI 指令之后；引擎标注收敛到弹出底栏，腾出中部操作区空间。
+- **主工作台、生词本与托盘修复**：
+  - 侧边栏加入「工作台 / 常规」分隔线，划词状态点按 `Accent / Warning / TextMuted` 区分监听、暂停与仅快捷键；首页增加待复习卡片提醒及空态「快速试一试」示例与动态快捷键提示；修复首页保存后重复弹 Toast 问题。
+  - 生词本改用 `SegmentedControlCompact`、中文搜索占位、合并 CSV / Anki / 网页版至「导出」菜单并在空库时禁用导出与补全，设置 `ListState.Key` 与行位移动画；修复自定义 AI 指令「恢复默认提示词」未同步到当前草稿，以及 `rebuildTray` 重写托盘菜单导致左键点击被劫持的问题。
+  - 同步刷新 `docs/DESIGN.md`、`docs/screenshots/` 与 `README.md`。
+
+### 验证
+
+- `gofmt -w .` / `go vet ./...` / `go build -tags mygo_nowebview ./...` / `go test -v -count=1 ./...`：581 项顶层用例 + 353 项子测试全部通过（0 失败；8 项依赖外网/真实系统环境用例条件跳过）。
+- 原生截图与控件树证据（基于最终 Go 源码二进制 `4EB48D0E83C565C2…` 采集并核对，随后仅刷新 `docs/screenshots/` 与 `README.md`）：
+  - `build/ui-evidence/20261119-195414-home-light-sky`、`20261119-195416-home-dark-sky`
+  - `build/ui-evidence/20261119-195515-grammar-light-sky`、`20261119-195517-grammar-dark-mint`
+  - `build/ui-evidence/20261119-195518-writing-light-coral`、`20261119-195519-writing-dark-violet`
+  - `build/ui-evidence/20261119-195520-settings-light-sky`、`20261119-195521-settings-dark-sky`、`20261119-195522-settings-light-violet`、`20261119-195523-settings-light-sky`
+  - `build/ui-evidence/20261119-195524-chip-light-sky`、`20261119-195525-chip-dark-sky`
+
+### 分发
+
+- 源码提交：`11df1f7`
+- 包名：`fastDictionary-v2026.11.19-win64.zip`（33,377,762 B）
+- SHA256：`DA879D5A4C8E739C2C0B92BAD5A3C87409CA8AFAC72FBC32F12EC010269705F7`
+
 ## 1.4.11 — 2026-11-18（截图框选遮罩对齐 PowerToys · r1 分发包）
 
 截图框选进入时只把桌面压暗 14%，要拖动到一定程度才到 35%。调查了 8 个主流
