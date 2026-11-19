@@ -707,14 +707,14 @@ func (a *app) aiHelpField(c *ui.Context, t *ui.Theme, cfg Config) {
 
 func (a *app) aiCacheRow(sc *settingCard, t *ui.Theme) {
 	c := sc.c
-	sc.Row("临时缓存", "AI 结果按提示词、模型、地址和推理强度自动失效。", func() {
+	sc.Row("查询缓存", "翻译、生词提取与 AI 分析结果本地持久化缓存，相同文本复用零等待；改配置或点重新翻译自动刷新。", func() {
 		ui.Text(c, fmt.Sprintf("当前 %d 条", a.aiCacheCount())).
 			Font(fontMono).FontFeatures("tnum").FontSize(FontHelper).
 			TextColor(t.TextMuted)
-		if DangerGhostButton(c, t, "清空临时缓存").Clicked() {
+		if DangerGhostButton(c, t, "清空查询缓存").Clicked() {
 			a.clearAICache()
 			a.mu.Lock()
-			a.actionSaveFeedback = "临时 AI 缓存已清空"
+			a.actionSaveFeedback = "查询缓存已清空"
 			a.mu.Unlock()
 			a.settingsRefresh()
 		}

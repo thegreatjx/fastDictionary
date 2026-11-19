@@ -127,6 +127,7 @@ var settingsNavGroups = []settingsNavGroup{
 	{"工作台", []settingsNavEntry{
 		{"home", "查词翻译", iconTranslate},
 		{"vocabulary", "生词本", iconBookmark},
+		{"notebook", "句法笔记", iconGrammar},
 	}},
 	{"常规", []settingsNavEntry{
 		{"general", "通用", iconGear},
@@ -148,7 +149,7 @@ var settingsNavGroups = []settingsNavGroup{
 
 func (a *app) settingsNavItem(c *ui.Context, t *ui.Theme, at AppTheme, item settingsNavEntry) {
 	active := a.page == item.id
-	b := ui.ButtonBase(c).Height(HeightControl).Radius(RadiusSM).
+	b := ui.ButtonBase(c).Height(28).Radius(RadiusSM).
 		Role(ui.RoleTreeItem).Focusable().FillWidth().
 		Padding(0, Space2).Gap(Space2).Justify(ui.Start).AlignItems(ui.Center)
 	if active {
@@ -163,9 +164,14 @@ func (a *app) settingsNavItem(c *ui.Context, t *ui.Theme, at AppTheme, item sett
 		iconCol, textCol, weight = at.Accent, at.Accent, 600
 	}
 	label := item.label
-	if item.id == "vocabulary" {
+	switch item.id {
+	case "vocabulary":
 		if n := GetVocabularyStore().Count(); n > 0 {
 			label = fmt.Sprintf("生词本 (%d)", n)
+		}
+	case "notebook":
+		if n := GetNotebookStore().Count(); n > 0 {
+			label = fmt.Sprintf("句法笔记 (%d)", n)
 		}
 	}
 	b.Children(func() {
@@ -207,7 +213,7 @@ func (a *app) settingsView(c *ui.Context) {
 			})
 			ui.Scroll(c).TrackScroll(&a.navScroll).Grow(1).FillWidth().
 				ScrollbarInsets(0, 0, Space2).Children(func() {
-				ui.Column(c).FillWidth().Gap(Space1).Children(func() {
+				ui.Column(c).FillWidth().Gap(2).Children(func() {
 					for i, group := range settingsNavGroups {
 						if i > 0 && group.title == "常规" {
 							ui.Box(c).FillWidth().Padding(Space1, Space2, 0, Space2).Children(func() {
@@ -215,7 +221,7 @@ func (a *app) settingsView(c *ui.Context) {
 							})
 						}
 						ui.Text(c, group.title).Font(fontUI).FontSize(FontMicro).FontWeight(500).
-							Padding(Space2, Space2, Space1, Space2).TextColor(at.TextMuted).SingleLine()
+							Padding(6, Space2, 2, Space2).TextColor(at.TextMuted).SingleLine()
 						for _, item := range group.items {
 							a.settingsNavItem(c, t, at, item)
 						}
@@ -286,6 +292,8 @@ func (a *app) settingsView(c *ui.Context) {
 					a.pageCustomActions(c, t, cfg)
 				case "vocabulary":
 					a.pageVocabulary(c, t, cfg)
+				case "notebook":
+					a.pageNotebook(c, t, cfg)
 				case "translate":
 					a.pageTranslate(c, t, cfg)
 				case "dict":
@@ -489,6 +497,7 @@ func (a *app) showMainWindow(page string) {
 	}
 	if a.cfgWin != nil && !a.cfgWin.IsDestroyed() {
 		a.resetVocabularyConfirmations()
+		a.resetNotebookConfirmations()
 		if a.page == "ai" {
 			a.loadAIModels()
 		}
@@ -502,6 +511,7 @@ func (a *app) showMainWindow(page string) {
 	a.initHotkeyDrafts()
 	a.loadAIModels()
 	a.resetVocabularyViewState()
+	a.resetNotebookViewState()
 	win := mygo.NewWindow(mygo.WindowOptions{
 		Title:     appTitle,
 		Width:     920,

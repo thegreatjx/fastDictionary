@@ -287,6 +287,36 @@ func (s *VocabularyStore) Delete(id string) bool {
 	return found
 }
 
+func (s *VocabularyStore) RemoveIDs(ids []string) int {
+	if s == nil || len(ids) == 0 {
+		return 0
+	}
+	drop := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		if id != "" {
+			drop[id] = true
+		}
+	}
+	s.mu.Lock()
+	removed := 0
+	kept := make([]VocabularyEntry, 0, len(s.entries))
+	for _, e := range s.entries {
+		if drop[e.ID] {
+			removed++
+			continue
+		}
+		kept = append(kept, e)
+	}
+	if removed > 0 {
+		s.entries = kept
+	}
+	s.mu.Unlock()
+	if removed > 0 {
+		s.saveOrLog()
+	}
+	return removed
+}
+
 func (s *VocabularyStore) Clear() error {
 	s.mu.Lock()
 	s.entries = []VocabularyEntry{}

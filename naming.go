@@ -46,7 +46,7 @@ func migrateUserData() string {
 
 func copyUserData(src, dst string) (int, error) {
 	copied := 0
-	for _, name := range []string{"config.json", "vocabulary.json", "notebook.html"} {
+	for _, name := range []string{"config.json", "vocabulary.json", "notebook.json", "notebook.html"} {
 		data, err := os.ReadFile(filepath.Join(src, name))
 		if err != nil {
 			if os.IsNotExist(err) {

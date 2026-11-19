@@ -220,7 +220,7 @@ func TestSettingsNavIsGroupedAndAligned(t *testing.T) {
 		t.Errorf("最小高度下侧栏没有可滚动余量（MaxY=%v），超出的入口无法到达", a.navScroll.MaxY)
 	}
 
-	labels := []string{"查词翻译", "生词本", "通用", "快捷键", "划词", "翻译", "词典与发音", "AI 精翻", "AI 指令", "关于"}
+	labels := []string{"查词翻译", "生词本", "句法笔记", "通用", "快捷键", "划词", "翻译", "词典与发音", "AI 精翻", "AI 指令", "关于"}
 	var wantX float32
 	for i, label := range labels {
 		r, ok := tt.Find(label)
@@ -251,7 +251,7 @@ func TestUIFilesHaveNoEmojiOrHardcodedColors(t *testing.T) {
 	files := []string{
 		"tray.go", "settings.go", "settings_pages.go",
 		"popup_view.go", "popup_translation.go", "ai_refine_button.go", "grammar.go",
-		"actions.go", "home.go", "settings_vocab.go", "vocab_review_view.go",
+		"actions.go", "home.go", "settings_vocab.go", "settings_notebook.go", "vocab_review_view.go",
 	}
 	banned := []string{"ui.Hex(", "ui.RGBA(", "⚙️", "🔍", "✏️", "📘"}
 	for _, f := range files {
@@ -269,7 +269,7 @@ func TestUIFilesHaveNoEmojiOrHardcodedColors(t *testing.T) {
 }
 
 func TestCleanedCardsHaveNoEmoji(t *testing.T) {
-	files := []string{"actions.go", "settings_vocab.go", "vocab_review_view.go"}
+	files := []string{"actions.go", "settings_vocab.go", "settings_notebook.go", "vocab_review_view.go"}
 	for _, f := range files {
 		raw, err := os.ReadFile(f)
 		if err != nil {
@@ -304,7 +304,7 @@ func TestNotesViewPhaseIsExplicit(t *testing.T) {
 }
 
 func TestAllSettingsPagesRenderInBothThemes(t *testing.T) {
-	pages := []string{"general", "selection", "actions", "vocabulary", "translate", "dict", "ai", "hotkey", "about"}
+	pages := []string{"general", "selection", "actions", "vocabulary", "notebook", "translate", "dict", "ai", "hotkey", "about"}
 	for _, dark := range []bool{false, true} {
 		for _, page := range pages {
 			a := newTestApp()

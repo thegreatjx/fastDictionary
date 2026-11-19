@@ -632,7 +632,7 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 				if saved {
 					ui.Row(c).Height(HeightCompact).Gap(Space1).AlignItems(ui.Center).Children(func() {
 						ui.Icon(c, iconCheck).Size(12, 12).TextColor(at.TextMuted)
-						ui.Text(c, "已存入生词本").FontSize(11).FontWeight(500).TextColor(at.TextMuted)
+						ui.Text(c, "已存入写作笔记").FontSize(11).FontWeight(500).TextColor(at.TextMuted)
 					})
 					return
 				}
@@ -640,12 +640,12 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 					return
 				}
 				btnSave := ui.Button(c, "").Height(HeightCompact).Padding(2, Space3).Radius(RadiusSM).
-					Tooltip("保存改后版本与批注到生词本")
+					Tooltip("保存改后版本与批注到写作笔记")
 				saveFG := saveButtonStyle(btnSave, t)
 				btnSave.Children(func() {
 					ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
 						ui.Icon(c, iconBookmark).Size(12, 12).TextColor(saveFG)
-						ui.Text(c, "存入生词本").FontSize(11).FontWeight(600)
+						ui.Text(c, "存入写作笔记").FontSize(11).FontWeight(600)
 					})
 				})
 				if btnSave.Clicked() {

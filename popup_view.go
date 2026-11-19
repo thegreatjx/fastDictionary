@@ -145,7 +145,7 @@ func (a *app) popupView(c *ui.Context) {
 					switch classifyAIView(s) {
 					case aiPassStructured:
 						text := grammarAnalysisText(s.source)
-						a.renderGrammarVisualCard(c, t, text, s.grammarResult, s.grammarSaved, func() { a.saveGrammarToVocab(s.grammarResult) })
+						a.renderGrammarVisualCard(c, t, text, s.grammarResult, s.grammarSaved, func() { a.saveGrammarToNotebook(s.grammarResult) })
 					case aiPassIdle:
 						a.renderGrammarEmptyState(c, t, s)
 					default:
@@ -165,7 +165,7 @@ func (a *app) popupView(c *ui.Context) {
 				case modeWriting:
 					switch classifyAIView(s) {
 					case aiPassStructured:
-						renderImproveWritingCard(c, t, s.source, s.writingResult, s.writingSaved, func(txt string) { a.copyToClipboard(txt) }, func() { a.saveWritingToVocab(s.writingResult) })
+						renderImproveWritingCard(c, t, s.source, s.writingResult, s.writingSaved, func(txt string) { a.copyToClipboard(txt) }, func() { a.saveWritingToNotebook(s.writingResult) })
 					case aiPassIdle:
 						a.renderWritingEmptyState(c, t, s)
 					default:
@@ -236,9 +236,9 @@ func primaryCopyText(s snapshot) string {
 }
 
 func renderNotesBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
+	at := appTheme(t)
 	ui.Box(c).FillWidth().Padding(12, 14).Radius(8).
-		Background(t.Surface).Border(1, t.Border).
-		Shadow(0, 2, 6, 0, withAlpha(appTheme(t).ShadowColor, 0.5)).Children(func() {
+		Background(at.Surface).Border(1, at.BorderSubtle).Children(func() {
 		ui.Column(c).FillWidth().Gap(8).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
 				ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
@@ -266,7 +266,7 @@ func renderNotesBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 				})
 			})
 
-			ui.Text(c, "选择要存入笔记本的词，将来随时复习").FontSize(11).TextColor(t.TextMuted)
+			ui.Text(c, "选择要存入生词本的词，将来随时复习").FontSize(11).TextColor(t.TextMuted)
 
 			if s.notesBusy && len(s.notes) == 0 {
 				ui.Row(c).Gap(6).AlignItems(ui.Center).Padding(8, 0).Children(func() {
@@ -307,7 +307,7 @@ func renderNotesBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 							ui.Text(c, "已保存").FontSize(11).FontWeight(500).TextColor(appTheme(t).TextMuted)
 						})
 					} else {
-						btnSave := ui.Button(c, "").Height(HeightCompact).Padding(2, Space3).Radius(RadiusSM).Tooltip("保存所选生词到笔记本 (Ctrl+S)")
+						btnSave := ui.Button(c, "").Height(HeightCompact).Padding(2, Space3).Radius(RadiusSM).Tooltip("保存所选生词到生词本 (Ctrl+S)")
 						saveFG := saveButtonStyle(btnSave, t)
 						btnSave.Children(func() {
 							ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {

@@ -90,72 +90,84 @@ type app struct {
 	ocrGeneration   requestToken
 	ocrCancel       context.CancelFunc
 
-	win                  *mygo.Window
-	cfgWin               *mygo.Window
-	mainWinVisible       bool
-	tray                 *mygo.Tray
-	trayFlyout           *mygo.Window
-	page                 string
-	pinned               bool
-	showNotes            bool
-	notes                []NoteItem
-	notesBusy            bool
-	notesGen             requestToken
-	notesCancel          context.CancelFunc
-	onlyTrunk            bool
-	grammarResult        *SentenceAnalysisResult
-	grammarResultPrefill bool
-	aiResultCache        map[string]string
-	aiResultOrder        []string
-	skipAIResultCache    bool
-	activeActionID       string
-	dictResult           *DictionaryResult
-	writingResult        *ImproveWritingResult
-	actionSavedMsg       string
-	saveErr              string
-	savedDictTerm        string
-	copiedMsg            string
-	feedbackText         string
-	feedbackAt           time.Time
-	feedbackTimer        *time.Timer
-	editingActionID      string
-	customizingAction    CustomActionConfig
-	vocabSearchQuery     string
-	actionSaveFeedback   string
-	selHoverTip          string
-	selHoverIdx          int
-	moreFlyout           *mygo.Window
-	moreFlyoutRect       ui.Rect
-	moreFlyoutShown      bool
-	showSlashes          bool
-	vocabCategoryIdx     int
-	vocabList            ui.ListState
-	vocabExpandedID      string
-	vocabReviewing       bool
-	vocabReviewIDs       []string
-	vocabReviewIdx       int
-	vocabReviewRevealed  bool
-	vocabReviewDone      int
-	updateChecking       bool
-	updateMsg            string
-	updateURL            string
-	updateNewer          bool
-	notesSaved           bool
-	grammarSaved         bool
-	writingSaved         bool
-	isQuitting           atomic.Bool
-	pausedUntil          time.Time
-	isScreenshotMode     bool
-	translateGen         requestToken
-	tabStates            map[popupMode]*tabViewState
-	ocrCompare           bool
-	ocrExpanded          bool
-	screenshotPinned     bool
-	snipBitmap           *ui.Bitmap
-	popupX               int
-	popupY               int
-	popupW               int
-	popupH               int
+	win                     *mygo.Window
+	cfgWin                  *mygo.Window
+	mainWinVisible          bool
+	tray                    *mygo.Tray
+	trayFlyout              *mygo.Window
+	page                    string
+	pinned                  bool
+	showNotes               bool
+	notes                   []NoteItem
+	notesBusy               bool
+	notesGen                requestToken
+	notesCancel             context.CancelFunc
+	onlyTrunk               bool
+	grammarResult           *SentenceAnalysisResult
+	grammarResultPrefill    bool
+	cache                   *queryCache
+	skipTransCache          bool
+	skipNotesCache          bool
+	skipAIResultCache       bool
+	activeActionID          string
+	dictResult              *DictionaryResult
+	writingResult           *ImproveWritingResult
+	actionSavedMsg          string
+	saveErr                 string
+	savedDictTerm           string
+	copiedMsg               string
+	feedbackText            string
+	feedbackAt              time.Time
+	feedbackTimer           *time.Timer
+	editingActionID         string
+	customizingAction       CustomActionConfig
+	vocabSearchQuery        string
+	actionSaveFeedback      string
+	selHoverTip             string
+	selHoverIdx             int
+	moreFlyout              *mygo.Window
+	moreFlyoutRect          ui.Rect
+	moreFlyoutShown         bool
+	showSlashes             bool
+	showTree                bool
+	vocabCategoryIdx        int
+	vocabList               ui.ListState
+	vocabExpandedID         string
+	vocabReviewing          bool
+	vocabReviewIDs          []string
+	vocabReviewIdx          int
+	vocabReviewRevealed     bool
+	vocabReviewDone         int
+	updateChecking          bool
+	updateMsg               string
+	updateURL               string
+	updateNewer             bool
+	notesSaved              bool
+	grammarSaved            bool
+	writingSaved            bool
+	notebookCategoryIdx     int
+	notebookSearchQuery     string
+	notebookList            ui.ListState
+	notebookExpandedID      string
+	notebookOnlyTrunk       bool
+	notebookShowSlashes     bool
+	notebookShowTree        bool
+	notebookConfirmDeleteID string
+	confirmClearNotebook    bool
+	lastDeletedNotebook     *NotebookEntry
+	isQuitting              atomic.Bool
+	pausedUntil             time.Time
+	isScreenshotMode        bool
+	translateGen            requestToken
+	tabStates               map[popupMode]*tabViewState
+	ocrCompare              bool
+	ocrExpanded             bool
+	screenshotPinned        bool
+	snipBitmap              *ui.Bitmap
+	popupX                  int
+	popupY                  int
+	popupW                  int
+	popupH                  int
 	// 卡片从底边向上生长时，resize 必须保持底边不动。
 	popupAnchoredAbove bool
 	popupAnchorBottom  int
@@ -229,6 +241,7 @@ type snapshot struct {
 	savedDictTerm        string
 	copiedMsg            string
 	showSlashes          bool
+	showTree             bool
 	notesSaved           bool
 	grammarSaved         bool
 	writingSaved         bool
@@ -297,7 +310,7 @@ func (a *app) snap() snapshot {
 		detected: a.detected, errText: a.errText, echoNote: a.echoNote, notice: a.notice, busy: a.busy, elapsed: a.elapsed,
 		dict: a.dict, gdict: a.gdict, aiText: a.aiText, aiBusy: a.aiBusy,
 		inputText: a.inputText, inputTargetMode: a.inputTargetMode, isWord: isWord(a.source), pinned: a.pinned, showNotes: a.showNotes, notes: notes, notesBusy: a.notesBusy, onlyTrunk: a.onlyTrunk, grammarResult: a.grammarResult, grammarResultPrefill: a.grammarResultPrefill, aiRefining: a.aiRefining, aiRefineErr: a.aiRefineErr,
-		activeActionID: a.activeActionID, dictResult: a.dictResult, writingResult: a.writingResult, actionSavedMsg: actionSavedMsg, saveErr: a.saveErr, savedDictTerm: a.savedDictTerm, copiedMsg: copiedMsg, showSlashes: a.showSlashes, notesSaved: a.notesSaved, grammarSaved: a.grammarSaved, writingSaved: a.writingSaved,
+		activeActionID: a.activeActionID, dictResult: a.dictResult, writingResult: a.writingResult, actionSavedMsg: actionSavedMsg, saveErr: a.saveErr, savedDictTerm: a.savedDictTerm, copiedMsg: copiedMsg, showSlashes: a.showSlashes, showTree: a.showTree, notesSaved: a.notesSaved, grammarSaved: a.grammarSaved, writingSaved: a.writingSaved,
 		isScreenshotMode: a.isScreenshotMode, snipBitmap: a.snipBitmap, sourceExpanded: a.sourceExpanded,
 		snipExpanded: a.snipExpanded, notesExpanded: a.notesExpanded, ocrBusy: a.ocrBusy, ocrError: a.ocrError, ocrText: a.ocrText,
 		ocrCompare: a.ocrCompare, ocrExpanded: a.ocrExpanded,
@@ -363,13 +376,30 @@ func (a *app) rerunCurrentMode(text string) {
 	}
 }
 
+func (a *app) ensureCacheLocked() *queryCache {
+	if a.cache == nil {
+		a.cache = newQueryCache("")
+	}
+	return a.cache
+}
+
+func (a *app) ensureCache() *queryCache {
+	a.mu.Lock()
+	qc := a.ensureCacheLocked()
+	a.mu.Unlock()
+	return qc
+}
+
 func (a *app) rerunCurrentModeFresh(text string) {
+	a.mu.Lock()
 	switch a.mode {
 	case modeDictionary, modeGrammar, modeWriting:
-		a.mu.Lock()
 		a.skipAIResultCache = true
-		a.mu.Unlock()
+	default:
+		a.skipTransCache = true
+		a.skipNotesCache = true
 	}
+	a.mu.Unlock()
 	a.rerunCurrentMode(text)
 }
 
@@ -427,6 +457,7 @@ func (a *app) switchMode(m popupMode) {
 func (a *app) resetPopupTransientLocked() {
 	a.onlyTrunk = false
 	a.showSlashes = false
+	a.showTree = false
 	a.activeActionID = ""
 }
 
@@ -466,6 +497,7 @@ func (a *app) openPopupAction(m popupMode, text string) {
 	a.popupAnchoredAbove = anchoredAbove
 	a.popupAnchorBottom = y + initH
 
+	nb := GetNotebookStore()
 	a.mu.Lock()
 	a.userResized = false
 	a.autofit.reset()
@@ -497,8 +529,8 @@ func (a *app) openPopupAction(m popupMode, text string) {
 	a.copiedMsg = ""
 	a.feedbackText = ""
 	a.notesSaved = false
-	a.grammarSaved = false
-	a.writingSaved = false
+	a.grammarSaved = text != "" && nb.Contains("grammar", grammarAnalysisText(text))
+	a.writingSaved = text != "" && nb.Contains("writing", text)
 	a.resetPopupTransientLocked()
 	a.notes = nil
 	a.notesBusy = false
@@ -547,6 +579,7 @@ func (a *app) openPopupWithText(m popupMode, text string) {
 	a.popupAnchoredAbove = anchoredAbove
 	a.popupAnchorBottom = y + initH
 
+	nb := GetNotebookStore()
 	a.mu.Lock()
 	a.userResized = false
 	a.autofit.reset()
@@ -576,8 +609,8 @@ func (a *app) openPopupWithText(m popupMode, text string) {
 	a.copiedMsg = ""
 	a.feedbackText = ""
 	a.notes, a.notesBusy, a.notesSaved, a.notesExpanded = nil, false, false, false
-	a.grammarSaved = false
-	a.writingSaved = false
+	a.grammarSaved = text != "" && nb.Contains("grammar", grammarAnalysisText(text))
+	a.writingSaved = text != "" && nb.Contains("writing", text)
 	a.resetPopupTransientLocked()
 	a.isScreenshotMode, a.snipExpanded = false, false
 	a.snipBitmap = nil

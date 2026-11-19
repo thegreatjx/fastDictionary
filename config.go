@@ -651,6 +651,40 @@ const grammarSystemPromptV4 = `你是一位严谨的英语语法老师。请对�
   "translation": "中文整段译文"
 }`
 
+const grammarSystemPromptV5 = `你是一位严谨的英语语法老师。请结合 SVOCM 骨架法与括号法，对给定的【一段英文】（通常 1~5 句）做逐句句法拆解，只输出严格合法的 JSON（不要 Markdown 代码块，不要任何解释）。
+
+硬性规则：
+1. segments 必须按原文顺序覆盖整段：把所有 text 依次直接拼接，必须与输入原文逐字符完全一致（含大小写、空格、标点、缩略词）。不要改写、遗漏、补字或调换语序；空格和标点并入相邻片段，不要输出只含空白的片段。片段按短语/意群层级切分：主语、谓语动词、核心宾语/表语/必选补语、从句引导词、每个独立介词短语、非谓语短语（分词/不定式/动名词）都要各自成段，不要把整条短语链揉成一段。
+2. 每个片段只填一个 role：subject|predicate|object|connector|modifier|punct。predicate 只含谓语动词短语本身（如 has spread、did astronomers realize），不含宾语、表语、状语。
+3. is_backbone 只标每一句最外层主句的核心骨架（主语中心语、谓语动词、宾语/表语、必不可少的动词补语如 spread from ... to ... 的核心名词语块，以及连接并列主句的 and/but）；纯修饰性从句、长介词定语、非谓语、插入语一律 false。
+4. 只有真正的从句（有引导词或主语+谓语）才建立 clauses 条目（id 为 c1、c2…），并在其片段 clause_id 填最内层从句 id，parent_id 指向所属外层从句或短语；short_tag 用两字：宾从/定从/状从/主从/表从/同位。
+5. 对所有多词介词短语、非谓语短语（过去分词/现在分词/不定式/动名词）、同位语或插入语（即使整句没有任何从句！），必须建立 phrases 条目（id 为 p1、p2…），并在对应片段填最内层 phrase_id（同一短语若嵌套在从句内可保留其 clause_id；parent_id 指向直接所属的上层短语或从句，直属主句则留空）。
+   - phrases[].short_tag 仅用二至三字：介短/分词/不定式/动名/同位/插入。
+   - phrases[].type 写完整类型（如「介词短语」「过去分词后置定语」「不定式目的状语」）。
+   - phrases[].role 写句法功能：定语/状语/补语/同位/插入。
+   - phrases[].target 精确写它修饰或依附的对象（如 "修饰 dispute"、"修饰 critical minerals"、"说明 spread 范围"）。
+6. break_before 只在自然意群停顿处为 true（主干切分处、每个长介词短语/非谓语短语/从句前），每句 3~9 个，便于意群断句。
+7. note 只在修饰短语起始、非谓语、引导词或难点处写点拨（<=18字）；difficulties 列真正影响理解的 1~3 个难点（多级后置修饰、非谓语修饰、倒装、分隔等）。
+8. backbone_summary 用一句简短中文概括主干（多句用分号）；translation 给流畅自然的中文整段译文。
+
+输出 JSON 格式：
+{
+  "backbone_summary": "一句中文主干（多句用分号）",
+  "segments": [
+    {"text": "原文连续片段", "role": "subject", "is_backbone": true, "break_before": false, "clause_id": "", "phrase_id": "", "note": ""}
+  ],
+  "clauses": [
+    {"id": "c1", "parent_id": "", "type": "宾语从句", "short_tag": "宾从", "target": "作 see 的宾语"}
+  ],
+  "phrases": [
+    {"id": "p1", "parent_id": "", "type": "介词短语", "short_tag": "介短", "role": "定语", "target": "修饰 dispute"}
+  ],
+  "difficulties": [
+    {"title": "后置定语", "span_text": "原文片段", "explanation": "一句人话解释"}
+  ],
+  "translation": "中文整段译文"
+}`
+
 func DefaultCustomActions() []CustomActionConfig {
 	return []CustomActionConfig{
 		{
@@ -660,9 +694,9 @@ func DefaultCustomActions() []CustomActionConfig {
 			Icon:         "grammar",
 			ProviderID:   "magpie",
 			Model:        "",
-			SystemPrompt: grammarSystemPromptV4,
+			SystemPrompt: grammarSystemPromptV5,
 			Prompt:       "## Input\nSelection: {{selection}}\nParagraphs: {{paragraphs}}\nTarget language: {{targetLanguage}}",
-			OutputSchema: []string{"segments", "clauses", "difficulties", "translation"},
+			OutputSchema: []string{"segments", "clauses", "phrases", "difficulties", "translation"},
 		},
 		{
 			ID:           "default-improve-writing",
@@ -750,13 +784,14 @@ func ensureDefaultActions(cfg *Config) bool {
 			} else if def.ID == "default-sentence-analysis" &&
 				(cfg.CustomActions[idx].SystemPrompt == grammarSystemPrompt ||
 					cfg.CustomActions[idx].SystemPrompt == grammarSystemPromptV2 ||
-					cfg.CustomActions[idx].SystemPrompt == grammarSystemPromptV3) {
-				cfg.CustomActions[idx].SystemPrompt = grammarSystemPromptV4
+					cfg.CustomActions[idx].SystemPrompt == grammarSystemPromptV3 ||
+					cfg.CustomActions[idx].SystemPrompt == grammarSystemPromptV4) {
+				cfg.CustomActions[idx].SystemPrompt = grammarSystemPromptV5
 				grammarPromptUpgraded = true
 				dropped = true
 			} else if def.ID == "default-sentence-analysis" &&
 				legacyGrammarAnnotationsPrompt(cfg.CustomActions[idx].SystemPrompt) {
-				cfg.CustomActions[idx].SystemPrompt = grammarSystemPromptV4
+				cfg.CustomActions[idx].SystemPrompt = grammarSystemPromptV5
 				grammarPromptUpgraded = true
 				dropped = true
 			}
@@ -767,7 +802,8 @@ func ensureDefaultActions(cfg *Config) bool {
 				cfg.CustomActions[idx].OutputSchema = def.OutputSchema
 			} else if def.ID == "default-sentence-analysis" &&
 				(sameStrings(cfg.CustomActions[idx].OutputSchema, []string{"annotations", "translation"}) ||
-					(grammarPromptUpgraded && sameStrings(cfg.CustomActions[idx].OutputSchema, []string{"segments", "clauses", "translation"}))) {
+					(grammarPromptUpgraded && (sameStrings(cfg.CustomActions[idx].OutputSchema, []string{"segments", "clauses", "translation"}) ||
+						sameStrings(cfg.CustomActions[idx].OutputSchema, []string{"segments", "clauses", "difficulties", "translation"})))) {
 				cfg.CustomActions[idx].OutputSchema = def.OutputSchema
 				dropped = true
 			}

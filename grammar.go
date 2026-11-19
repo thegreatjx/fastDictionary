@@ -27,6 +27,7 @@ type Segment struct {
 	IsBackbone  bool        `json:"is_backbone"`
 	BreakBefore bool        `json:"break_before,omitempty"`
 	ClauseID    string      `json:"clause_id,omitempty"`
+	PhraseID    string      `json:"phrase_id,omitempty"`
 	Note        string      `json:"note,omitempty"`
 }
 
@@ -35,6 +36,15 @@ type ClauseInfo struct {
 	ParentID string `json:"parent_id,omitempty"`
 	Type     string `json:"type"`
 	ShortTag string `json:"short_tag"`
+	Target   string `json:"target,omitempty"`
+}
+
+type PhraseInfo struct {
+	ID       string `json:"id"`
+	ParentID string `json:"parent_id,omitempty"`
+	Type     string `json:"type"`
+	ShortTag string `json:"short_tag"`
+	Role     string `json:"role,omitempty"`
 	Target   string `json:"target,omitempty"`
 }
 
@@ -48,6 +58,7 @@ type SentenceAnalysisResult struct {
 	BackboneSummary string            `json:"backbone_summary"`
 	Segments        []Segment         `json:"segments"`
 	Clauses         []ClauseInfo      `json:"clauses"`
+	Phrases         []PhraseInfo      `json:"phrases,omitempty"`
 	Difficulties    []DifficultyPoint `json:"difficulties,omitempty"`
 	Translation     string            `json:"translation"`
 	Raw             string            `json:"-"`
@@ -216,7 +227,7 @@ func ParseSentenceAnalysisDetailed(raw string, original ...string) SentenceParse
 			return SentenceParseResult{Outcome: parseOutcomeStructured, Result: &res}
 		}
 		res.Segments = nil
-		if res.Translation != "" || len(res.Difficulties) > 0 || len(res.Clauses) > 0 {
+		if res.Translation != "" || len(res.Difficulties) > 0 || len(res.Clauses) > 0 || len(res.Phrases) > 0 {
 			return SentenceParseResult{Outcome: parseOutcomeFallbackDirect, Result: &res}
 		}
 		return SentenceParseResult{Outcome: parseOutcomeFailed, Cause: fmt.Errorf("语法标注与原文无法对齐")}
@@ -231,6 +242,7 @@ func normalizeClauses(res *SentenceAnalysisResult) {
 	for i := range res.Segments {
 		res.Segments[i].Role = normalizeSegmentRole(res.Segments[i].Role)
 		res.Segments[i].ClauseID = strings.TrimSpace(res.Segments[i].ClauseID)
+		res.Segments[i].PhraseID = strings.TrimSpace(res.Segments[i].PhraseID)
 		res.Segments[i].Note = strings.TrimSpace(res.Segments[i].Note)
 	}
 	clauses := make([]ClauseInfo, 0, len(res.Clauses))
@@ -278,6 +290,27 @@ func normalizeClauses(res *SentenceAnalysisResult) {
 		}
 	}
 	res.Clauses = clauses
+
+	phrases := make([]PhraseInfo, 0, len(res.Phrases))
+	seenPhrase := make(map[string]bool, len(res.Phrases))
+	for i, p := range res.Phrases {
+		p.ID = strings.TrimSpace(p.ID)
+		if p.ID == "" {
+			p.ID = fmt.Sprintf("p%d", i+1)
+		}
+		if seenPhrase[p.ID] {
+			continue
+		}
+		seenPhrase[p.ID] = true
+		p.ParentID = strings.TrimSpace(p.ParentID)
+		p.Type = strings.TrimSpace(p.Type)
+		p.ShortTag = strings.TrimSpace(p.ShortTag)
+		p.Role = strings.TrimSpace(p.Role)
+		p.Target = strings.TrimSpace(p.Target)
+		phrases = append(phrases, p)
+	}
+	res.Phrases = phrases
+
 	for i := range res.Difficulties {
 		res.Difficulties[i].Title = strings.TrimSpace(res.Difficulties[i].Title)
 		res.Difficulties[i].SpanText = strings.TrimSpace(res.Difficulties[i].SpanText)
@@ -616,24 +649,39 @@ type grammarInk struct {
 type grammarCardState struct {
 	OnlyTrunk     bool
 	ShowSlashes   bool
+	ShowTree      bool
 	Prefill       bool
 	SentenceCount int
 	ClauseCount   int
+	PhraseCount   int
 	OnToggleTrunk func()
 	OnToggleSlash func()
+	OnToggleTree  func()
 	OnSpeak       func()
 	OnSave        func()
 }
 
 func (a *app) renderGrammarVisualCard(c *ui.Context, t *ui.Theme, origText string, res *SentenceAnalysisResult, saved bool, onSave func()) {
 	st := grammarCardState{
-		OnlyTrunk:     a.onlyTrunk,
-		ShowSlashes:   a.showSlashes,
-		Prefill:       a.grammarResultPrefill,
-		OnToggleTrunk: func() { a.onlyTrunk = !a.onlyTrunk },
+		OnlyTrunk:   a.onlyTrunk,
+		ShowSlashes: a.showSlashes,
+		ShowTree:    a.showTree,
+		Prefill:     a.grammarResultPrefill,
+		OnToggleTrunk: func() {
+			a.onlyTrunk = !a.onlyTrunk
+			if a.onlyTrunk {
+				a.showTree = false
+			}
+		},
 		OnToggleSlash: func() { a.showSlashes = !a.showSlashes },
-		OnSpeak:       func() { PlaySpeechLang(origText, a.speechLang(), false) },
-		OnSave:        onSave,
+		OnToggleTree: func() {
+			a.showTree = !a.showTree
+			if a.showTree {
+				a.onlyTrunk = false
+			}
+		},
+		OnSpeak: func() { PlaySpeechLang(origText, a.speechLang(), false) },
+		OnSave:  onSave,
 	}
 	renderGrammarVisualCardEx(c, t, origText, res, saved, st)
 }
@@ -643,6 +691,7 @@ func renderGrammarVisualCardEx(c *ui.Context, t *ui.Theme, origText string, res 
 	ink := grammarInkFor(t)
 	st.SentenceCount = len(splitGrammarSentences(origText))
 	st.ClauseCount = len(res.Clauses)
+	st.PhraseCount = len(res.Phrases)
 
 	ui.Box(c).FillWidth().Padding(Space3, Space4).Radius(RadiusTrack).
 		Background(at.Surface).Border(1, at.BorderSubtle).Children(func() {
@@ -652,9 +701,12 @@ func renderGrammarVisualCardEx(c *ui.Context, t *ui.Theme, origText string, res 
 			ui.Box(c).FillWidth().Padding(12, 14).Radius(RadiusSM).
 				Background(at.SurfaceHover).Border(1, at.BorderSubtle).Children(func() {
 				ui.Column(c).FillWidth().Gap(6).Children(func() {
-					if len(res.Segments) == 0 {
+					switch {
+					case len(res.Segments) == 0:
 						renderGrammarFallbackSentence(c, t, origText, res, st)
-					} else {
+					case st.ShowTree:
+						renderGrammarTreeView(c, t, at, ink, res, st)
+					default:
 						renderGrammarSentence(c, t, res, st)
 					}
 				})
@@ -702,7 +754,7 @@ func renderGrammarHeaderSave(c *ui.Context, t *ui.Theme, at AppTheme, saved bool
 	if saved {
 		ui.Row(c).Height(HeightCompact).Gap(Space1).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, iconCheck).Size(12, 12).TextColor(at.TextMuted)
-			ui.Text(c, "已存入生词本").FontSize(FontMicro).FontWeight(500).TextColor(at.TextMuted).SingleLine()
+			ui.Text(c, "已存入句法笔记").FontSize(FontMicro).FontWeight(500).TextColor(at.TextMuted).SingleLine()
 		})
 		return
 	}
@@ -710,12 +762,12 @@ func renderGrammarHeaderSave(c *ui.Context, t *ui.Theme, at AppTheme, saved bool
 		return
 	}
 	btnSave := ui.Button(c, "").Height(HeightCompact).Padding(0, Space3).Radius(RadiusSM).
-		Tooltip("将这条长难句分析存入生词本")
+		Tooltip("将这条长难句拆解存入句法笔记")
 	saveFG := saveButtonStyle(btnSave, t)
 	btnSave.Children(func() {
 		ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, iconBookmark).Size(12, 12).TextColor(saveFG)
-			ui.Text(c, "存入生词本").FontSize(FontMicro).FontWeight(600).SingleLine()
+			ui.Text(c, "存入句法笔记").FontSize(FontMicro).FontWeight(600).SingleLine()
 		})
 	})
 	if btnSave.Clicked() {
@@ -724,12 +776,15 @@ func renderGrammarHeaderSave(c *ui.Context, t *ui.Theme, at AppTheme, saved bool
 }
 
 func grammarScopeLabel(st grammarCardState) string {
-	parts := make([]string, 0, 2)
+	parts := make([]string, 0, 3)
 	if st.SentenceCount > 0 {
 		parts = append(parts, fmt.Sprintf("%d 句", st.SentenceCount))
 	}
 	if st.ClauseCount > 0 {
 		parts = append(parts, fmt.Sprintf("%d 处从句", st.ClauseCount))
+	}
+	if st.PhraseCount > 0 {
+		parts = append(parts, fmt.Sprintf("%d 处短语", st.PhraseCount))
 	}
 	return strings.Join(parts, " · ")
 }
@@ -741,41 +796,79 @@ func renderGrammarSentence(c *ui.Context, t *ui.Theme, res *SentenceAnalysisResu
 	for _, clause := range res.Clauses {
 		clauseByID[clause.ID] = clause
 	}
+	phraseByID := make(map[string]PhraseInfo, len(res.Phrases))
+	for _, phrase := range res.Phrases {
+		phraseByID[phrase.ID] = phrase
+	}
 
 	items := grammarSentenceItems(res.Segments, st.OnlyTrunk)
 	var segmentEls []ui.Element
 	var segmentData []Segment
 	var decorEls []ui.Element
 	var decorClause []string
+	var decorPhrase []string
 	var foldEls []ui.Element
 	var foldClause []string
+	var foldPhrase []string
 	hoveredIndex := -1
 	hoveredFoldIndex := -1
 	hoveredClause := ""
+	hoveredPhrase := ""
 	hoverText := ""
 
 	ui.RichText(c).FillWidth().LineHeight(1.75).Selectable().Children(func() {
 		seenClause := make(map[string]bool)
+		activePhrase := ""
+		activePhraseClause := ""
 		lastEndsSpace := true
+
+		closePhrase := func() {
+			if activePhrase == "" {
+				return
+			}
+			el := ui.Text(c, ")").FontSize(13).FontWeight(600).TextColor(at.TextMuted).Unselectable()
+			decorEls = append(decorEls, el)
+			decorClause = append(decorClause, activePhraseClause)
+			decorPhrase = append(decorPhrase, activePhrase)
+			activePhrase = ""
+			activePhraseClause = ""
+			lastEndsSpace = false
+		}
+
 		for itemIndex, item := range items {
 			first := res.Segments[item.segments[0]]
+			if !item.fold && activePhrase != "" && first.PhraseID != activePhrase {
+				closePhrase()
+			}
+			if item.fold && activePhrase != "" {
+				closePhrase()
+			}
+
+			slashed := false
 			if st.ShowSlashes && itemIndex > 0 && first.BreakBefore {
 				decorEls = append(decorEls, renderGrammarSlash(c, at))
 				decorClause = append(decorClause, "")
+				decorPhrase = append(decorPhrase, "")
 				lastEndsSpace = true
+				slashed = true
 			}
 
 			if item.fold {
 				runText := segmentsText(res.Segments, item.segments)
 				var clause *ClauseInfo
+				var phrase *PhraseInfo
 				for _, idx := range item.segments {
-					if id := res.Segments[idx].ClauseID; id != "" {
+					if id := res.Segments[idx].ClauseID; id != "" && clause == nil {
 						if info, ok := clauseByID[id]; ok {
 							clause = &info
 						} else {
 							clause = &ClauseInfo{ID: id, Type: "从句", ShortTag: "从句"}
 						}
-						break
+					}
+					if id := res.Segments[idx].PhraseID; id != "" && phrase == nil {
+						if info, ok := phraseByID[id]; ok {
+							phrase = &info
+						}
 					}
 				}
 				if strings.TrimSpace(runText) == "" {
@@ -787,13 +880,17 @@ func renderGrammarSentence(c *ui.Context, t *ui.Theme, res *SentenceAnalysisResu
 				if !lastEndsSpace && leadingSpace(runText) != "" {
 					prefix = leadingSpace(runText)
 				}
-				el := renderGrammarFoldMarker(c, t, clause, runText, prefix)
+				el := renderGrammarFoldMarker(c, t, clause, phrase, runText, prefix)
 				foldEls = append(foldEls, el)
-				foldID := ""
+				foldID, pID := "", ""
 				if clause != nil {
 					foldID = clause.ID
 				}
+				if phrase != nil {
+					pID = phrase.ID
+				}
 				foldClause = append(foldClause, foldID)
+				foldPhrase = append(foldPhrase, pID)
 				if tail := trailingSpace(runText); tail != "" {
 					ui.Text(c, tail).Unselectable()
 					lastEndsSpace = true
@@ -801,10 +898,12 @@ func renderGrammarSentence(c *ui.Context, t *ui.Theme, res *SentenceAnalysisResu
 					lastEndsSpace = false
 				}
 				if el.Hovered() {
-					hoverText = grammarFoldNote(clause, runText)
+					hoverText = grammarFoldNote(clause, phrase, runText)
 					hoveredClause = "fold"
 					if clause != nil {
 						hoveredClause = clause.ID
+					} else if phrase != nil {
+						hoveredPhrase = phrase.ID
 					}
 					hoveredFoldIndex = len(foldEls) - 1
 				}
@@ -822,25 +921,61 @@ func renderGrammarSentence(c *ui.Context, t *ui.Theme, res *SentenceAnalysisResu
 				if !seenClause[seg.ClauseID] {
 					decorEls = append(decorEls, renderGrammarClauseBadge(c, t, *clause))
 					decorClause = append(decorClause, seg.ClauseID)
+					decorPhrase = append(decorPhrase, "")
 					seenClause[seg.ClauseID] = true
 				}
 			}
 
-			el := renderGrammarSegment(c, t, at, ink, seg, clause)
+			var phrase *PhraseInfo
+			if seg.PhraseID != "" {
+				if info, ok := phraseByID[seg.PhraseID]; ok {
+					phrase = &info
+				} else {
+					phrase = &PhraseInfo{ID: seg.PhraseID, Type: "修饰短语", ShortTag: "短语"}
+				}
+			}
+
+			segText := seg.Text
+			if phrase != nil && seg.PhraseID != activePhrase {
+				lead := leadingSpace(segText)
+				segText = strings.TrimPrefix(segText, lead)
+				if lead != "" && !slashed && itemIndex > 0 {
+					ui.Text(c, lead).Unselectable()
+				}
+				openEl := ui.Text(c, "(").FontSize(13).FontWeight(600).TextColor(at.TextMuted).Unselectable()
+				decorEls = append(decorEls, openEl)
+				decorClause = append(decorClause, seg.ClauseID)
+				decorPhrase = append(decorPhrase, seg.PhraseID)
+
+				badgeEl := renderGrammarPhraseBadge(c, at, *phrase)
+				decorEls = append(decorEls, badgeEl)
+				decorClause = append(decorClause, seg.ClauseID)
+				decorPhrase = append(decorPhrase, seg.PhraseID)
+
+				activePhrase = seg.PhraseID
+				activePhraseClause = seg.ClauseID
+			}
+
+			el := renderGrammarSegmentText(c, t, at, ink, seg, segText, clause, phrase)
 			lastEndsSpace = strings.HasSuffix(seg.Text, " ")
 			if el.Hovered() {
 				hoveredIndex = len(segmentEls)
 				hoveredClause = seg.ClauseID
-				hoverText = grammarSegmentNote(seg, clause)
+				hoveredPhrase = seg.PhraseID
+				hoverText = grammarSegmentNote(seg, clause, phrase)
 			}
 			segmentEls = append(segmentEls, el)
 			segmentData = append(segmentData, seg)
 		}
+		closePhrase()
 
-		if hoveredIndex >= 0 || hoveredClause != "" || hoveredFoldIndex >= 0 {
+		if hoveredIndex >= 0 || hoveredClause != "" || hoveredPhrase != "" || hoveredFoldIndex >= 0 {
 			for i, el := range segmentEls {
 				keep := hoveredIndex == i
 				if hoveredClause != "" && segmentData[i].ClauseID == hoveredClause {
+					keep = true
+				}
+				if hoveredClause == "" && hoveredPhrase != "" && segmentData[i].PhraseID == hoveredPhrase {
 					keep = true
 				}
 				if !keep {
@@ -851,6 +986,9 @@ func renderGrammarSentence(c *ui.Context, t *ui.Theme, res *SentenceAnalysisResu
 				if hoveredClause != "" && decorClause[i] == hoveredClause {
 					continue
 				}
+				if hoveredClause == "" && hoveredPhrase != "" && decorPhrase[i] == hoveredPhrase {
+					continue
+				}
 				el.Opacity(0.35)
 			}
 			for i, el := range foldEls {
@@ -858,6 +996,9 @@ func renderGrammarSentence(c *ui.Context, t *ui.Theme, res *SentenceAnalysisResu
 					continue
 				}
 				if hoveredClause != "" && foldClause[i] == hoveredClause {
+					continue
+				}
+				if hoveredClause == "" && hoveredPhrase != "" && foldPhrase[i] == hoveredPhrase {
 					continue
 				}
 				el.Opacity(0.35)
@@ -871,8 +1012,7 @@ func renderGrammarSentence(c *ui.Context, t *ui.Theme, res *SentenceAnalysisResu
 	renderGrammarHintBar(c, t, at, hoverText)
 }
 
-func renderGrammarSegment(c *ui.Context, t *ui.Theme, at AppTheme, ink grammarInk, seg Segment, clause *ClauseInfo) ui.Element {
-	text := seg.Text
+func renderGrammarSegmentText(c *ui.Context, t *ui.Theme, at AppTheme, ink grammarInk, seg Segment, text string, clause *ClauseInfo, phrase *PhraseInfo) ui.Element {
 	el := ui.Text(c, text).FontSize(14)
 	if seg.ClauseID != "" && clause != nil {
 		el.Background(grammarClausePalette(t, grammarClauseLabel(*clause)).wash)
@@ -897,14 +1037,67 @@ func renderGrammarSegment(c *ui.Context, t *ui.Theme, at AppTheme, ink grammarIn
 		} else {
 			el.TextColor(ink.body).FontWeight(500)
 		}
+	case seg.PhraseID != "" && phrase != nil:
+		el.TextColor(at.TextSec).FontWeight(500)
+		if isNonFinitePhrase(*phrase) {
+			el.DottedUnderline().DecorationColor(at.TextMuted)
+		}
 	default:
 		el.TextColor(ink.muted).FontWeight(500)
 	}
 
-	if note := grammarSegmentTooltip(seg, clause); note != "" {
+	if note := grammarSegmentTooltip(seg, clause, phrase); note != "" {
 		el.Tooltip(note)
 	}
 	return el
+}
+
+func grammarPhraseShortTag(p PhraseInfo) string {
+	if s := strings.TrimSpace(p.ShortTag); s != "" {
+		return s
+	}
+	switch {
+	case strings.Contains(p.Type, "分词"):
+		return "分词"
+	case strings.Contains(p.Type, "不定式"):
+		return "不定式"
+	case strings.Contains(p.Type, "动名"):
+		return "动名"
+	case strings.Contains(p.Type, "同位"):
+		return "同位"
+	case strings.Contains(p.Type, "插入"):
+		return "插入"
+	default:
+		return "介短"
+	}
+}
+
+func isNonFinitePhrase(p PhraseInfo) bool {
+	tag := grammarPhraseShortTag(p)
+	return strings.Contains(tag, "分词") || strings.Contains(tag, "不定式") || strings.Contains(tag, "动名") ||
+		strings.Contains(p.Type, "分词") || strings.Contains(p.Type, "不定式")
+}
+
+func phraseDetail(p PhraseInfo) string {
+	parts := make([]string, 0, 3)
+	if p.Type != "" {
+		parts = append(parts, p.Type)
+	}
+	if p.Role != "" {
+		parts = append(parts, "作"+p.Role)
+	}
+	if p.Target != "" {
+		parts = append(parts, p.Target)
+	}
+	return strings.Join(parts, " · ")
+}
+
+func renderGrammarPhraseBadge(c *ui.Context, at AppTheme, phrase PhraseInfo) ui.Element {
+	raw := grammarPhraseShortTag(phrase)
+	label := strings.Join(strings.Split(raw, ""), "\u2060")
+	return ui.Text(c, label+"\u00A0").FontSize(10).FontWeight(600).
+		TextColor(at.TextSec).Background(at.Surface).Unselectable().
+		Tooltip(phraseDetail(phrase))
 }
 
 func renderGrammarClauseBadge(c *ui.Context, t *ui.Theme, clause ClauseInfo) ui.Element {
@@ -922,19 +1115,26 @@ func renderGrammarSlash(c *ui.Context, at AppTheme) ui.Element {
 		TextColor(at.Accent.Alpha(0.55)).Unselectable()
 }
 
-func renderGrammarFoldMarker(c *ui.Context, t *ui.Theme, clause *ClauseInfo, runText, prefix string) ui.Element {
-	label := "…"
+func renderGrammarFoldMarker(c *ui.Context, t *ui.Theme, clause *ClauseInfo, phrase *PhraseInfo, runText, prefix string) ui.Element {
+	at := appTheme(t)
 	tip := strings.TrimSpace(runText)
 	if clause != nil {
-		label = "[" + grammarClauseLabel(*clause) + " …]"
-		tip = grammarFoldNote(clause, runText)
+		label := "[" + grammarClauseLabel(*clause) + " …]"
+		tip = grammarFoldNote(clause, phrase, runText)
 		colors := grammarClausePalette(t, grammarClauseLabel(*clause))
 		return ui.Text(c, prefix+label).FontSize(12).FontWeight(600).
 			TextColor(colors.badgeText).Background(colors.badgeBg).
 			Unselectable().Tooltip(tip)
 	}
-	return ui.Text(c, prefix+label).FontSize(13).FontWeight(600).
-		TextColor(appTheme(t).TextSec).Unselectable().Tooltip(tip)
+	if phrase != nil {
+		label := "(" + grammarPhraseShortTag(*phrase) + " …)"
+		tip = grammarFoldNote(nil, phrase, runText)
+		return ui.Text(c, prefix+label).FontSize(11).FontWeight(600).
+			TextColor(at.TextSec).Background(at.Surface).
+			Unselectable().Tooltip(tip)
+	}
+	return ui.Text(c, prefix+"…").FontSize(13).FontWeight(600).
+		TextColor(at.TextSec).Unselectable().Tooltip(tip)
 }
 
 func leadingSpace(s string) string {
@@ -993,20 +1193,24 @@ func renderGrammarFallbackSentence(c *ui.Context, t *ui.Theme, origText string, 
 
 func renderGrammarControls(c *ui.Context, t *ui.Theme, ink grammarInk, st grammarCardState) {
 	at := appTheme(t)
-	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(2, 0).Children(func() {
+	ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(6).Padding(2, 0).Children(func() {
 		if grammarToggle(c, t, "只看主干", st.OnlyTrunk, "只留主句骨架，从句和修饰短语折叠成省略号").Clicked() && st.OnToggleTrunk != nil {
 			st.OnToggleTrunk()
 		}
 		if grammarToggle(c, t, "断句", st.ShowSlashes, "在自然意群边界显示断句斜线").Clicked() && st.OnToggleSlash != nil {
 			st.OnToggleSlash()
 		}
+		if grammarToggle(c, t, "结构树", st.ShowTree, "按语法层级缩进展开主干、从句与短语修饰关系").Clicked() && st.OnToggleTree != nil {
+			st.OnToggleTree()
+		}
 
 		ui.Spacer(c).Grow(1)
 
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 			grammarLegendStatic(c, t, at, ink, "主干", "backbone")
 			grammarLegendStatic(c, t, at, ink, "谓语", "predicate")
 			grammarLegendStatic(c, t, at, ink, "从句", "clause")
+			grammarLegendStatic(c, t, at, ink, "(短语)", "phrase")
 		})
 	})
 }
@@ -1024,6 +1228,8 @@ func grammarLegendStatic(c *ui.Context, t *ui.Theme, at AppTheme, ink grammarInk
 			Tooltip("主题色下划线：核心谓语动词")
 	case "clause":
 		el.TextColor(ink.clauseText).Background(ink.clauseTint).Tooltip("浅色底：从句，徽章标明类型")
+	case "phrase":
+		el.TextColor(at.TextSec).Tooltip("括号微标：介词短语 / 分词 / 不定式修饰语（非谓语带虚线底纹）")
 	}
 }
 
@@ -1156,7 +1362,7 @@ func segmentsText(segments []Segment, indexes []int) string {
 	return b.String()
 }
 
-func grammarSegmentTooltip(seg Segment, clause *ClauseInfo) string {
+func grammarSegmentTooltip(seg Segment, clause *ClauseInfo, phrase *PhraseInfo) string {
 	parts := make([]string, 0, 3)
 	if role := grammarRoleLabel(seg.Role); role != "" && seg.Role != RolePunct {
 		parts = append(parts, role)
@@ -1164,13 +1370,16 @@ func grammarSegmentTooltip(seg Segment, clause *ClauseInfo) string {
 	if clause != nil {
 		parts = append(parts, grammarClauseLabel(*clause))
 	}
+	if phrase != nil {
+		parts = append(parts, grammarPhraseShortTag(*phrase))
+	}
 	if seg.Note != "" {
 		parts = append(parts, seg.Note)
 	}
 	return strings.Join(parts, " · ")
 }
 
-func grammarSegmentNote(seg Segment, clause *ClauseInfo) string {
+func grammarSegmentNote(seg Segment, clause *ClauseInfo, phrase *PhraseInfo) string {
 	parts := make([]string, 0, 4)
 	if text := strings.TrimSpace(seg.Text); text != "" {
 		parts = append(parts, text)
@@ -1178,7 +1387,16 @@ func grammarSegmentNote(seg Segment, clause *ClauseInfo) string {
 	if clause != nil {
 		parts = append(parts, grammarClauseLabel(*clause))
 	}
+	if phrase != nil {
+		parts = append(parts, grammarPhraseShortTag(*phrase))
+	}
 	switch {
+	case phrase != nil:
+		if detail := phraseDetail(*phrase); detail != "" {
+			parts = append(parts, detail)
+		} else if seg.Note != "" {
+			parts = append(parts, seg.Note)
+		}
 	case seg.Note != "":
 		parts = append(parts, seg.Note)
 	case clause != nil:
@@ -1193,7 +1411,7 @@ func grammarSegmentNote(seg Segment, clause *ClauseInfo) string {
 	return strings.Join(parts, " · ")
 }
 
-func grammarFoldNote(clause *ClauseInfo, runText string) string {
+func grammarFoldNote(clause *ClauseInfo, phrase *PhraseInfo, runText string) string {
 	parts := make([]string, 0, 3)
 	if text := strings.TrimSpace(runText); text != "" {
 		parts = append(parts, text)
@@ -1203,6 +1421,11 @@ func grammarFoldNote(clause *ClauseInfo, runText string) string {
 			parts = append(parts, label)
 		}
 		if detail := clauseDetail(*clause); detail != "" {
+			parts = append(parts, detail)
+		}
+	} else if phrase != nil {
+		parts = append(parts, grammarPhraseShortTag(*phrase))
+		if detail := phraseDetail(*phrase); detail != "" {
 			parts = append(parts, detail)
 		}
 	}
@@ -1227,8 +1450,211 @@ func grammarDefaultHint(res *SentenceAnalysisResult, prefill bool) string {
 	if summary := strings.TrimSpace(res.BackboneSummary); summary != "" {
 		return "主干：" + summary
 	}
+	if len(res.Clauses) > 0 && len(res.Phrases) > 0 {
+		return fmt.Sprintf("共 %d 处从句、%d 处修饰短语，悬停任意片段查看作用", len(res.Clauses), len(res.Phrases))
+	}
+	if len(res.Phrases) > 0 {
+		return fmt.Sprintf("共 %d 处修饰短语，悬停任意片段查看修饰目标", len(res.Phrases))
+	}
 	if len(res.Clauses) > 0 {
 		return fmt.Sprintf("共 %d 处从句，悬停句子成分查看语法作用", len(res.Clauses))
 	}
 	return "悬停句子成分，查看它的语法作用"
+}
+
+type grammarTreeRow struct {
+	Depth     int
+	Tag       string
+	Text      string
+	Target    string
+	Kind      string // "predicate", "backbone", "clause", "phrase", "mod"
+	ClauseTag string
+}
+
+func grammarNodeDepth(clauseID, phraseID string, clauseByID map[string]ClauseInfo, phraseByID map[string]PhraseInfo) int {
+	depth := 0
+	cur := phraseID
+	if cur == "" {
+		cur = clauseID
+	}
+	seen := make(map[string]bool, 8)
+	for cur != "" && !seen[cur] && depth < 4 {
+		seen[cur] = true
+		depth++
+		if p, ok := phraseByID[cur]; ok {
+			cur = p.ParentID
+			continue
+		}
+		if c, ok := clauseByID[cur]; ok {
+			cur = c.ParentID
+			continue
+		}
+		break
+	}
+	return depth
+}
+
+func grammarTreeRows(res *SentenceAnalysisResult) []grammarTreeRow {
+	clauseByID := make(map[string]ClauseInfo, len(res.Clauses))
+	for _, cl := range res.Clauses {
+		clauseByID[cl.ID] = cl
+	}
+	phraseByID := make(map[string]PhraseInfo, len(res.Phrases))
+	for _, ph := range res.Phrases {
+		phraseByID[ph.ID] = ph
+	}
+
+	var rows []grammarTreeRow
+	for i := 0; i < len(res.Segments); {
+		seg := res.Segments[i]
+		if seg.Role == RolePunct && strings.TrimSpace(seg.Text) != "" && len(rows) > 0 {
+			rows[len(rows)-1].Text += strings.TrimSpace(seg.Text)
+			i++
+			continue
+		}
+		if strings.TrimSpace(seg.Text) == "" {
+			i++
+			continue
+		}
+
+		isPred := seg.IsBackbone && seg.Role == RolePredicate
+		j := i + 1
+		for j < len(res.Segments) {
+			next := res.Segments[j]
+			if next.Role == RolePunct {
+				break
+			}
+			nextPred := next.IsBackbone && next.Role == RolePredicate
+			if next.IsBackbone != seg.IsBackbone || nextPred != isPred || next.ClauseID != seg.ClauseID || next.PhraseID != seg.PhraseID {
+				break
+			}
+			j++
+		}
+
+		var textBuf strings.Builder
+		var notes []string
+		for k := i; k < j; k++ {
+			textBuf.WriteString(res.Segments[k].Text)
+			if n := strings.TrimSpace(res.Segments[k].Note); n != "" {
+				notes = append(notes, n)
+			}
+		}
+		chunkText := strings.TrimSpace(textBuf.String())
+		for j < len(res.Segments) && res.Segments[j].Role == RolePunct {
+			p := strings.TrimSpace(res.Segments[j].Text)
+			if p != "" {
+				chunkText += p
+			}
+			j++
+		}
+		i = j
+		if chunkText == "" {
+			continue
+		}
+
+		depth := grammarNodeDepth(seg.ClauseID, seg.PhraseID, clauseByID, phraseByID)
+		row := grammarTreeRow{
+			Depth:  depth,
+			Text:   chunkText,
+			Target: strings.Join(notes, " · "),
+		}
+
+		switch {
+		case seg.PhraseID != "":
+			row.Kind = "phrase"
+			if p, ok := phraseByID[seg.PhraseID]; ok {
+				tag := grammarPhraseShortTag(p)
+				if p.Role != "" {
+					tag += "·" + p.Role
+				}
+				row.Tag = tag
+				if p.Target != "" {
+					row.Target = p.Target
+				}
+			} else {
+				row.Tag = "短语"
+			}
+		case seg.ClauseID != "":
+			row.Kind = "clause"
+			if cl, ok := clauseByID[seg.ClauseID]; ok {
+				row.ClauseTag = grammarClauseLabel(cl)
+				row.Tag = row.ClauseTag
+				if cl.Target != "" && row.Target == "" {
+					row.Target = cl.Target
+				}
+			} else {
+				row.ClauseTag = "从句"
+				row.Tag = "从句"
+			}
+		case seg.IsBackbone && seg.Role == RolePredicate:
+			row.Kind = "predicate"
+			row.Tag = "谓语"
+			row.Depth = 0
+		case seg.IsBackbone:
+			row.Kind = "backbone"
+			row.Tag = grammarRoleLabel(seg.Role)
+			if row.Tag == "修饰语" {
+				row.Tag = "主干"
+			}
+			row.Depth = 0
+		default:
+			row.Kind = "mod"
+			row.Tag = "修饰"
+			if depth == 0 {
+				row.Depth = 1
+			}
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+func renderGrammarTreeView(c *ui.Context, t *ui.Theme, at AppTheme, ink grammarInk, res *SentenceAnalysisResult, st grammarCardState) {
+	rows := grammarTreeRows(res)
+	ui.Column(c).FillWidth().Gap(5).Children(func() {
+		for _, row := range rows {
+			indent := float32(row.Depth) * 14
+			ui.Row(c).FillWidth().AlignItems(ui.Start).Padding(0, 0, 0, indent).Gap(6).Children(func() {
+				if row.Depth > 0 {
+					barCol := at.BorderCtrl
+					if row.Kind == "clause" {
+						barCol = at.Accent.Alpha(0.45)
+					}
+					ui.Box(c).Width(2).Height(18).Radius(1).Background(barCol).Shrink(0)
+				}
+
+				tagBg, tagBorder, tagText := at.Surface, at.BorderSubtle, at.TextSec
+				switch row.Kind {
+				case "predicate":
+					tagBg, tagBorder, tagText = at.Accent, at.Accent, at.AccentText
+				case "backbone":
+					tagBg, tagBorder, tagText = at.AccentSoft, at.AccentRing, at.Accent
+				case "clause":
+					cc := grammarClausePalette(t, row.ClauseTag)
+					tagBg, tagBorder, tagText = cc.badgeBg, cc.badgeBg, cc.badgeText
+				}
+				ui.Box(c).Padding(1, 6).Radius(RadiusXS).Shrink(0).Background(tagBg).Border(1, tagBorder).Children(func() {
+					ui.Text(c, row.Tag).FontSize(10).FontWeight(600).TextColor(tagText).SingleLine()
+				})
+
+				ui.Column(c).Grow(1).Gap(2).Children(func() {
+					el := ui.Text(c, row.Text).FontSize(13).LineHeight(1.45).Wrap().Selectable()
+					switch row.Kind {
+					case "predicate":
+						el.TextColor(ink.predicate).FontWeight(700).Underline().DecorationColor(ink.predicateLine).DecorationThickness(1.1).UnderlineOffset(2)
+					case "backbone":
+						el.TextColor(ink.body).FontWeight(600)
+					case "clause", "phrase":
+						el.TextColor(ink.body).FontWeight(500)
+					default:
+						el.TextColor(at.TextSec).FontWeight(500)
+					}
+					if row.Target != "" {
+						ui.Text(c, "↳ "+row.Target).FontSize(11).TextColor(at.TextMuted).Wrap()
+					}
+				})
+			})
+		}
+	})
+	renderGrammarHintBar(c, t, at, grammarDefaultHint(res, st.Prefill))
 }

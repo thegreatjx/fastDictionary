@@ -38,3 +38,18 @@ func TestAutofitIgnoresFramesInsideTheDeadZone(t *testing.T) {
 		t.Fatal("死区内的帧不该应用修正")
 	}
 }
+
+func TestAutofitLocksOnScrollbarWrapOscillation(t *testing.T) {
+	var l autofitLoop
+
+	if d, ok := l.decide(16, true, 586, 494.6); !ok || d != 16 {
+		t.Fatalf("首次撑开应生效：delta=%v ok=%v", d, ok)
+	}
+	l.confirm(602)
+	if _, ok := l.decide(-16.8, true, 602, 478.7); ok {
+		t.Fatal("生长后紧接反向回缩应被锁定以防滚动条闪烁震荡")
+	}
+	if _, ok := l.decide(16, true, 602, 494.6); ok {
+		t.Fatal("锁定期内小幅行高震荡（<=24px）不应解锁重算")
+	}
+}

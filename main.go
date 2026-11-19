@@ -250,7 +250,10 @@ func safeView(name string, view func(*ui.Context)) func(*ui.Context) {
 func main() {
 	migration := migrateUserData()
 
-	a := &app{store: newStore()}
+	a := &app{
+		store: newStore(),
+		cache: newQueryCache(defaultQueryCachePath()),
+	}
 	cfg := a.store.Get()
 
 	if !elevatedTakeoverRequested() && !mygo.App.RequestSingleInstanceLock() {
@@ -473,9 +476,11 @@ func main() {
 						{Text: " would tell", Role: RolePredicate, ClauseID: "c1"},
 						{Text: " you", Role: RoleObject, ClauseID: "c1"},
 						{Text: " that", Role: RoleConnector, BreakBefore: true, ClauseID: "c3", Note: "引导第二层宾语从句"},
-						{Text: " human comprehension of its mechanism", Role: RoleSubject, ClauseID: "c3"},
+						{Text: " human comprehension", Role: RoleSubject, ClauseID: "c3"},
+						{Text: " of its mechanism", Role: RoleModifier, ClauseID: "c3", PhraseID: "p1", Note: "介词短语作后置定语，修饰 comprehension"},
 						{Text: " is", Role: RolePredicate, ClauseID: "c3"},
-						{Text: " completely irrelevant to them", Role: RoleObject, ClauseID: "c3", Note: "表语，说明 comprehension"},
+						{Text: " completely irrelevant", Role: RoleObject, ClauseID: "c3", Note: "表语，说明 comprehension"},
+						{Text: " to them", Role: RoleModifier, ClauseID: "c3", PhraseID: "p2", Note: "介词短语作形容词补足语，说明 irrelevant 的对象"},
 						{Text: ".", Role: RolePunct},
 					},
 					Clauses: []ClauseInfo{
@@ -483,11 +488,53 @@ func main() {
 						{ID: "c2", ParentID: "c1", Type: "条件状语从句", ShortTag: "状从", Target: "修饰 would tell"},
 						{ID: "c3", ParentID: "c1", Type: "宾语从句", ShortTag: "宾从", Target: "作 tell 的宾语"},
 					},
+					Phrases: []PhraseInfo{
+						{ID: "p1", ParentID: "c3", Type: "介词短语", ShortTag: "介短", Role: "后置定语", Target: "修饰 comprehension"},
+						{ID: "p2", ParentID: "c3", Type: "介词短语", ShortTag: "介短", Role: "补足语", Target: "修饰 irrelevant"},
+					},
 					Difficulties: []DifficultyPoint{
 						{Title: "三层嵌套", SpanText: "that, if ..., almost any ... would tell you that ...", Explanation: "宾语从句里套条件状语从句，再套一层宾语从句；先抓每层的主谓，再补修饰。"},
 						{Title: "分隔", SpanText: "that, if the cure actually worked,", Explanation: "that 与真正的主干被条件从句隔开，阅读时要先跳过插入的条件。"},
 					},
 					Translation: "我十分确信，如果这种疗法真的有效，几乎任何一位四期癌症患者都会告诉你：人类是否理解其背后的机制，对他们而言根本无关紧要。",
+				}
+			case "grammar-news", "grammar-tree":
+				a.mode = modeGrammar
+				a.source = "Japan's dispute with China over Prime Minister Sanae Takaichi's remarks on Taiwan has spread from diplomatic protests to export restrictions by Beijing on critical minerals used in everything from cars and semiconductors to military equipment."
+				a.activeActionID = "default-sentence-analysis"
+				a.showTree = demoAction == "grammar-tree"
+				a.grammarResult = &SentenceAnalysisResult{
+					BackboneSummary: "日本（与中国）的争端已（从外交抗议）蔓延到（北京对关键矿产的）出口限制。",
+					Segments: []Segment{
+						{Text: "Japan's dispute", Role: RoleSubject, IsBackbone: true, Note: "全句主语中心词"},
+						{Text: " with China", Role: RoleModifier, PhraseID: "p1", Note: "介词短语定语，说明争端双方"},
+						{Text: " over Prime Minister Sanae Takaichi's remarks", Role: RoleModifier, BreakBefore: true, PhraseID: "p2", Note: "介词短语定语，说明争端事由"},
+						{Text: " on Taiwan", Role: RoleModifier, PhraseID: "p3", Note: "嵌套定语，限定 remarks 的主题"},
+						{Text: " has spread", Role: RolePredicate, BreakBefore: true, IsBackbone: true, Note: "现在完成时核心谓语"},
+						{Text: " from diplomatic protests", Role: RoleModifier, BreakBefore: true, PhraseID: "p4", Note: "起点状语，对应后面的 to ..."},
+						{Text: " to export restrictions", Role: RoleModifier, BreakBefore: true, PhraseID: "p5", Note: "终点补足/结果状语（核心落点）"},
+						{Text: " by Beijing", Role: RoleModifier, PhraseID: "p6", Note: "施事定语，修饰 export restrictions"},
+						{Text: " on critical minerals", Role: RoleModifier, BreakBefore: true, PhraseID: "p7", Note: "介短定语，说明限制对象"},
+						{Text: " used in everything", Role: RoleModifier, BreakBefore: true, PhraseID: "p8", Note: "过去分词短语作后置定语，相当于 which are used ..."},
+						{Text: " from cars and semiconductors to military equipment", Role: RoleModifier, PhraseID: "p9", Note: "介短范围定语，举例说明 everything"},
+						{Text: ".", Role: RolePunct},
+					},
+					Phrases: []PhraseInfo{
+						{ID: "p1", Type: "介词短语", ShortTag: "介短", Role: "后置定语", Target: "修饰 dispute"},
+						{ID: "p2", Type: "介词短语", ShortTag: "介短", Role: "后置定语", Target: "修饰 dispute"},
+						{ID: "p3", ParentID: "p2", Type: "介词短语", ShortTag: "介短", Role: "后置定语", Target: "修饰 remarks"},
+						{ID: "p4", Type: "介词短语", ShortTag: "介短", Role: "起点状语", Target: "修饰 has spread"},
+						{ID: "p5", Type: "介词短语", ShortTag: "介短", Role: "终点状语", Target: "修饰 has spread"},
+						{ID: "p6", ParentID: "p5", Type: "介词短语", ShortTag: "介短", Role: "后置定语", Target: "修饰 restrictions"},
+						{ID: "p7", ParentID: "p5", Type: "介词短语", ShortTag: "介短", Role: "后置定语", Target: "修饰 restrictions"},
+						{ID: "p8", ParentID: "p7", Type: "分词短语", ShortTag: "分词", Role: "后置定语", Target: "修饰 minerals"},
+						{ID: "p9", ParentID: "p8", Type: "介词短语", ShortTag: "介短", Role: "范围定语", Target: "修饰 everything"},
+					},
+					Difficulties: []DifficultyPoint{
+						{Title: "九层零从句链式后置修饰", SpanText: "with China over ... on Taiwan ... by Beijing on ... used in ... from ... to ...", Explanation: "全句没有任何从句，却靠 8 个介词短语和 1 个过去分词短语把 37 词连成一句；先抓 Japan's dispute has spread from ... to ... 骨架，再层层挂修饰。"},
+						{Title: "过去分词省略关系代词", SpanText: "used in everything from cars and semiconductors to military equipment", Explanation: "used in ... 等价于定语从句 that are used in ...，后置修饰 critical minerals。"},
+					},
+					Translation: "日本与中国围绕高市早苗涉台言论产生的争端，已从外交抗议升级为北京对关键矿产的出口限制——这些矿产广泛应用于从汽车、半导体到军事装备的各类领域。",
 				}
 			case "writing":
 				a.mode = modeWriting

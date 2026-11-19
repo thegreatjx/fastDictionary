@@ -100,6 +100,7 @@ func TestEnsureDefaultActionsMigratesLegacyGrammarPrompts(t *testing.T) {
 	}{
 		{"V2 default", grammarSystemPromptV2, []string{"annotations", "translation"}},
 		{"V3 default", grammarSystemPromptV3, []string{"segments", "clauses", "translation"}},
+		{"V4 default", grammarSystemPromptV4, []string{"segments", "clauses", "difficulties", "translation"}},
 		{"legacy annotations", legacyAnnotations, []string{"annotations", "translation"}},
 	}
 	for _, tc := range cases {
@@ -113,14 +114,14 @@ func TestEnsureDefaultActionsMigratesLegacyGrammarPrompts(t *testing.T) {
 				t.Fatal("legacy grammar prompt was not migrated")
 			}
 			action = grammarAction(&cfg)
-			if action.SystemPrompt != grammarSystemPromptV4 {
-				t.Fatalf("prompt was not upgraded to V4 (len=%d)", len(action.SystemPrompt))
+			if action.SystemPrompt != grammarSystemPromptV5 {
+				t.Fatalf("prompt was not upgraded to V5 (len=%d)", len(action.SystemPrompt))
 			}
-			if !strings.Contains(action.SystemPrompt, `"segments"`) || strings.Contains(action.SystemPrompt, `"annotations"`) {
-				t.Fatalf("migrated prompt does not describe the segments protocol")
+			if !strings.Contains(action.SystemPrompt, `"segments"`) || !strings.Contains(action.SystemPrompt, `"phrases"`) || strings.Contains(action.SystemPrompt, `"annotations"`) {
+				t.Fatalf("migrated prompt does not describe the V5 protocol")
 			}
-			if !sameStrings(action.OutputSchema, []string{"segments", "clauses", "difficulties", "translation"}) {
-				t.Fatalf("output schema = %v, want the V4 fields", action.OutputSchema)
+			if !sameStrings(action.OutputSchema, []string{"segments", "clauses", "phrases", "difficulties", "translation"}) {
+				t.Fatalf("output schema = %v, want the V5 fields", action.OutputSchema)
 			}
 			if ensureDefaultActions(&cfg) {
 				t.Fatal("migration is not idempotent; the config would be rewritten on every start")

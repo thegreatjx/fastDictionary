@@ -39,6 +39,7 @@ type homeState struct {
 	grammarSaved         bool
 	onlyTrunk            bool
 	showSlashes          bool
+	showTree             bool
 
 	writingResult *ImproveWritingResult
 	writingSaved  bool
@@ -77,7 +78,7 @@ func (a *app) pageHome(c *ui.Context, t *ui.Theme, cfg Config) {
 					src := a.home.source
 					a.mu.Unlock()
 					if src != "" {
-						a.homeTranslate(src)
+						a.homeTranslate(src, false)
 					}
 				})
 			}).Height(HeightControl).FontSize(FontHelper).Shrink(0)
@@ -221,7 +222,7 @@ func (a *app) renderHomeReadyState(c *ui.Context, t *ui.Theme, at AppTheme, cfg 
 				ui.Box(c).Width(8).Height(8).Radius(4).Background(at.Accent)
 				ui.Column(c).Grow(1).Gap(2).Children(func() {
 					ui.Text(c, fmt.Sprintf("今日有 %d 条待复习", due)).Font(fontUI).FontSize(FontSection).FontWeight(600).TextColor(at.Text)
-					ui.Text(c, "巩固生词与长难句笔记，保持记忆曲线节奏").Font(fontUI).FontSize(FontHelper).TextColor(at.TextSec)
+					ui.Text(c, "巩固收藏的生词与短语，保持记忆曲线节奏").Font(fontUI).FontSize(FontHelper).TextColor(at.TextSec)
 				})
 				if PrimaryButton(c, t, "开始复习").Height(HeightCompact).Clicked() {
 					a.page = "vocabulary"
@@ -476,16 +477,29 @@ func (a *app) renderHomeGrammarTab(c *ui.Context, t *ui.Theme, at AppTheme, cfg 
 		st := grammarCardState{
 			OnlyTrunk:   h.onlyTrunk,
 			ShowSlashes: h.showSlashes,
+			ShowTree:    h.showTree,
 			Prefill:     h.grammarResultPrefill,
 			OnToggleTrunk: func() {
 				a.mu.Lock()
 				a.home.onlyTrunk = !a.home.onlyTrunk
+				if a.home.onlyTrunk {
+					a.home.showTree = false
+				}
 				a.mu.Unlock()
 				a.settingsRefresh()
 			},
 			OnToggleSlash: func() {
 				a.mu.Lock()
 				a.home.showSlashes = !a.home.showSlashes
+				a.mu.Unlock()
+				a.settingsRefresh()
+			},
+			OnToggleTree: func() {
+				a.mu.Lock()
+				a.home.showTree = !a.home.showTree
+				if a.home.showTree {
+					a.home.onlyTrunk = false
+				}
 				a.mu.Unlock()
 				a.settingsRefresh()
 			},
@@ -648,23 +662,41 @@ func (a *app) homeRunTab(tab, text string, fresh bool) {
 	case "writing":
 		a.homeRunWriting(text, fresh)
 	default:
-		a.homeTranslate(text)
+		a.homeTranslate(text, fresh)
 	}
 }
 
-func (a *app) homeTranslate(text string) {
+func (a *app) homeTranslate(text string, fresh bool) {
 	cfg := a.store.Get()
 	mode := normalizeLayoutMode(cfg.LayoutMode)
+	from, to := translateLangs(cfg, text)
+	transKey := translationCacheKey(cfg.EngineMode, from, to, mode, false, text)
+	qc := a.ensureCache()
+
 	a.mu.Lock()
 	a.home.gen++
 	gen := a.home.gen
 	a.home.cancelRefineLocked()
-	a.home.busy = true
 	a.home.errText = ""
 	a.home.target = ""
 	a.home.dict = nil
 	a.home.gdict = nil
 	a.home.transSaved = false
+	if !fresh {
+		if cached, hit := qc.getTranslation(transKey); hit && (!isWord(text) || !cfg.DictEnabled || cached.Dict != nil || cached.GDict != nil) {
+			a.home.busy = false
+			a.home.elapsed = 0
+			a.home.target = cached.Target
+			a.home.engine = cached.Engine
+			a.home.detected = cached.Detected
+			a.home.dict = cached.Dict
+			a.home.gdict = cached.GDict
+			a.mu.Unlock()
+			a.settingsRefresh()
+			return
+		}
+	}
+	a.home.busy = true
 	a.mu.Unlock()
 	a.settingsRefresh()
 
@@ -674,7 +706,6 @@ func (a *app) homeTranslate(text string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
 
-		from, to := translateLangs(cfg, text)
 		r := TranslateRace(ctx, text, from, to, cfg.EngineMode)
 		if r.Err == nil && r.Untranslated && cfg.EngineMode != "race" {
 			if alt, ok := pickEchoAnswer(r, TranslateRace(ctx, text, from, to, "race")); ok {
@@ -707,6 +738,8 @@ func (a *app) homeTranslate(text string) {
 		}
 		a.home.busy = false
 		a.home.elapsed = time.Since(start)
+		var toCache cachedTranslation
+		shouldCache := false
 		if r.Err != nil {
 			a.home.errText = r.Err.Error()
 		} else {
@@ -715,8 +748,21 @@ func (a *app) homeTranslate(text string) {
 			a.home.detected = r.Detected
 			a.home.dict = yd
 			a.home.gdict = gd
+			if a.home.target != "" {
+				toCache = cachedTranslation{
+					Target:   a.home.target,
+					Engine:   a.home.engine,
+					Detected: a.home.detected,
+					Dict:     yd,
+					GDict:    gd,
+				}
+				shouldCache = true
+			}
 		}
 		a.mu.Unlock()
+		if shouldCache {
+			qc.putTranslation(transKey, toCache)
+		}
 		a.settingsRefresh()
 	}()
 }
@@ -743,6 +789,20 @@ func (a *app) homeRefineWithAI() {
 	}
 	a.home.aiRefineGen++
 	gen := a.home.aiRefineGen
+	refineKey := aiResultCacheKey("ai-refine", cfg.AIModel, refineTo, source,
+		normalizeAIProvider(cfg.AIProvider), cfg.AIURL, cfg.AIReasoningEffortFor(cfg.AIModel))
+	if a.home.engine != "AI 精翻" {
+		if cached := a.cachedAIResult(refineKey); cached != "" {
+			a.home.target = formatTranslationForLayout(cached, mode, false)
+			a.home.engine = "AI 精翻"
+			a.home.aiRefining = false
+			a.home.aiRefineErr = ""
+			a.home.elapsed = 0
+			a.mu.Unlock()
+			a.settingsRefresh()
+			return
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	a.home.aiRefineCancel = cancel
 	a.home.aiRefining = true
@@ -770,9 +830,11 @@ func (a *app) homeRefineWithAI() {
 			if refineEchoedInput(source, txt) {
 				a.home.aiRefineErr = "模型把原文原样返回了，换个目标语言再试"
 			} else {
-				a.home.target = formatTranslationForLayout(txt, mode, false)
+				formatted := formatTranslationForLayout(txt, mode, false)
+				a.home.target = formatted
 				a.home.engine = "AI 精翻"
 				a.home.elapsed = time.Since(started)
+				a.storeAIResult(refineKey, formatted)
 			}
 		}
 		a.mu.Unlock()
@@ -794,6 +856,7 @@ func (a *app) homeRunGrammar(text string, fresh bool) {
 		model = cfg.AIModel
 	}
 	analysis := grammarAnalysisText(text)
+	nb := GetNotebookStore()
 	a.mu.Lock()
 	if a.home.aiCancel != nil {
 		a.home.aiCancel()
@@ -810,7 +873,7 @@ func (a *app) homeRunGrammar(text string, fresh bool) {
 		if parsed.Result != nil {
 			a.home.grammarResult = parsed.Result
 			a.home.grammarResultPrefill = false
-			a.home.grammarSaved = false
+			a.home.grammarSaved = nb.Contains("grammar", analysis)
 			a.home.aiBusy = false
 			a.home.aiText = ""
 			a.home.errText = ""
@@ -825,7 +888,7 @@ func (a *app) homeRunGrammar(text string, fresh bool) {
 	a.home.aiText = ""
 	a.home.errText = ""
 	a.home.grammarResult = nil
-	a.home.grammarSaved = false
+	a.home.grammarSaved = nb.Contains("grammar", analysis)
 	a.mu.Unlock()
 	a.settingsRefresh()
 
@@ -873,6 +936,7 @@ func (a *app) homeRunWriting(text string, fresh bool) {
 	if model == "" {
 		model = cfg.AIModel
 	}
+	nb := GetNotebookStore()
 	a.mu.Lock()
 	if a.home.aiCancel != nil {
 		a.home.aiCancel()
@@ -887,7 +951,7 @@ func (a *app) homeRunWriting(text string, fresh bool) {
 	if raw != "" {
 		if res := ParseImproveWritingResult(raw); res != nil {
 			a.home.writingResult = res
-			a.home.writingSaved = false
+			a.home.writingSaved = nb.Contains("writing", text)
 			a.home.aiBusy = false
 			a.home.aiText = ""
 			a.home.errText = ""
@@ -902,7 +966,7 @@ func (a *app) homeRunWriting(text string, fresh bool) {
 	a.home.aiText = ""
 	a.home.errText = ""
 	a.home.writingResult = nil
-	a.home.writingSaved = false
+	a.home.writingSaved = nb.Contains("writing", text)
 	a.mu.Unlock()
 	a.settingsRefresh()
 
@@ -1012,10 +1076,15 @@ func (a *app) homeSaveGrammar() {
 	}
 	a.mu.Unlock()
 
-	GetVocabularyStore().Add(VocabularyEntry{
-		Term: truncateFor(text, 24), Context: text, ContextTranslation: res.Translation, Source: "grammar", CreatedAt: time.Now(),
+	notebookStore := GetNotebookStore()
+	notebookStore.Add(NotebookEntry{
+		Kind:        "grammar",
+		Source:      text,
+		Translation: res.Translation,
+		Grammar:     res,
+		CreatedAt:   time.Now(),
 	})
-	a.homeSaved(&a.home.grammarSaved, "长难句已保存到生词本 ✓", GetVocabularyStore().LastSaveError())
+	a.homeSaved(&a.home.grammarSaved, "长难句已存入句法笔记 ✓", notebookStore.LastSaveError())
 }
 
 func (a *app) homeSaveWriting() {
@@ -1028,8 +1097,13 @@ func (a *app) homeSaveWriting() {
 	}
 	a.mu.Unlock()
 
-	GetVocabularyStore().Add(VocabularyEntry{
-		Term: truncateFor(src, 24), Definition: res.Improved, Context: src, ContextTranslation: res.Summary, Source: "writing", CreatedAt: time.Now(),
+	notebookStore := GetNotebookStore()
+	notebookStore.Add(NotebookEntry{
+		Kind:        "writing",
+		Source:      src,
+		Translation: res.Improved,
+		Writing:     res,
+		CreatedAt:   time.Now(),
 	})
-	a.homeSaved(&a.home.writingSaved, "写作改进已保存到生词本 ✓", GetVocabularyStore().LastSaveError())
+	a.homeSaved(&a.home.writingSaved, "写作润色已存入写作笔记 ✓", notebookStore.LastSaveError())
 }

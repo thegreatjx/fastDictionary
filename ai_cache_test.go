@@ -27,21 +27,21 @@ func TestAnalysisCacheKeepsOneAnswerPerText(t *testing.T) {
 	if second == first {
 		t.Fatal("the newest answer did not replace the older one")
 	}
-	if len(a.aiResultOrder) != 1 {
-		t.Fatalf("one text produced %d cache slots, want 1", len(a.aiResultOrder))
+	if got := a.aiCacheCount(); got != 1 {
+		t.Fatalf("one text produced %d cache slots, want 1", got)
 	}
 }
 
 func TestAnalysisCacheEvictsOldest(t *testing.T) {
 	a := newTestApp()
 	a.mu.Lock()
-	for i := 0; i < aiResultCacheLimit+3; i++ {
+	for i := 0; i < queryCacheLimit+3; i++ {
 		a.storeAIResult(aiResultCacheKey("act", "m", "zh-Hans", string(rune('a'+i))), "{}")
 	}
 	a.mu.Unlock()
 
-	if len(a.aiResultOrder) != aiResultCacheLimit {
-		t.Fatalf("cache holds %d entries, want %d", len(a.aiResultOrder), aiResultCacheLimit)
+	if got := a.aiCacheCount(); got != queryCacheLimit {
+		t.Fatalf("cache holds %d entries, want %d", got, queryCacheLimit)
 	}
 	a.mu.Lock()
 	oldest := a.cachedAIResult(aiResultCacheKey("act", "m", "zh-Hans", "a"))

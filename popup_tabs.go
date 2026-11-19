@@ -32,6 +32,7 @@ type tabViewState struct {
 	savedDictTerm        string
 	onlyTrunk            bool
 	showSlashes          bool
+	showTree             bool
 	sourceExpanded       bool
 	notesExpanded        bool
 	isScreenshotMode     bool
@@ -80,6 +81,7 @@ func (a *app) saveTabLocked() {
 		savedDictTerm:        a.savedDictTerm,
 		onlyTrunk:            a.onlyTrunk,
 		showSlashes:          a.showSlashes,
+		showTree:             a.showTree,
 		sourceExpanded:       a.sourceExpanded,
 		notesExpanded:        a.notesExpanded,
 		isScreenshotMode:     a.isScreenshotMode,
@@ -120,6 +122,7 @@ func (a *app) restoreTabLocked(st *tabViewState) {
 	a.savedDictTerm = st.savedDictTerm
 	a.onlyTrunk = st.onlyTrunk
 	a.showSlashes = st.showSlashes
+	a.showTree = st.showTree
 	a.sourceExpanded = st.sourceExpanded
 	a.notesExpanded = st.notesExpanded
 	a.isScreenshotMode = st.isScreenshotMode

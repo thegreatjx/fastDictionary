@@ -48,6 +48,7 @@ func filledAppForTabSync(s *store) *app {
 		savedDictTerm:        "term",
 		onlyTrunk:            true,
 		showSlashes:          true,
+		showTree:             true,
 		sourceExpanded:       true,
 		notesExpanded:        true,
 		isScreenshotMode:     true,

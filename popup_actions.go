@@ -73,24 +73,54 @@ func (a *app) translateTextWithReflow(text string, keepParagraphs bool) {
 	cfg := a.store.Get()
 	mode := normalizeLayoutMode(cfg.LayoutMode)
 	win := a.win
+	from, to := translateLangs(cfg, text)
+	transKey := translationCacheKey(cfg.EngineMode, from, to, mode, keepParagraphs, text)
+	qc := a.ensureCache()
+	nb := GetNotebookStore()
 
 	a.mu.Lock()
 	a.stopAIPassLocked()
 	a.stopNotesLocked()
+	freshTrans := a.skipTransCache
+	a.skipTransCache = false
 	a.source, a.target, a.errText = text, "", ""
 	a.echoNote = ""
 	a.sourceExpanded = false
 	a.notesExpanded = false
 	a.notesSaved = false
-	a.grammarSaved = false
-	a.writingSaved = false
+	a.grammarSaved = text != "" && nb.Contains("grammar", grammarAnalysisText(text))
+	a.writingSaved = text != "" && nb.Contains("writing", text)
 	a.engine, a.detected = "", ""
 	a.dict, a.gdict, a.aiText, a.aiBusy = nil, nil, "", false
 	a.copiedMsg = ""
-	a.busy = true
 	a.translateGen++
 	gen := a.translateGen
 	notesGen := a.notesGen
+	if !freshTrans {
+		if cached, hit := qc.getTranslation(transKey); hit && (!isWord(text) || !cfg.DictEnabled || cached.Dict != nil || cached.GDict != nil) {
+			a.busy = false
+			a.elapsed = 0
+			a.target = cached.Target
+			a.engine = cached.Engine
+			a.detected = cached.Detected
+			a.echoNote = cached.EchoNote
+			a.dict = cached.Dict
+			a.gdict = cached.GDict
+			a.mu.Unlock()
+			if win != nil {
+				win.Update(func() {})
+			}
+			a.fitHeight()
+			if isWord(text) && cfg.AutoPronounce != "off" {
+				a.play(text, cfg.AutoPronounce == "us")
+			}
+			if cfg.ShowNotes && shouldExtractNotes(text) {
+				a.extractNotesForGen(notesGen, text)
+			}
+			return
+		}
+	}
+	a.busy = true
 	a.mu.Unlock()
 	if win != nil {
 		win.Update(func() {})
@@ -102,7 +132,6 @@ func (a *app) translateTextWithReflow(text string, keepParagraphs bool) {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
 
-		from, to := translateLangs(cfg, text)
 		r := TranslateRace(ctx, text, from, to, cfg.EngineMode)
 
 		word := isWord(text)
@@ -158,7 +187,22 @@ func (a *app) translateTextWithReflow(text string, keepParagraphs bool) {
 			a.engine, a.detected = r.Engine, r.Detected
 			a.dict, a.gdict = yd, gd
 		}
+		var toCache cachedTranslation
+		shouldCache := r.Err == nil && a.target != ""
+		if shouldCache {
+			toCache = cachedTranslation{
+				Target:   a.target,
+				Engine:   a.engine,
+				Detected: a.detected,
+				EchoNote: a.echoNote,
+				Dict:     a.dict,
+				GDict:    a.gdict,
+			}
+		}
 		a.mu.Unlock()
+		if shouldCache {
+			qc.putTranslation(transKey, toCache)
+		}
 		log.Printf("fastDictionary: %s -> %s engine=%s dict=%v in %v (err=%v)",
 			a.logText(text, 40), a.logText(r.Text, 40), r.Engine, yd != nil, elapsed, r.Err)
 		if win != nil {
@@ -204,6 +248,30 @@ func shouldExtractNotes(text string) bool {
 	return latinWords >= 4 || cjk >= 8
 }
 
+func filterDismissedNotes(raw []NoteItem, dismissed []string) []NoteItem {
+	kept := make([]NoteItem, 0, len(raw))
+	for _, item := range raw {
+		if strings.TrimSpace(item.Word) == "" {
+			continue
+		}
+		skip := false
+		for _, word := range dismissed {
+			if strings.EqualFold(strings.TrimSpace(word), strings.TrimSpace(item.Word)) {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			item.Checked = true
+			kept = append(kept, item)
+		}
+		if len(kept) >= 5 {
+			break
+		}
+	}
+	return kept
+}
+
 func (a *app) extractNotesForGen(gen requestToken, text string) {
 	cfg := a.store.Get()
 	if cfg.AISetupProblem() != "" || !cfg.ShowNotes || !shouldExtractNotes(text) {
@@ -215,10 +283,28 @@ func (a *app) extractNotesForGen(gen requestToken, text string) {
 		return
 	}
 
+	notesKey := notesCacheKey(cfg.AIModel, text)
 	a.mu.Lock()
 	if gen != a.notesGen {
 		a.mu.Unlock()
 		return
+	}
+	freshNotes := a.skipNotesCache
+	a.skipNotesCache = false
+	if !freshNotes {
+		if cachedRaw, ok := a.ensureCacheLocked().getNotes(notesKey); ok {
+			filtered := filterDismissedNotes(cachedRaw, cfg.DismissedNoteWords)
+			a.notes = filtered
+			a.notesBusy = false
+			a.notesCancel = nil
+			win := a.win
+			a.mu.Unlock()
+			if win != nil {
+				win.Update(func() {})
+			}
+			a.fitHeight()
+			return
+		}
 	}
 	a.stopNotesLocked()
 	gen = a.notesGen
@@ -258,28 +344,16 @@ func (a *app) extractNotesForGen(gen requestToken, text string) {
 			}
 		}
 
-		dismissed := cfg.DismissedNoteWords
-		kept := items[:0]
+		validItems := make([]NoteItem, 0, len(items))
 		for _, item := range items {
-			if strings.TrimSpace(item.Word) == "" {
-				continue
-			}
-			skip := false
-			for _, word := range dismissed {
-				if strings.EqualFold(strings.TrimSpace(word), strings.TrimSpace(item.Word)) {
-					skip = true
-					break
-				}
-			}
-			if !skip {
-				item.Checked = true
-				kept = append(kept, item)
+			if strings.TrimSpace(item.Word) != "" {
+				validItems = append(validItems, item)
 			}
 		}
-		items = kept
-		if len(items) > 5 {
-			items = items[:5]
+		if len(validItems) > 0 {
+			a.ensureCache().putNotes(notesKey, validItems)
 		}
+		items = filterDismissedNotes(validItems, cfg.DismissedNoteWords)
 
 		a.mu.Lock()
 		if gen != a.notesGen {
@@ -374,7 +448,7 @@ func (a *app) saveDictToVocab(res *DictionaryResult) {
 	}
 }
 
-func (a *app) saveGrammarToVocab(res *SentenceAnalysisResult) {
+func (a *app) saveGrammarToNotebook(res *SentenceAnalysisResult) {
 	if res == nil {
 		return
 	}
@@ -385,18 +459,18 @@ func (a *app) saveGrammarToVocab(res *SentenceAnalysisResult) {
 	if text == "" {
 		text = src
 	}
-	entry := VocabularyEntry{
-		Term:               truncateFor(text, 24),
-		Context:            text,
-		ContextTranslation: res.Translation,
-		Source:             "grammar",
-		CreatedAt:          time.Now(),
+	entry := NotebookEntry{
+		Kind:        "grammar",
+		Source:      text,
+		Translation: res.Translation,
+		Grammar:     res,
+		CreatedAt:   time.Now(),
 	}
-	vocabStore := GetVocabularyStore()
-	vocabStore.Add(entry)
+	notebookStore := GetNotebookStore()
+	notebookStore.Add(entry)
 	a.mu.Lock()
 	a.grammarSaved = true
-	if err := vocabStore.LastSaveError(); err != nil {
+	if err := notebookStore.LastSaveError(); err != nil {
 		a.grammarSaved = false
 		a.saveErr = "保存失败: " + err.Error()
 	} else {
@@ -408,24 +482,25 @@ func (a *app) saveGrammarToVocab(res *SentenceAnalysisResult) {
 	}
 }
 
-func (a *app) saveWritingToVocab(res *ImproveWritingResult) {
+func (a *app) saveWritingToNotebook(res *ImproveWritingResult) {
 	if res == nil {
 		return
 	}
-	term := truncateFor(a.source, 24)
-	entry := VocabularyEntry{
-		Term:               term,
-		Definition:         res.Improved,
-		Context:            a.source,
-		ContextTranslation: res.Summary,
-		Source:             "writing",
-		CreatedAt:          time.Now(),
+	a.mu.Lock()
+	src := a.source
+	a.mu.Unlock()
+	entry := NotebookEntry{
+		Kind:        "writing",
+		Source:      src,
+		Translation: res.Improved,
+		Writing:     res,
+		CreatedAt:   time.Now(),
 	}
-	vocabStore := GetVocabularyStore()
-	vocabStore.Add(entry)
+	notebookStore := GetNotebookStore()
+	notebookStore.Add(entry)
 	a.mu.Lock()
 	a.writingSaved = true
-	if err := vocabStore.LastSaveError(); err != nil {
+	if err := notebookStore.LastSaveError(); err != nil {
 		a.writingSaved = false
 		a.saveErr = "保存失败: " + err.Error()
 	} else {
@@ -472,10 +547,8 @@ func (a *app) prefillActionTranslation(gen requestToken, text, targetLang string
 	}()
 }
 
-const aiResultCacheLimit = 12
-
 func aiResultCacheKey(actionID, model, targetLang, text string, variant ...string) string {
-	key := actionID + "\x00" + model + "\x00" + targetLang + "\x00" + text
+	key := actionID + "\x00" + model + "\x00" + targetLang + "\x00" + normalizeCacheText(text)
 	for _, v := range variant {
 		if v != "" {
 			key += "\x00" + v
@@ -544,42 +617,28 @@ func actionCacheVariant(act *CustomActionConfig, cfg Config) string {
 }
 
 func (a *app) cachedAIResult(key string) string {
-	if a.aiResultCache == nil {
-		return ""
-	}
-	return a.aiResultCache[key]
+	return a.ensureCacheLocked().getAI(key)
 }
 
 func (a *app) storeAIResult(key, raw string) {
-	if strings.TrimSpace(raw) == "" {
-		return
-	}
-	if a.aiResultCache == nil {
-		a.aiResultCache = make(map[string]string, aiResultCacheLimit)
-	}
-	if _, seen := a.aiResultCache[key]; !seen {
-		a.aiResultOrder = append(a.aiResultOrder, key)
-	}
-	a.aiResultCache[key] = raw
-	for len(a.aiResultOrder) > aiResultCacheLimit {
-		oldest := a.aiResultOrder[0]
-		a.aiResultOrder = a.aiResultOrder[1:]
-		delete(a.aiResultCache, oldest)
-	}
+	a.ensureCacheLocked().putAI(key, raw)
 }
 
 func (a *app) aiCacheCount() int {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	return len(a.aiResultCache)
+	qc := a.ensureCacheLocked()
+	a.mu.Unlock()
+	return qc.aiCount()
 }
 
 func (a *app) clearAICache() {
 	a.mu.Lock()
-	a.aiResultCache = nil
-	a.aiResultOrder = nil
+	qc := a.ensureCacheLocked()
 	a.skipAIResultCache = false
+	a.skipTransCache = false
+	a.skipNotesCache = false
 	a.mu.Unlock()
+	qc.clear()
 }
 
 func (a *app) applyParsedAction(actionID, raw, source string) bool {
@@ -643,6 +702,7 @@ func (a *app) runAction(actionID string, text string) {
 		model = cfg.AIModel
 	}
 	cacheKey := aiResultCacheKey(actionID, model, cfg.TargetLang, targetText, actionCacheVariant(act, cfg))
+	nb := GetNotebookStore()
 
 	a.mu.Lock()
 	a.stopAIPassLocked()
@@ -666,6 +726,11 @@ func (a *app) runAction(actionID string, text string) {
 		a.activeActionID = actionID
 		a.grammarResultPrefill = false
 		a.applyParsedAction(actionID, raw, targetText)
+		if actionID == "default-sentence-analysis" {
+			a.grammarSaved = nb.Contains("grammar", targetText)
+		} else if actionID == "default-improve-writing" {
+			a.writingSaved = nb.Contains("writing", targetText)
+		}
 		a.mu.Unlock()
 		if a.win != nil {
 			a.win.Update(func() {})
@@ -695,9 +760,10 @@ func (a *app) runAction(actionID string, text string) {
 		a.dictResult = nil
 	case "default-sentence-analysis":
 		a.grammarResult = nil
-		a.grammarSaved = false
+		a.grammarSaved = nb.Contains("grammar", targetText)
 	case "default-improve-writing":
 		a.writingResult = nil
+		a.writingSaved = nb.Contains("writing", targetText)
 	}
 	a.mu.Unlock()
 	if win != nil {
@@ -792,6 +858,24 @@ func (a *app) refineWithAI() {
 		a.aiRefineCancel = nil
 	}
 	gen := a.aiRefineGen
+	refineKey := aiResultCacheKey("ai-refine", cfg.AIModel, refineTo, source,
+		normalizeAIProvider(cfg.AIProvider), cfg.AIURL, cfg.AIReasoningEffortFor(cfg.AIModel))
+	if strings.TrimSpace(source) != "" && a.engine != "AI 精翻" {
+		if cached := a.cachedAIResult(refineKey); cached != "" {
+			a.target = cached
+			a.engine = "AI 精翻"
+			a.aiRefining = false
+			a.aiRefineErr = ""
+			a.elapsed = 0
+			win := a.win
+			a.mu.Unlock()
+			if win != nil {
+				win.Update(func() {})
+				a.fitHeight()
+			}
+			return
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	a.aiRefineCancel = cancel
 	a.aiRefining = true
@@ -844,10 +928,12 @@ func (a *app) refineWithAI() {
 				}
 				return
 			}
-			a.target = flattenTranslation(text)
+			refined := flattenTranslation(text)
+			a.target = refined
 			a.engine = "AI 精翻"
 			a.aiRefineErr = ""
 			a.elapsed = time.Since(started)
+			a.storeAIResult(refineKey, refined)
 		}
 		a.mu.Unlock()
 		if win != nil {
@@ -1019,11 +1105,11 @@ func (a *app) handleQuickSave(s snapshot) {
 	switch s.mode {
 	case modeGrammar:
 		if cardReadyForMode(s) && !s.grammarSaved {
-			a.saveGrammarToVocab(s.grammarResult)
+			a.saveGrammarToNotebook(s.grammarResult)
 		}
 	case modeWriting:
 		if cardReadyForMode(s) && !s.writingSaved {
-			a.saveWritingToVocab(s.writingResult)
+			a.saveWritingToNotebook(s.writingResult)
 		}
 	case modeDictionary:
 		if cardReadyForMode(s) && (s.savedDictTerm == "" || !strings.EqualFold(s.savedDictTerm, s.dictResult.Term)) {

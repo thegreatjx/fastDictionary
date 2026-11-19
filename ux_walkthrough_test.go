@@ -26,19 +26,19 @@ func TestWritingCardSaveStateFeedback(t *testing.T) {
 	}
 
 	ttBefore := ui.NewTester(a.popupView, 480, 500)
-	if !ttBefore.HasText("存入生词本") || ttBefore.HasText("已存入生词本") {
-		t.Errorf("expected unsaved state to show '存入生词本', got: %v", ttBefore.Texts())
+	if !ttBefore.HasText("存入写作笔记") || ttBefore.HasText("已存入写作笔记") {
+		t.Errorf("expected unsaved state to show '存入写作笔记', got: %v", ttBefore.Texts())
 	}
 
-	a.saveWritingToVocab(a.writingResult)
+	a.saveWritingToNotebook(a.writingResult)
 
 	if !a.writingSaved {
-		t.Fatal("saveWritingToVocab failed to set writingSaved")
+		t.Fatal("saveWritingToNotebook failed to set writingSaved")
 	}
 
 	ttAfter := ui.NewTester(a.popupView, 480, 500)
-	if !ttAfter.HasText("已存入生词本") {
-		t.Errorf("expected saved state to show '已存入生词本', got: %v", ttAfter.Texts())
+	if !ttAfter.HasText("已存入写作笔记") {
+		t.Errorf("expected saved state to show '已存入写作笔记', got: %v", ttAfter.Texts())
 	}
 
 	a.switchMode(modeTranslate)
@@ -95,18 +95,18 @@ func TestGrammarCardSaveStateFeedback(t *testing.T) {
 	}
 
 	ttBefore := ui.NewTester(a.popupView, 480, 500)
-	if !ttBefore.HasText("存入生词本") || ttBefore.HasText("已存入生词本") {
-		t.Errorf("expected unsaved grammar state to show '存入生词本', got: %v", ttBefore.Texts())
+	if !ttBefore.HasText("存入句法笔记") || ttBefore.HasText("已存入句法笔记") {
+		t.Errorf("expected unsaved grammar state to show '存入句法笔记', got: %v", ttBefore.Texts())
 	}
 
-	a.saveGrammarToVocab(a.grammarResult)
+	a.saveGrammarToNotebook(a.grammarResult)
 	if !a.grammarSaved {
-		t.Fatal("saveGrammarToVocab failed to set grammarSaved")
+		t.Fatal("saveGrammarToNotebook failed to set grammarSaved")
 	}
 
 	ttAfter := ui.NewTester(a.popupView, 480, 500)
-	if !ttAfter.HasText("已存入生词本") {
-		t.Errorf("expected saved grammar state to show '已存入生词本', got: %v", ttAfter.Texts())
+	if !ttAfter.HasText("已存入句法笔记") {
+		t.Errorf("expected saved grammar state to show '已存入句法笔记', got: %v", ttAfter.Texts())
 	}
 
 	a.switchMode(modeTranslate)

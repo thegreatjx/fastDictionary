@@ -29,14 +29,14 @@ param(
     [switch]$Overwrite,
     [switch]$Startup,
     [switch]$NoShortcuts,
-    [string]$Version = "1.5.0",
+    [string]$Version = "1.6.0",
     [switch]$Sign
 )
 
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
-$ldflags = '-H=windowsgui'
+$ldflags = '-s -w -H=windowsgui'
 $out = 'fastDictionary.exe'
 
 if ($Dev) {

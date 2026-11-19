@@ -249,16 +249,18 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 	}
 	at := appTheme(t)
 	vocabStore := GetVocabularyStore()
-	PageTitle(c, t, "生词本", "集中管理收藏的生词、长难句与写作批注，支持间隔复习与导出。")
+	PageTitle(c, t, "生词本", "管理收藏的生词与例句，支持间隔复习与导出；长难句与写作请至「句法笔记」。")
 
 	ui.Box(c).FillWidth().Padding(Space3, Space3).Radius(RadiusTrack).Background(at.Surface).Border(1, at.BorderSubtle).Children(func() {
 		ui.Column(c).FillWidth().Gap(Space2).Children(func() {
-			cAll, cWords, cSentences, cWriting := vocabStore.CategoryCounts()
+			cAll, cWords, cSentences, _ := vocabStore.CategoryCounts()
+			if a.vocabCategoryIdx < 0 || a.vocabCategoryIdx > 2 {
+				a.vocabCategoryIdx = 0
+			}
 			catNames := []string{
 				fmt.Sprintf("全部 (%d)", cAll),
 				fmt.Sprintf("生词 (%d)", cWords),
-				fmt.Sprintf("长难句 (%d)", cSentences),
-				fmt.Sprintf("写作 (%d)", cWriting),
+				fmt.Sprintf("例句 (%d)", cSentences),
 			}
 			SegmentedControlCompact(c, &a.vocabCategoryIdx, catNames...).
 				OnChange(func() { a.resetVocabularyViewState() })
@@ -458,8 +460,6 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 		catKey = "words"
 	case 2:
 		catKey = "sentences"
-	case 3:
-		catKey = "writing"
 	}
 
 	entries := vocabStore.Filter(catKey, a.vocabSearchQuery)
@@ -478,17 +478,14 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 				} else {
 					ui.Icon(c, iconDict).Size(24, 24)
 					title := "生词本还是空的"
-					desc := "在划词弹窗里点击【保存】即可自动归档；存下来的词可以在这里展开完整词卡与导出 Anki。"
+					desc := "在划词弹窗点击【存入生词本】即可自动归档；存下来的词可以在这里展开完整词卡、间隔复习与导出 Anki。"
 					switch a.vocabCategoryIdx {
 					case 1:
 						title = "暂无生词收录"
-						desc = "在划词翻译查词时，点击【保存生词】或【猜你想存】，即可将陌生词汇自动收录并补全音标与 CEFR 难度。"
+						desc = "在划词查词时点击【存入生词本】或【猜你想存】，即可自动收录并补全音标与 CEFR 难度。"
 					case 2:
-						title = "暂无长难句分析"
-						desc = "划词选中长句子后切换到【长难句】Tab，点击【存入生词本】即可归档语法树与拆解。"
-					case 3:
-						title = "暂无写作批改笔记"
-						desc = "选中需要润色的句子后切换到【写作】Tab，点击【存入生词本】即可归档修改建议。"
+						title = "暂无例句收藏"
+						desc = "划词翻译普通句子后点击【收藏】可保存在此；长难句拆解与写作润色已独立至左侧「句法笔记」。"
 					}
 					ui.Text(c, title).FontSize(14).FontWeight(600).TextColor(at.Text)
 					ui.Text(c, desc).FontSize(12).TextColor(at.TextMuted).Wrap()

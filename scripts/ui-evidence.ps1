@@ -22,7 +22,7 @@
 # 每次运行重建 fixture；结束时只停止自己启动的 PID。
 
 param(
-    [ValidateSet("home", "settings", "grammar", "writing", "chip")]
+    [ValidateSet("home", "settings", "grammar", "grammar-news", "grammar-tree", "writing", "chip")]
     [string]$View = "home",
 
     [ValidateSet("light", "dark")]
@@ -31,7 +31,7 @@ param(
     [ValidateSet("sky", "mint", "violet", "coral")]
     [string]$Accent = "sky",
 
-    [ValidateSet("home", "general", "hotkey", "selection", "translate", "dict", "ai", "actions", "vocabulary", "about")]
+    [ValidateSet("home", "general", "hotkey", "selection", "translate", "dict", "ai", "actions", "vocabulary", "notebook", "about")]
     [string]$Page = "general",
 
     [string]$OutDir = "",
@@ -104,6 +104,68 @@ try {
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($cfgPath, ($fixture | ConvertTo-Json), $utf8NoBom)
 
+    if ($View -eq "settings" -and $Page -eq "notebook") {
+        $nbPath = Join-Path $dataDir "notebook.json"
+        $nbSeed = @(
+            [ordered]@{
+                id = "seed-grammar-news"
+                kind = "grammar"
+                source = "Japan's dispute with China over Prime Minister Sanae Takaichi's remarks on Taiwan has spread from diplomatic protests to export restrictions by Beijing on critical minerals used in everything from cars and semiconductors to military equipment."
+                translation = "日本与中国围绕高市早苗涉台言论产生的争端，已从外交抗议升级为北京对关键矿产的出口限制——这些矿产广泛应用于从汽车、半导体到军事装备的各类领域。"
+                grammar = [ordered]@{
+                    backbone_summary = "日本（与中国）的争端已（从外交抗议）蔓延到（北京对关键矿产的）出口限制。"
+                    segments = @(
+                        @{ text = "Japan's dispute"; role = "subject"; is_backbone = $true; note = "全句主语中心词" },
+                        @{ text = " with China"; role = "modifier"; phrase_id = "p1"; note = "介词短语定语" },
+                        @{ text = " over Prime Minister Sanae Takaichi's remarks"; role = "modifier"; break_before = $true; phrase_id = "p2"; note = "介短定语，说明争端事由" },
+                        @{ text = " on Taiwan"; role = "modifier"; phrase_id = "p3"; note = "嵌套定语" },
+                        @{ text = " has spread"; role = "predicate"; break_before = $true; is_backbone = $true; note = "核心谓语" },
+                        @{ text = " from diplomatic protests"; role = "modifier"; break_before = $true; phrase_id = "p4"; note = "起点状语" },
+                        @{ text = " to export restrictions"; role = "modifier"; break_before = $true; phrase_id = "p5"; note = "终点状语" },
+                        @{ text = " by Beijing"; role = "modifier"; phrase_id = "p6"; note = "施事定语" },
+                        @{ text = " on critical minerals"; role = "modifier"; break_before = $true; phrase_id = "p7"; note = "介短定语" },
+                        @{ text = " used in everything"; role = "modifier"; break_before = $true; phrase_id = "p8"; note = "过去分词短语定语" },
+                        @{ text = " from cars and semiconductors to military equipment"; role = "modifier"; phrase_id = "p9"; note = "范围定语" },
+                        @{ text = "."; role = "punct" }
+                    )
+                    phrases = @(
+                        @{ id = "p1"; type = "介词短语"; short_tag = "介短"; role = "后置定语"; target = "修饰 dispute" },
+                        @{ id = "p2"; type = "介词短语"; short_tag = "介短"; role = "后置定语"; target = "修饰 dispute" },
+                        @{ id = "p3"; parent_id = "p2"; type = "介词短语"; short_tag = "介短"; role = "后置定语"; target = "修饰 remarks" },
+                        @{ id = "p4"; type = "介词短语"; short_tag = "介短"; role = "起点状语"; target = "修饰 has spread" },
+                        @{ id = "p5"; type = "介词短语"; short_tag = "介短"; role = "终点状语"; target = "修饰 has spread" },
+                        @{ id = "p6"; parent_id = "p5"; type = "介词短语"; short_tag = "介短"; role = "后置定语"; target = "修饰 restrictions" },
+                        @{ id = "p7"; parent_id = "p5"; type = "介词短语"; short_tag = "介短"; role = "后置定语"; target = "修饰 restrictions" },
+                        @{ id = "p8"; parent_id = "p7"; type = "分词短语"; short_tag = "分词"; role = "后置定语"; target = "修饰 minerals" },
+                        @{ id = "p9"; parent_id = "p8"; type = "介词短语"; short_tag = "介短"; role = "范围定语"; target = "修饰 everything" }
+                    )
+                    difficulties = @(
+                        @{ title = "九层零从句链式修饰"; span_text = "with China ... used in ..."; explanation = "无从句长难句依靠介词短语与分词短语逐层后置限定。" }
+                    )
+                    translation = "日本与中国围绕高市早苗涉台言论产生的争端，已从外交抗议升级为北京对关键矿产的出口限制——这些矿产广泛应用于从汽车、半导体到军事装备的各类领域。"
+                }
+                created_at = "2026-11-19T20:10:00+08:00"
+            },
+            [ordered]@{
+                id = "seed-writing-mail"
+                kind = "writing"
+                source = "pls check the attached file and give me ur feedback asap. thx!"
+                translation = "Could you please take a look at the attached file and share your feedback when you have a chance? Thank you!"
+                writing = [ordered]@{
+                    setting = "正式 · 邮件给导师"
+                    annotations = @(
+                        @{ text = "pls check"; fix = "Could you please take a look at"; type = "register"; tag = "语气"; note = "对导师语气过于生硬随意" },
+                        @{ text = "give me ur feedback asap."; fix = "share your feedback when you have a chance?"; type = "register"; tag = "得体"; note = "asap 过于催促，ur 为聊天缩写" }
+                    )
+                    improved = "Could you please take a look at the attached file and share your feedback when you have a chance? Thank you!"
+                    summary = "建议改用委婉礼貌问句并避免网络缩写。"
+                }
+                created_at = "2026-11-19T19:40:00+08:00"
+            }
+        )
+        [System.IO.File]::WriteAllText($nbPath, ($nbSeed | ConvertTo-Json -Depth 10), $utf8NoBom)
+    }
+
     # 2. 启动独立实例。--elevated-takeover 跳过单实例锁；exe 名不同，正常也
     #    不会和用户正在运行的 fastDictionary.exe 撞锁。
     $appArgs = @("--elevated-takeover")
@@ -111,6 +173,8 @@ try {
         "home" { $appArgs += @("--page", "home") }
         "settings" { $appArgs += @("--settings", "--page", $Page) }
         "grammar" { $appArgs += @("--demo-action", "grammar") }
+        "grammar-news" { $appArgs += @("--demo-action", "grammar-news") }
+        "grammar-tree" { $appArgs += @("--demo-action", "grammar-tree") }
         "writing" { $appArgs += @("--demo-action", "writing") }
         "chip" { $appArgs += @("--chip") }
     }
