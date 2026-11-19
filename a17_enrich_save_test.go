@@ -13,11 +13,11 @@ func TestEnrichButtonReportsSaveFailure(t *testing.T) {
 		t.Fatal("补全仍返回 int：写盘失败被吞掉，设置页会显示假的「已智能补全 N 条 ✓」")
 	}
 	ui := readSourceFile(t, "settings_vocab.go")
-	start := strings.Index(ui, `btnEnrich := ui.Button(c, "补全")`)
+	start := strings.Index(ui, `btnEnrich := SecondaryButton(c, t, "补全")`)
 	if start < 0 {
 		t.Fatal("找不到补全按钮段")
 	}
-	end := strings.Index(ui[start:], `btnWeb := ui.Button(c, "网页版")`)
+	end := strings.Index(ui[start:], `if vocabStore.Count() > 0`)
 	if end < 0 {
 		t.Fatal("找不到补全按钮段结尾")
 	}

@@ -153,7 +153,7 @@ func (a *app) rebuildTray() {
 			a.buildTray()
 			return
 		}
-		a.tray.SetMenu(a.trayMenu())
+		a.tray.SetMenu(nil)
 	})
 }
 

@@ -93,13 +93,14 @@ func (a *app) pageVocabReview(c *ui.Context, t *ui.Theme) {
 		ui.Textf(c, "剩余 %d / %d", total-a.vocabReviewIdx, total).FontSize(12).TextColor(t.TextMuted)
 	})
 
-	ui.Box(c).FillWidth().Padding(28, 26).Radius(12).Background(t.Surface).
-		Border(1, t.Border).Shadow(0, 2, 8, 0, ui.RGBA(0, 0, 0, 0.05)).Children(func() {
+	at := appTheme(t)
+	ui.Box(c).FillWidth().Padding(28, 26).Radius(RadiusTrack).Background(at.Surface).
+		Border(1, at.BorderSubtle).Children(func() {
 		ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
-			ui.Text(c, entry.Term).FontSize(30).FontWeight(700).TextColor(t.Text).Wrap()
+			ui.Text(c, entry.Term).FontSize(30).FontWeight(700).TextColor(at.Text).Wrap()
 			ui.Row(c).AlignItems(ui.Center).Gap(4).Children(func() {
 				if entry.Phonetic != "" {
-					ui.Text(c, entry.Phonetic).FontSize(14).TextColor(t.TextMuted)
+					ui.Text(c, entry.Phonetic).Font(fontIPA).FontSize(14).TextColor(at.TextMuted)
 				}
 				if renderIconButton(c, iconSpeak, "朗读发音", 28, 15, false).Clicked() {
 					PlaySpeechLang(entry.Term, "", false)
@@ -122,7 +123,7 @@ func (a *app) pageVocabReview(c *ui.Context, t *ui.Theme) {
 
 			if !a.vocabReviewRevealed {
 				ui.Text(c, "回想它的意思，然后显示答案。").FontSize(12).TextColor(t.TextMuted)
-				if ui.Button(c, "显示答案").Height(32).Padding(4, 18).Radius(6).Clicked() {
+				if PrimaryButton(c, t, "显示答案").Clicked() {
 					a.vocabReviewRevealed = true
 					a.settingsRefresh()
 				}
@@ -149,13 +150,13 @@ func (a *app) pageVocabReview(c *ui.Context, t *ui.Theme) {
 			}
 
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				if ui.Button(c, "忘记").Height(30).Padding(3, 16).Radius(6).Clicked() {
+				if SecondaryButton(c, t, "忘记").Clicked() {
 					a.gradeVocabReview(reviewAgain)
 				}
-				if ui.Button(c, "模糊").Height(30).Padding(3, 16).Radius(6).Clicked() {
+				if SecondaryButton(c, t, "模糊").Clicked() {
 					a.gradeVocabReview(reviewHard)
 				}
-				if ui.Button(c, "记得").Height(30).Padding(3, 16).Radius(6).Background(t.Accent).TextColor(t.AccentText).Clicked() {
+				if PrimaryButton(c, t, "记得").Clicked() {
 					a.gradeVocabReview(reviewGood)
 				}
 			})
@@ -164,31 +165,31 @@ func (a *app) pageVocabReview(c *ui.Context, t *ui.Theme) {
 	})
 
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
-		if ui.Button(c, "结束本轮复习").Height(26).Padding(2, 10).FontSize(11).Clicked() {
+		if GhostButton(c, t, "结束本轮复习").Height(HeightCompact).Clicked() {
 			a.endVocabReview()
 		}
 	})
 }
 
 func (a *app) reviewSummary(c *ui.Context, t *ui.Theme) {
+	at := appTheme(t)
 	PageTitle(c, t, "复习完成", fmt.Sprintf("本轮复习了 %d 个词。到期的词会重新回到这里。", a.vocabReviewDone))
-	ui.Box(c).FillWidth().Padding(32, 24).Radius(10).Background(t.Surface).Border(1, t.Border).Children(func() {
+	ui.Box(c).FillWidth().Padding(32, 24).Radius(RadiusTrack).Background(at.Surface).Border(1, at.BorderSubtle).Children(func() {
 		ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
 			if a.vocabReviewDone == 0 && len(a.vocabReviewIDs) == 0 {
-				ui.Text(c, "今天没有到期的生词。").FontSize(15).FontWeight(600).TextColor(t.Text)
-				ui.Text(c, "新保存的词会立即进入复习队列；已经复习过的词会按间隔回来。").FontSize(12).TextColor(t.TextMuted).Wrap()
+				ui.Text(c, "今天没有到期的生词。").FontSize(15).FontWeight(600).TextColor(at.Text)
+				ui.Text(c, "新保存的词会立即进入复习队列；已经复习过的词会按间隔回来。").FontSize(12).TextColor(at.TextMuted).Wrap()
 			} else {
-				at := appTheme(t)
 				ui.Box(c).Size(40, 40).Radius(RadiusTrack).Center().Background(at.SuccessSoft).Children(func() {
 					ui.Icon(c, iconCheck).Size(20, 20).TextColor(at.Success)
 				})
-				ui.Text(c, "今天的词复习完了").FontSize(16).FontWeight(600).TextColor(t.Text)
+				ui.Text(c, "今天的词复习完了").FontSize(16).FontWeight(600).TextColor(at.Text)
 			}
 			ui.Row(c).Gap(8).Children(func() {
-				if ui.Button(c, "再来一轮").Height(28).Padding(2, 12).Radius(5).Clicked() {
+				if PrimaryButton(c, t, "再来一轮").Height(HeightCompact).Clicked() {
 					a.startVocabReview()
 				}
-				if ui.Button(c, "返回生词本").Height(28).Padding(2, 12).Radius(5).Clicked() {
+				if SecondaryButton(c, t, "返回生词本").Height(HeightCompact).Clicked() {
 					a.endVocabReview()
 				}
 			})

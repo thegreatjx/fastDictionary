@@ -251,6 +251,7 @@ func TestUIFilesHaveNoEmojiOrHardcodedColors(t *testing.T) {
 	files := []string{
 		"tray.go", "settings.go", "settings_pages.go",
 		"popup_view.go", "popup_translation.go", "ai_refine_button.go", "grammar.go",
+		"actions.go", "home.go", "settings_vocab.go", "vocab_review_view.go",
 	}
 	banned := []string{"ui.Hex(", "ui.RGBA(", "⚙️", "🔍", "✏️", "📘"}
 	for _, f := range files {

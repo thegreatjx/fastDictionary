@@ -214,9 +214,27 @@ func (a *app) renderHomeReadyState(c *ui.Context, t *ui.Theme, at AppTheme, cfg 
 		})
 	}
 
+	vocabStore := GetVocabularyStore()
+	if due := vocabStore.DueCount(time.Now()); due > 0 {
+		SurfaceCard(c, t).Children(func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space3).Children(func() {
+				ui.Box(c).Width(8).Height(8).Radius(4).Background(at.Accent)
+				ui.Column(c).Grow(1).Gap(2).Children(func() {
+					ui.Text(c, fmt.Sprintf("今日有 %d 条待复习", due)).Font(fontUI).FontSize(FontSection).FontWeight(600).TextColor(at.Text)
+					ui.Text(c, "巩固生词与长难句笔记，保持记忆曲线节奏").Font(fontUI).FontSize(FontHelper).TextColor(at.TextSec)
+				})
+				if PrimaryButton(c, t, "开始复习").Height(HeightCompact).Clicked() {
+					a.page = "vocabulary"
+					a.startVocabReview()
+					a.settingsRefresh()
+				}
+			})
+		})
+	}
+
 	recent := h.recent
 	if len(recent) == 0 {
-		entries := GetVocabularyStore().Filter("all", "")
+		entries := vocabStore.Filter("all", "")
 		for i := 0; i < len(entries) && i < 6; i++ {
 			term := strings.TrimSpace(entries[i].Term)
 			if term != "" && len([]rune(term)) <= 40 {
@@ -247,7 +265,63 @@ func (a *app) renderHomeReadyState(c *ui.Context, t *ui.Theme, at AppTheme, cfg 
 				})
 			})
 		})
+		return
 	}
+
+	examples := []struct {
+		label string
+		query string
+	}{
+		{label: "serendipity", query: "serendipity"},
+		{label: "长难句示例", query: "Although the initial experiment succeeded, several edge cases remain to be verified."},
+		{label: "中译英示例", query: "请帮我把这段技术方案总结成简洁英文"},
+	}
+	SurfaceCard(c, t).Children(func() {
+		ui.Column(c).FillWidth().Gap(Space2).Children(func() {
+			ui.Text(c, "快速试一试").Font(fontUI).FontSize(FontHelper).FontWeight(600).TextColor(at.TextSec)
+			ui.Row(c).FillWidth().Wrap().Gap(Space2).Children(func() {
+				for _, ex := range examples {
+					q := ex.query
+					b := ui.ButtonBase(c).Height(HeightCompact).Radius(RadiusSM).Padding(0, Space3).
+						Background(at.SurfaceSubtle).Border(1, at.BorderSubtle).Center()
+					if b.Hovered() {
+						b.Background(at.SurfaceHover).Border(1, at.BorderHover)
+					}
+					b.Children(func() {
+						ui.Text(c, ex.label).Font(fontUI).FontSize(FontHelper).TextColor(at.Text).SingleLine()
+					})
+					if b.Clicked() {
+						a.home.input = q
+						a.homeSubmit(q)
+					}
+				}
+			})
+			hints := formatShortcutHints(
+				shortcutHint{"划词翻译", cfg.HotkeySelection},
+				shortcutHint{"输入弹窗", cfg.HotkeyInput},
+				shortcutHint{"截图翻译", cfg.HotkeyScreenshot},
+			)
+			if hints != "" {
+				HelperText(c, t, "快捷键："+hints)
+			}
+		})
+	})
+}
+
+type shortcutHint struct {
+	label string
+	key   string
+}
+
+func formatShortcutHints(items ...shortcutHint) string {
+	var parts []string
+	for _, it := range items {
+		k := strings.TrimSpace(it.key)
+		if k != "" {
+			parts = append(parts, it.label+" "+k)
+		}
+	}
+	return strings.Join(parts, "  ·  ")
 }
 
 func (a *app) renderHomeTranslateTab(c *ui.Context, t *ui.Theme, at AppTheme, cfg Config, h homeState) {
@@ -326,17 +400,25 @@ func (a *app) renderHomeTranslateTab(c *ui.Context, t *ui.Theme, at AppTheme, cf
 				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space3).Children(func() {
 					ui.Text(c, h.source).Font(fontUI).FontSize(FontWordHead).FontWeight(600).TextColor(at.Text)
 					if h.dict != nil && h.dict.UKPhone != "" {
-						if GhostButton(c, t, "英 /"+h.dict.UKPhone+"/").Clicked() {
+						bUK := GhostButton(c, t, "")
+						bUK.Children(func() {
+							ui.Text(c, "英 /"+h.dict.UKPhone+"/").Font(fontIPA).FontSize(FontControl).FontWeight(500).TextColor(at.TextSec).SingleLine()
+						})
+						if bUK.Clicked() {
 							PlaySpeechLang(h.source, h.detected, false)
 						}
 					}
 					if h.dict != nil && h.dict.USPhone != "" {
-						if GhostButton(c, t, "美 /"+h.dict.USPhone+"/").Clicked() {
+						bUS := GhostButton(c, t, "")
+						bUS.Children(func() {
+							ui.Text(c, "美 /"+h.dict.USPhone+"/").Font(fontIPA).FontSize(FontControl).FontWeight(500).TextColor(at.TextSec).SingleLine()
+						})
+						if bUS.Clicked() {
 							PlaySpeechLang(h.source, h.detected, true)
 						}
 					}
 					if h.dict == nil && h.gdict != nil && h.gdict.Pron != "" {
-						ui.Text(c, "/"+h.gdict.Pron+"/").Font(fontUI).FontSize(FontHelper).TextColor(at.TextMuted)
+						ui.Text(c, "/"+h.gdict.Pron+"/").Font(fontIPA).FontSize(FontHelper).TextColor(at.TextMuted)
 					}
 					ui.Spacer(c).Grow(1)
 					if h.wordSaved {

@@ -1,4 +1,4 @@
-# ui-evidence.ps1 — 原生界面证据采集
+﻿# ui-evidence.ps1 — 原生界面证据采集
 #
 # 为什么需要这个脚本：视觉返工里最贵的一次不是改错颜色，而是“截到的图不是
 # 这一版”。旧进程、另一个 exe 名、另一份用户配置、另一套主题，都能让截图
@@ -49,16 +49,16 @@ Set-Location $root
 
 $automation = Get-Command mygo-automation -ErrorAction SilentlyContinue
 if (-not $automation) {
-    throw "找不到 mygo-automation；先 go install github.com/egoist/mygo/cmd/mygo-automation@v0.9.0 或把 %GOPATH%\bin 加入 PATH"
+    throw "找不到 mygo-automation；先 go install github.com/egoist/mygo/plugins/automation/cmd/mygo-automation@v0.10.0 或把 %GOPATH%\bin 加入 PATH"
 }
 
 $binDir = Join-Path $root "build\ui-evidence\bin"
 $exe = Join-Path $binDir "fastDictionary-uiverify.exe"
 if (-not $NoBuild) {
     New-Item -ItemType Directory -Force $binDir | Out-Null
-    Write-Host "go build -tags e2e..." -ForegroundColor Cyan
-    & go build -tags e2e -ldflags "-H=windowsgui" -o $exe .
-    if ($LASTEXITCODE -ne 0) { throw "go build -tags e2e 失败" }
+    Write-Host "go build -tags e2e,mygo_nowebview..." -ForegroundColor Cyan
+    & go build -tags e2e,mygo_nowebview -ldflags "-H=windowsgui" -o $exe .
+    if ($LASTEXITCODE -ne 0) { throw "go build -tags e2e,mygo_nowebview 失败" }
 }
 if (-not (Test-Path $exe)) {
     throw "缺少 $exe；去掉 -NoBuild 先构建"
@@ -101,7 +101,8 @@ try {
         close_on_blur     = $false
         always_on_top     = $false
     }
-    $fixture | ConvertTo-Json | Set-Content -LiteralPath $cfgPath -Encoding utf8
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($cfgPath, ($fixture | ConvertTo-Json), $utf8NoBom)
 
     # 2. 启动独立实例。--elevated-takeover 跳过单实例锁；exe 名不同，正常也
     #    不会和用户正在运行的 fastDictionary.exe 撞锁。
@@ -163,7 +164,7 @@ try {
     $tree | Set-Content -LiteralPath (Join-Path $OutDir "control-tree.txt") -Encoding utf8
 
     # 4. 读回配置：应用可能重写文件；以磁盘上的值为准，而不是命令行参数。
-    $cfgLoaded = Get-Content -Raw -LiteralPath $cfgPath | ConvertFrom-Json
+    $cfgLoaded = Get-Content -Raw -Encoding UTF8 -LiteralPath $cfgPath | ConvertFrom-Json
     if ($cfgLoaded.theme_mode -ne $Theme -or $cfgLoaded.accent_theme -ne $Accent) {
         throw "配置身份不符：要求 $Theme/$Accent，实际 $($cfgLoaded.theme_mode)/$($cfgLoaded.accent_theme)"
     }
@@ -198,7 +199,7 @@ try {
         automation_socket  = $socket
     }
     $manifestPath = Join-Path $OutDir "manifest.json"
-    $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+    [System.IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 8), $utf8NoBom)
 
     Write-Host ""
     Write-Host "证据目录：$OutDir" -ForegroundColor Green

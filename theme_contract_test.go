@@ -111,3 +111,32 @@ func TestGrammarDifficultyStaysNeutral(t *testing.T) {
 		}
 	}
 }
+
+func TestBaseThemeContrastAcrossThemes(t *testing.T) {
+	for _, choice := range accentChoices {
+		for _, dark := range []bool{false, true} {
+			name := choice.Value + "/" + themeModeFor(dark)
+			th := themeForContract(t, dark, choice.Value)
+			at := appTheme(th)
+			surface := at.Surface
+			hover := at.SurfaceHover.Over(surface)
+
+			for bgName, bg := range map[string]ui.Color{
+				"canvas":  at.Canvas,
+				"surface": surface,
+				"hover":   hover,
+			} {
+				requireContrast(t, name+" Text on "+bgName, at.Text, bg, 4.5)
+				requireContrast(t, name+" TextSec on "+bgName, at.TextSec, bg, 4.5)
+				requireContrast(t, name+" TextMuted on "+bgName, at.TextMuted, bg, 4.5)
+			}
+
+			requireContrast(t, name+" AccentText on Accent", at.AccentText, at.Accent, 4.5)
+			accentSoftBg := at.AccentSoft.Over(surface)
+			requireContrast(t, name+" Accent on AccentSoft", at.Accent, accentSoftBg, 4.5)
+
+			w := writingThemeFor(th)
+			requireContrast(t, name+" writing note on hover", w.note, hover, 4.5)
+		}
+	}
+}

@@ -216,7 +216,7 @@ func popupContentHeight(s snapshot, w float32) float32 {
 
 const (
 	popupMinHeight     float32 = 260
-	popupMaxAutoHeight float32 = 580
+	popupMaxAutoHeight float32 = 640
 )
 
 // viewportH/contentH 都是 DIP 布局值；内容高出 1 DIP 也必须撑开，否则描边被 Scroll 裁掉。
@@ -295,7 +295,7 @@ func clampPopupHeight(h float32, waTop, waBottom float32) float32 {
 	if avail <= 0 {
 		return h
 	}
-	cap := avail * 0.62
+	cap := avail * 0.72
 	if cap > popupMaxAutoHeight {
 		cap = popupMaxAutoHeight
 	}

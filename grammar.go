@@ -644,13 +644,12 @@ func renderGrammarVisualCardEx(c *ui.Context, t *ui.Theme, origText string, res 
 	st.SentenceCount = len(splitGrammarSentences(origText))
 	st.ClauseCount = len(res.Clauses)
 
-	ui.Box(c).FillWidth().Padding(Space3, Space4).Radius(8).
-		Background(t.Surface).Border(1, t.Border).
-		Shadow(0, 2, 8, 0, withAlpha(at.ShadowColor, 0.67)).Children(func() {
+	ui.Box(c).FillWidth().Padding(Space3, Space4).Radius(RadiusTrack).
+		Background(at.Surface).Border(1, at.BorderSubtle).Children(func() {
 		ui.Column(c).FillWidth().Gap(Space2).Children(func() {
-			renderGrammarCardHeader(c, t, st)
+			renderGrammarCardHeader(c, t, saved, st)
 
-			ui.Box(c).FillWidth().Padding(12, 14).Radius(6).
+			ui.Box(c).FillWidth().Padding(12, 14).Radius(RadiusSM).
 				Background(at.SurfaceHover).Border(1, at.BorderSubtle).Children(func() {
 				ui.Column(c).FillWidth().Gap(6).Children(func() {
 					if len(res.Segments) == 0 {
@@ -672,25 +671,22 @@ func renderGrammarVisualCardEx(c *ui.Context, t *ui.Theme, origText string, res 
 			if len(res.Difficulties) > 0 {
 				renderGrammarDifficulties(c, t, at, res.Difficulties)
 			}
-
-			ui.Divider(c).FillWidth()
-			renderGrammarSaveRow(c, t, at, saved, st.OnSave)
 		})
 	})
 }
 
-func renderGrammarCardHeader(c *ui.Context, t *ui.Theme, st grammarCardState) {
+func renderGrammarCardHeader(c *ui.Context, t *ui.Theme, saved bool, st grammarCardState) {
+	at := appTheme(t)
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
-		topBg, topBorder, topText := grammarHeaderColors(t)
-		ui.Box(c).Padding(3, 10).Radius(12).
-			Background(topBg).Border(1, topBorder).Children(func() {
-			ui.Text(c, "长难句拆解").FontSize(11).FontWeight(600).TextColor(topText).SingleLine()
-		})
-
-		if scope := grammarScopeLabel(st); scope != "" {
-			ui.Text(c, scope).Font(fontMono).FontFeatures("tnum").FontSize(FontMicro).
-				TextColor(t.TextMuted).SingleLine()
+		scope := grammarScopeLabel(st)
+		if scope == "" {
+			scope = "句法拆解"
 		}
+		ui.Box(c).Padding(2, Space2).Radius(RadiusXS).
+			Background(at.SurfaceHover).Border(1, at.BorderSubtle).Children(func() {
+			ui.Text(c, scope).Font(fontMono).FontFeatures("tnum").FontSize(FontMicro).
+				FontWeight(600).TextColor(at.TextSec).SingleLine()
+		})
 
 		ui.Spacer(c).Grow(1)
 
@@ -698,7 +694,33 @@ func renderGrammarCardHeader(c *ui.Context, t *ui.Theme, st grammarCardState) {
 		if btnSpeak.Clicked() && st.OnSpeak != nil {
 			st.OnSpeak()
 		}
+		renderGrammarHeaderSave(c, t, at, saved, st.OnSave)
 	})
+}
+
+func renderGrammarHeaderSave(c *ui.Context, t *ui.Theme, at AppTheme, saved bool, onSave func()) {
+	if saved {
+		ui.Row(c).Height(HeightCompact).Gap(Space1).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, iconCheck).Size(12, 12).TextColor(at.TextMuted)
+			ui.Text(c, "已存入生词本").FontSize(FontMicro).FontWeight(500).TextColor(at.TextMuted).SingleLine()
+		})
+		return
+	}
+	if onSave == nil {
+		return
+	}
+	btnSave := ui.Button(c, "").Height(HeightCompact).Padding(0, Space3).Radius(RadiusSM).
+		Tooltip("将这条长难句分析存入生词本")
+	saveFG := saveButtonStyle(btnSave, t)
+	btnSave.Children(func() {
+		ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, iconBookmark).Size(12, 12).TextColor(saveFG)
+			ui.Text(c, "存入生词本").FontSize(FontMicro).FontWeight(600).SingleLine()
+		})
+	})
+	if btnSave.Clicked() {
+		onSave()
+	}
 }
 
 func grammarScopeLabel(st grammarCardState) string {
@@ -889,7 +911,7 @@ func renderGrammarClauseBadge(c *ui.Context, t *ui.Theme, clause ClauseInfo) ui.
 	raw := grammarClauseLabel(clause)
 	colors := grammarClausePalette(t, raw)
 	label := strings.Join(strings.Split(raw, ""), "\u2060")
-	el := ui.Text(c, "  "+label+"  ").FontSize(10).FontWeight(600).
+	el := ui.Text(c, "\u00A0"+label+"\u00A0").FontSize(10).FontWeight(600).
 		TextColor(colors.badgeText).Background(colors.badgeBg).Unselectable().
 		Tooltip(grammarClauseTooltip(clause))
 	return el
@@ -947,12 +969,12 @@ func renderGrammarHintBar(c *ui.Context, t *ui.Theme, at AppTheme, text string) 
 	if text == "" {
 		return
 	}
-	ui.Box(c).FillWidth().Height(24).Padding(3, 8).Radius(4).
+	ui.Box(c).FillWidth().Padding(5, 8).Radius(RadiusXS).
 		Background(at.Surface).Border(1, at.BorderSubtle).Children(func() {
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(6).Children(func() {
 			ui.Text(c, "·").FontSize(12).FontWeight(700).TextColor(at.Accent)
 			ui.Text(c, text).FontSize(11).FontWeight(500).TextColor(at.TextSec).
-				SingleLine().Tooltip(text).Grow(1)
+				LineHeight(1.45).Wrap().MaxLines(2).Tooltip(text).Grow(1)
 		})
 	})
 }
@@ -999,7 +1021,7 @@ func grammarLegendStatic(c *ui.Context, t *ui.Theme, at AppTheme, ink grammarInk
 		el.TextColor(ink.predicate).FontWeight(700).
 			Underline().DecorationColor(ink.predicateLine).
 			DecorationThickness(1.1).UnderlineOffset(3).
-			Tooltip("蓝色下划线：核心谓语动词")
+			Tooltip("主题色下划线：核心谓语动词")
 	case "clause":
 		el.TextColor(ink.clauseText).Background(ink.clauseTint).Tooltip("浅色底：从句，徽章标明类型")
 	}
@@ -1075,33 +1097,6 @@ func renderGrammarDifficulties(c *ui.Context, t *ui.Theme, at AppTheme, points [
 				})
 			}
 		})
-	})
-}
-
-func renderGrammarSaveRow(c *ui.Context, t *ui.Theme, at AppTheme, saved bool, onSave func()) {
-	ui.Row(c).FillWidth().Justify(ui.End).AlignItems(ui.Center).Children(func() {
-		if saved {
-			ui.Row(c).Height(HeightCompact).Gap(Space1).AlignItems(ui.Center).Children(func() {
-				ui.Icon(c, iconCheck).Size(12, 12).TextColor(at.TextMuted)
-				ui.Text(c, "已存入长难句本").FontSize(11).FontWeight(500).TextColor(at.TextMuted)
-			})
-			return
-		}
-		if onSave == nil {
-			return
-		}
-		btnSave := ui.Button(c, "").Height(HeightCompact).Padding(2, Space3).Radius(RadiusSM).
-			Tooltip("将这条长难句分析保存到生词本的长难句分类")
-		saveFG := saveButtonStyle(btnSave, t)
-		btnSave.Children(func() {
-			ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
-				ui.Icon(c, iconBookmark).Size(13, 13).TextColor(saveFG)
-				ui.Text(c, "保存到长难句本").FontSize(11).FontWeight(600)
-			})
-		})
-		if btnSave.Clicked() && onSave != nil {
-			onSave()
-		}
 	})
 }
 

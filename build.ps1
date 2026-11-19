@@ -29,7 +29,7 @@ param(
     [switch]$Overwrite,
     [switch]$Startup,
     [switch]$NoShortcuts,
-    [string]$Version = "1.1.0",
+    [string]$Version = "1.5.0",
     [switch]$Sign
 )
 
@@ -89,9 +89,9 @@ if (-not $NoStop) {
 
 Write-Host "go build -> $out ($stamp)" -ForegroundColor Cyan
 if ($ldflags) {
-    & go build -ldflags $ldflags -o $out .
+    & go build -tags mygo_nowebview -ldflags $ldflags -o $out .
 } else {
-    & go build -o $out .
+    & go build -tags mygo_nowebview -o $out .
 }
 if ($LASTEXITCODE -ne 0) {
     # 构建失败时别把用户丢在没有程序的桌面上：把刚才停掉的实例拉回来。
@@ -373,7 +373,7 @@ if ($Package) {
     
     # 写入 BUILD_INFO.txt
     $goVer = (& go version).Trim()
-    $mygoVer = "v0.9.0"
+    $mygoVer = "v0.10.0"
     $goModPath = Join-Path $PSScriptRoot "go.mod"
     if (Test-Path $goModPath) {
         $match = Select-String -Path $goModPath -Pattern 'github\.com/egoist/mygo\s+(v[^\s]+)'

@@ -122,7 +122,7 @@ var accentChoices = []accentChoice{
 	},
 	{
 		Value: "mint", Label: "薄荷青",
-		Light: ui.Hex("#0D9488"), LightHover: ui.Hex("#0F766E"), LightPress: ui.Hex("#115E59"),
+		Light: ui.Hex("#0F766E"), LightHover: ui.Hex("#115E59"), LightPress: ui.Hex("#134E4A"),
 		LightSoft: ui.Hex("#F0FDFA"), LightSoftBorder: ui.Hex("#99F6E4"),
 		Dark: ui.Hex("#2DD4BF"), DarkSoft: ui.Hex("#133332"), DarkSoftBorder: ui.Hex("#1F5A54"),
 	},
@@ -134,7 +134,7 @@ var accentChoices = []accentChoice{
 	},
 	{
 		Value: "coral", Label: "暖珊瑚",
-		Light: ui.Hex("#EA580C"), LightHover: ui.Hex("#C2410C"), LightPress: ui.Hex("#9A3412"),
+		Light: ui.Hex("#C2410C"), LightHover: ui.Hex("#9A3412"), LightPress: ui.Hex("#7C2D12"),
 		LightSoft: ui.Hex("#FFF7ED"), LightSoftBorder: ui.Hex("#FED7AA"),
 		Dark: ui.Hex("#FB923C"), DarkSoft: ui.Hex("#36211A"), DarkSoftBorder: ui.Hex("#6B3B22"),
 	},
@@ -221,8 +221,8 @@ func newAppTheme(dark bool, accent ui.Color) AppTheme {
 			SurfaceHover:  ui.Hex("#1E2738"),
 			SurfacePress:  ui.Hex("#253047"),
 			Text:          ui.Hex("#F1F5F9"),
-			TextSec:       ui.Hex("#94A3B8"),
-			TextMuted:     ui.Hex("#64748B"),
+			TextSec:       ui.Hex("#A8B8CE"),
+			TextMuted:     ui.Hex("#8494AC"),
 			TextDisabled:  ui.RGBA(241, 245, 249, 0.34),
 			BorderSubtle:  ui.Hex("#263147"),
 			BorderCtrl:    ui.Hex("#33415C"),
@@ -256,7 +256,7 @@ func newAppTheme(dark bool, accent ui.Color) AppTheme {
 		SurfacePress:  ui.Hex("#E2E8F0"),
 		Text:          ui.Hex("#0F172A"),
 		TextSec:       ui.Hex("#475569"),
-		TextMuted:     ui.Hex("#64748B"),
+		TextMuted:     ui.Hex("#5A6B82"),
 		TextDisabled:  ui.RGBA(15, 23, 42, 0.34),
 		BorderSubtle:  ui.Hex("#E5EAF2"),
 		BorderCtrl:    ui.Hex("#D3DCE8"),
@@ -334,7 +334,7 @@ func applyTheme(c *ui.Context, mode string, dark bool, accentTheme string) {
 func HelperText(c *ui.Context, t *ui.Theme, text string) ui.Element {
 	at := appTheme(t)
 	return ui.Text(c, text).Font(fontUI).FontSize(FontHelper).FontWeight(400).
-		LineHeight(1.5).TextColor(at.TextMuted).Wrap().MaxWidth(ControlColumn)
+		LineHeight(1.5).TextColor(at.TextSec).Wrap().MaxWidth(ControlColumn)
 }
 
 func PageTitle(c *ui.Context, t *ui.Theme, title, sub string) {
@@ -483,19 +483,55 @@ func SurfaceCard(c *ui.Context, t *ui.Theme) ui.Element {
 		Background(at.Surface).Border(1, at.BorderSubtle)
 }
 
-func SettingCard(c *ui.Context, t *ui.Theme, title string, fn func()) {
+type settingCard struct {
+	c    *ui.Context
+	t    *ui.Theme
+	rows int
+}
+
+func (sc *settingCard) divider() {
+	if sc.rows > 0 {
+		at := appTheme(sc.t)
+		ui.Box(sc.c).FillWidth().Height(1).Background(at.BorderSubtle)
+	}
+	sc.rows++
+}
+
+func (sc *settingCard) Row(label, desc string, control func()) {
+	sc.divider()
+	SettingRow(sc.c, sc.t, label, desc, control)
+}
+
+func (sc *settingCard) Slider(label, desc, valueText string, buildSlider func()) {
+	sc.divider()
+	SettingSliderRow(sc.c, sc.t, label, desc, valueText, buildSlider)
+}
+
+func (sc *settingCard) Long(label, desc string, control func() ui.Element) {
+	sc.divider()
+	LongField(sc.c, sc.t, label, desc, control)
+}
+
+func (sc *settingCard) Custom(fn func()) {
+	sc.divider()
+	fn()
+}
+
+func SettingCard(c *ui.Context, t *ui.Theme, title string, fn func(*settingCard)) {
 	if title != "" {
 		SectionTitle(c, t, title)
 	}
 	SurfaceCard(c, t).Padding(0, 0).Children(func() {
-		ui.Column(c).FillWidth().Children(fn)
+		sc := &settingCard{c: c, t: t}
+		ui.Column(c).FillWidth().Children(func() {
+			fn(sc)
+		})
 	})
 }
 
 func SettingRow(c *ui.Context, t *ui.Theme, label, desc string, control func()) {
 	at := appTheme(t)
-	ui.Box(c).FillWidth().Padding(Space4, Space4).
-		BorderWidth(0, 0, 1, 0).BorderColor(at.BorderSubtle).Children(func() {
+	ui.Box(c).FillWidth().Padding(Space4, Space4).Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space4).Children(func() {
 			ui.Column(c).Grow(1).Gap(Space1).Children(func() {
 				ui.Text(c, label).Font(fontUI).FontSize(FontControl).FontWeight(500).
@@ -511,8 +547,7 @@ func SettingRow(c *ui.Context, t *ui.Theme, label, desc string, control func()) 
 
 func SettingSliderRow(c *ui.Context, t *ui.Theme, label, desc, valueText string, buildSlider func()) {
 	at := appTheme(t)
-	ui.Box(c).FillWidth().Padding(Space4, Space4).
-		BorderWidth(0, 0, 1, 0).BorderColor(at.BorderSubtle).Children(func() {
+	ui.Box(c).FillWidth().Padding(Space4, Space4).Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space4).Children(func() {
 			ui.Column(c).Grow(1).Gap(Space1).Children(func() {
 				ui.Text(c, label).Font(fontUI).FontSize(FontControl).FontWeight(500).TextColor(at.Text)
@@ -533,8 +568,7 @@ func SettingSliderRow(c *ui.Context, t *ui.Theme, label, desc, valueText string,
 
 func LongField(c *ui.Context, t *ui.Theme, label, desc string, control func() ui.Element) {
 	at := appTheme(t)
-	ui.Box(c).FillWidth().Padding(Space4).BorderWidth(0, 0, 1, 0).
-		BorderColor(at.BorderSubtle).Children(func() {
+	ui.Box(c).FillWidth().Padding(Space4).Children(func() {
 		ui.Column(c).FillWidth().MaxWidth(ContentMaxWidth).Gap(Space2).Children(func() {
 			labelEl := ui.Text(c, label).Font(fontUI).FontSize(FontControl).
 				FontWeight(500).TextColor(at.TextSec)
@@ -720,7 +754,7 @@ const (
 	chipBorderLight  = "#E5EAF2"
 	chipBorderDark   = "#263147"
 	chipInkLight     = "#475569"
-	chipInkDark      = "#94A3B8"
+	chipInkDark      = "#A8B8CE"
 	chipInkHoverL    = "#0F172A"
 	chipInkHoverD    = "#F1F5F9"
 	chipTipBgLight   = "#0F172A"

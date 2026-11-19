@@ -359,7 +359,7 @@ func dictBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 					if btnUK.Clicked() && a != nil {
 						a.play(s.source, false)
 					}
-					ui.Text(c, "/"+s.dict.UKPhone+"/").FontSize(13).TextColor(appTheme(t).TextMuted).SingleLine()
+					ui.Text(c, "/"+s.dict.UKPhone+"/").Font(fontIPA).FontSize(13).TextColor(appTheme(t).TextMuted).SingleLine()
 				})
 			}
 			if s.dict != nil && s.dict.USPhone != "" {
@@ -368,10 +368,10 @@ func dictBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 					if btnUS.Clicked() && a != nil {
 						a.play(s.source, true)
 					}
-					ui.Text(c, "/"+s.dict.USPhone+"/").FontSize(13).TextColor(appTheme(t).TextMuted).SingleLine()
+					ui.Text(c, "/"+s.dict.USPhone+"/").Font(fontIPA).FontSize(13).TextColor(appTheme(t).TextMuted).SingleLine()
 				})
 			} else if s.gdict != nil && s.gdict.Pron != "" {
-				ui.Text(c, "/"+s.gdict.Pron+"/").FontSize(13).TextColor(t.Accent)
+				ui.Text(c, "/"+s.gdict.Pron+"/").Font(fontIPA).FontSize(13).TextColor(t.Accent)
 			}
 
 			ui.Spacer(c).Grow(1)

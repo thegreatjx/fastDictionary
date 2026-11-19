@@ -348,19 +348,19 @@ func renderDictionaryCard(c *ui.Context, t *ui.Theme, origText string, res *Dict
 		termText = origText
 	}
 	saved := savedTerm != "" && savedTerm == termText
-	ui.Box(c).FillWidth().Padding(Space3, Space4).Radius(8).
-		Background(t.Surface).Border(1, t.Border).
-		Shadow(0, 2, 8, 0, ui.RGBA(0, 0, 0, 0.08)).Children(func() {
+	at := appTheme(t)
+	ui.Box(c).FillWidth().Padding(Space3, Space4).Radius(RadiusTrack).
+		Background(at.Surface).Border(1, at.BorderSubtle).Children(func() {
 		ui.Column(c).FillWidth().Gap(Space2).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
-				ui.Text(c, termText).FontSize(18).FontWeight(700).TextColor(t.Text)
+				ui.Text(c, termText).FontSize(18).FontWeight(700).TextColor(at.Text)
 
 				if res.Phonetic != "" {
 					ph := res.Phonetic
 					if !strings.HasPrefix(ph, "/") {
 						ph = "/" + ph + "/"
 					}
-					ui.Text(c, ph).FontSize(13).TextColor(t.TextMuted)
+					ui.Text(c, ph).Font(fontIPA).FontSize(13).TextColor(at.TextMuted)
 				}
 
 				btnSpeak := renderIconButton(c, iconSpeak, "朗读发音", 28, 15, false)
@@ -434,7 +434,7 @@ func renderDictionaryCard(c *ui.Context, t *ui.Theme, origText string, res *Dict
 				if saved || onSave == nil {
 					ui.Row(c).Height(HeightCompact).Gap(Space1).AlignItems(ui.Center).Children(func() {
 						ui.Icon(c, iconCheck).Size(12, 12).TextColor(appTheme(t).TextMuted)
-						ui.Text(c, "已保存").FontSize(11).FontWeight(500).TextColor(appTheme(t).TextMuted)
+						ui.Text(c, "已存入生词本").FontSize(11).FontWeight(500).TextColor(appTheme(t).TextMuted)
 					})
 					return
 				}
@@ -444,7 +444,7 @@ func renderDictionaryCard(c *ui.Context, t *ui.Theme, origText string, res *Dict
 				btnSave.Children(func() {
 					ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
 						ui.Icon(c, iconBookmark).Size(12, 12).TextColor(saveFG)
-						ui.Text(c, "保存到生词本").FontSize(11).FontWeight(600)
+						ui.Text(c, "存入生词本").FontSize(11).FontWeight(600)
 					})
 				})
 				if btnSave.Clicked() {
@@ -472,7 +472,12 @@ type writingTheme struct {
 	removed       ui.Color
 	added         ui.Color
 	deleted       ui.Color
+	note          ui.Color
 	improvedTitle ui.Color
+}
+
+func isWarmAccent(c ui.Color) bool {
+	return c.R > c.B && int(c.R)-int(c.G) > 50
 }
 
 func writingThemeFor(t *ui.Theme) writingTheme {
@@ -488,6 +493,9 @@ func writingThemeFor(t *ui.Theme) writingTheme {
 		removed = at.Danger.Mix(at.TextSec, 0.18)
 		added = at.Accent
 	}
+	if isWarmAccent(at.Accent) {
+		removed = at.TextSec
+	}
 	return writingTheme{
 		setting:       writingTone{background: at.SurfaceHover, border: at.BorderSubtle, text: at.Text},
 		tag:           writingTone{background: at.SurfaceHover, border: at.BorderSubtle, text: at.TextSec},
@@ -499,15 +507,16 @@ func writingThemeFor(t *ui.Theme) writingTheme {
 		removed:       removed,
 		added:         added,
 		deleted:       at.TextSec,
+		note:          at.TextSec,
 		improvedTitle: at.TextSec,
 	}
 }
 
 func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *ImproveWritingResult, saved bool, onCopy func(string), onSave func()) {
+	at := appTheme(t)
 	w := writingThemeFor(t)
-	ui.Box(c).FillWidth().Padding(Space3, Space4).Radius(8).
-		Background(t.Surface).Border(1, t.Border).
-		Shadow(0, 2, 8, 0, ui.RGBA(0, 0, 0, 0.08)).Children(func() {
+	ui.Box(c).FillWidth().Padding(Space3, Space4).Radius(RadiusTrack).
+		Background(at.Surface).Border(1, at.BorderSubtle).Children(func() {
 		ui.Column(c).FillWidth().Gap(Space2).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 				settingText := res.Setting
@@ -522,27 +531,33 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 				})
 
 				ui.Spacer(c).Grow(1)
+				statusLabel := "表达自然"
+				if n := len(res.Annotations); n > 0 {
+					statusLabel = fmt.Sprintf("%d 处建议", n)
+				}
 				ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-					ui.Icon(c, iconPolish).Size(13, 13).TextColor(t.TextMuted)
-					ui.Text(c, "批改完成").FontSize(11).TextColor(t.TextMuted)
+					ui.Icon(c, iconPolish).Size(13, 13).TextColor(at.TextMuted)
+					ui.Text(c, statusLabel).FontSize(11).TextColor(at.TextMuted)
 				})
 			})
 
 			if len(res.Annotations) > 0 {
 				ui.Column(c).FillWidth().Gap(6).Children(func() {
 					for _, ann := range res.Annotations {
-						ui.Box(c).FillWidth().Padding(8, 10).Radius(6).
-							Background(t.SurfaceHover).Border(1, t.Border).Children(func() {
-							ui.Column(c).FillWidth().Gap(3).Children(func() {
-								ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
-									ui.Text(c, ann.Text).FontSize(13).FontWeight(600).Strikethrough().TextColor(w.removed)
-									ui.Text(c, "→").FontSize(12).TextColor(t.TextMuted)
-									if ann.Fix != "" {
-										ui.Text(c, ann.Fix).FontSize(13).FontWeight(600).TextColor(w.added)
-									} else {
-										ui.Text(c, "(删除)").FontSize(11).TextColor(w.deleted)
+						ui.Box(c).FillWidth().Padding(8, 10).Radius(RadiusSM).
+							Background(at.SurfaceHover).Border(1, at.BorderSubtle).Children(func() {
+							ui.Column(c).FillWidth().Gap(4).Children(func() {
+								ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(8).Children(func() {
+									spans := []ui.Span{
+										{Text: ann.Text, Weight: 600, Color: w.removed, Strikethrough: true, DecorationColor: w.removed},
+										{Text: "  →  ", Color: at.TextMuted},
 									}
-									ui.Spacer(c).Grow(1)
+									if ann.Fix != "" {
+										spans = append(spans, ui.Span{Text: ann.Fix, Weight: 600, Color: w.added})
+									} else {
+										spans = append(spans, ui.Span{Text: "(删除)", Size: 11, Color: w.deleted})
+									}
+									ui.RichText(c, spans...).Font(fontUI).FontSize(13).LineHeight(1.5).Wrap().Grow(1)
 									tagLabel := ann.Tag
 									if tagLabel == "" {
 										tagLabel = ann.Type
@@ -554,7 +569,7 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 									}
 								})
 								if ann.Note != "" {
-									ui.Text(c, ann.Note).FontSize(12).TextColor(t.TextMuted).Wrap()
+									ui.Text(c, ann.Note).FontSize(12).TextColor(w.note).Wrap()
 								}
 							})
 						})
@@ -599,13 +614,13 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 			}
 
 			if res.Summary != "" {
-				ui.Box(c).FillWidth().Padding(8, 10).Radius(6).
-					Background(t.SurfaceHover).Children(func() {
+				ui.Box(c).FillWidth().Padding(8, 10).Radius(RadiusSM).
+					Background(at.SurfaceHover).Border(1, at.BorderSubtle).Children(func() {
 					ui.Row(c).Gap(6).AlignItems(ui.Start).Children(func() {
-						ui.Icon(c, iconInfo).Size(13, 13).TextColor(t.TextMuted)
+						ui.Icon(c, iconInfo).Size(13, 13).TextColor(at.TextSec)
 						ui.Column(c).Grow(1).Gap(2).Children(func() {
-							ui.Text(c, "导师总评").FontSize(11).FontWeight(600).TextColor(t.TextMuted)
-							ui.Text(c, res.Summary).FontSize(12).TextColor(t.Text).Wrap()
+							ui.Text(c, "导师总评").FontSize(11).FontWeight(600).TextColor(at.TextSec)
+							ui.Text(c, res.Summary).FontSize(12).TextColor(at.Text).Wrap()
 						})
 					})
 				})
@@ -616,8 +631,8 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 			ui.Row(c).FillWidth().Justify(ui.End).AlignItems(ui.Center).Children(func() {
 				if saved {
 					ui.Row(c).Height(HeightCompact).Gap(Space1).AlignItems(ui.Center).Children(func() {
-						ui.Icon(c, iconCheck).Size(12, 12).TextColor(appTheme(t).TextMuted)
-						ui.Text(c, "已存入笔记本").FontSize(11).FontWeight(500).TextColor(appTheme(t).TextMuted)
+						ui.Icon(c, iconCheck).Size(12, 12).TextColor(at.TextMuted)
+						ui.Text(c, "已存入生词本").FontSize(11).FontWeight(500).TextColor(at.TextMuted)
 					})
 					return
 				}
@@ -625,12 +640,12 @@ func renderImproveWritingCard(c *ui.Context, t *ui.Theme, origText string, res *
 					return
 				}
 				btnSave := ui.Button(c, "").Height(HeightCompact).Padding(2, Space3).Radius(RadiusSM).
-					Tooltip("保存改后版本与批注到笔记本")
+					Tooltip("保存改后版本与批注到生词本")
 				saveFG := saveButtonStyle(btnSave, t)
 				btnSave.Children(func() {
 					ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
 						ui.Icon(c, iconBookmark).Size(12, 12).TextColor(saveFG)
-						ui.Text(c, "保存到笔记本").FontSize(11).FontWeight(600)
+						ui.Text(c, "存入生词本").FontSize(11).FontWeight(600)
 					})
 				})
 				if btnSave.Clicked() {

@@ -5,7 +5,7 @@ go 1.27.3
 tool github.com/egoist/mygo/cmd/mygo
 
 require (
-	github.com/egoist/mygo v0.9.0
+	github.com/egoist/mygo v0.10.0
 	github.com/getcharzp/onnxruntime_purego v1.26.0
 	golang.org/x/image v0.46.0
 )

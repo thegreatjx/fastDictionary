@@ -200,10 +200,8 @@ func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s
 					renderAIRefineControls(c, t, a, s)
 					ui.Spacer(c).Grow(1)
 
-					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-						renderEngineCaptionWithAIState(c, t, s, cfg)
-
-						if cfg.ShowNotes && shouldExtractNotes(s.source) {
+					if cfg.ShowNotes && shouldExtractNotes(s.source) {
+						ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 							switch notesViewPhase(s) {
 							case notesLoading:
 								ui.Row(c).Gap(Space1).AlignItems(ui.Center).Padding(0, Space1).Children(func() {
@@ -242,8 +240,8 @@ func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s
 									a.fitHeight()
 								}
 							}
-						}
-					})
+						})
+					}
 				})
 				if s.dict != nil || s.gdict != nil {
 					dictBlock(c, t, s, a)
@@ -514,6 +512,7 @@ func (a *app) renderPopupFooter(c *ui.Context, t *ui.Theme, cfg Config, s snapsh
 			ui.Text(c, model).FontSize(10).TextColor(t.TextMuted).Grow(1).SingleLine().Ellipsis("…").Tooltip(model)
 		} else {
 			a.renderEngineMenu(c, cfg, s)
+			renderEngineCaptionWithAIState(c, t, s, cfg)
 		}
 		ui.Spacer(c).Grow(1)
 		if renderIconButton(c, iconExpand, "全屏 / 恢复窗口", 28, 13, false).Clicked() && a.win != nil {

@@ -26,8 +26,8 @@ func TestWritingCardSaveStateFeedback(t *testing.T) {
 	}
 
 	ttBefore := ui.NewTester(a.popupView, 480, 500)
-	if !ttBefore.HasText("保存到笔记本") || ttBefore.HasText("已存入笔记本") {
-		t.Errorf("expected unsaved state to show '保存到笔记本', got: %v", ttBefore.Texts())
+	if !ttBefore.HasText("存入生词本") || ttBefore.HasText("已存入生词本") {
+		t.Errorf("expected unsaved state to show '存入生词本', got: %v", ttBefore.Texts())
 	}
 
 	a.saveWritingToVocab(a.writingResult)
@@ -37,8 +37,8 @@ func TestWritingCardSaveStateFeedback(t *testing.T) {
 	}
 
 	ttAfter := ui.NewTester(a.popupView, 480, 500)
-	if !ttAfter.HasText("已存入笔记本") {
-		t.Errorf("expected saved state to show '已存入笔记本', got: %v", ttAfter.Texts())
+	if !ttAfter.HasText("已存入生词本") {
+		t.Errorf("expected saved state to show '已存入生词本', got: %v", ttAfter.Texts())
 	}
 
 	a.switchMode(modeTranslate)
@@ -95,8 +95,8 @@ func TestGrammarCardSaveStateFeedback(t *testing.T) {
 	}
 
 	ttBefore := ui.NewTester(a.popupView, 480, 500)
-	if !ttBefore.HasText("保存到长难句本") || ttBefore.HasText("已存入长难句本") {
-		t.Errorf("expected unsaved grammar state to show '保存到长难句本', got: %v", ttBefore.Texts())
+	if !ttBefore.HasText("存入生词本") || ttBefore.HasText("已存入生词本") {
+		t.Errorf("expected unsaved grammar state to show '存入生词本', got: %v", ttBefore.Texts())
 	}
 
 	a.saveGrammarToVocab(a.grammarResult)
@@ -105,8 +105,8 @@ func TestGrammarCardSaveStateFeedback(t *testing.T) {
 	}
 
 	ttAfter := ui.NewTester(a.popupView, 480, 500)
-	if !ttAfter.HasText("已存入长难句本") {
-		t.Errorf("expected saved grammar state to show '已存入长难句本', got: %v", ttAfter.Texts())
+	if !ttAfter.HasText("已存入生词本") {
+		t.Errorf("expected saved grammar state to show '已存入生词本', got: %v", ttAfter.Texts())
 	}
 
 	a.switchMode(modeTranslate)
@@ -351,8 +351,8 @@ func TestVocabSettingsEmptyStateSearchAndCategories(t *testing.T) {
 		a.pageVocabulary(c, c.Theme(), a.store.Get())
 	}, 600, 500)
 	ttEmpty.Frame()
-	if !ttEmpty.HasText("笔记本还是空的") {
-		t.Errorf("expected initial empty state to say '笔记本还是空的': %v", ttEmpty.Texts())
+	if !ttEmpty.HasText("生词本还是空的") {
+		t.Errorf("expected initial empty state to say '生词本还是空的': %v", ttEmpty.Texts())
 	}
 
 	store.Add(VocabularyEntry{
@@ -1037,5 +1037,64 @@ func TestHotkeyRollbackFailureIsReported(t *testing.T) {
 	}
 	if got := a.store.Get().HotkeySelection; got != prev.HotkeySelection {
 		t.Fatalf("failed shortcut persisted: %q", got)
+	}
+}
+
+func TestResetDefaultActionSyncsUIImmediately(t *testing.T) {
+	a := newTestApp()
+	a.store.Update(func(c *Config) {
+		for i := range c.CustomActions {
+			if c.CustomActions[i].ID == "default-sentence-analysis" {
+				c.CustomActions[i].SystemPrompt = "custom-prompt"
+			}
+		}
+	})
+	a.editingActionID = "default-sentence-analysis"
+	a.customizingAction = *a.store.Get().GetAction("default-sentence-analysis")
+
+	tt := ui.NewTester(func(c *ui.Context) {
+		a.pageCustomActions(c, c.Theme(), a.store.Get())
+	}, 820, 680)
+	tt.Frame()
+	tt.Click("恢复默认提示词")
+	tt.Frame()
+
+	def := a.store.Get().GetAction("default-sentence-analysis")
+	if def == nil || def.SystemPrompt == "custom-prompt" {
+		t.Fatalf("expected store action prompt to reset, got %+v", def)
+	}
+	if a.customizingAction.SystemPrompt != def.SystemPrompt {
+		t.Fatalf("expected UI draft prompt %q to match reset default %q", a.customizingAction.SystemPrompt, def.SystemPrompt)
+	}
+}
+
+func TestHomePageDoesNotConsumeActionSavedMsgAsToast(t *testing.T) {
+	a := newTestApp()
+	a.page = "home"
+	a.mu.Lock()
+	a.actionSavedMsg = "已保存到生词本 ✓"
+	a.mu.Unlock()
+
+	tt := ui.NewTester(a.settingsView, 920, 660)
+	tt.Frame()
+
+	a.mu.Lock()
+	kept := a.actionSavedMsg
+	a.mu.Unlock()
+	if kept != "已保存到生词本 ✓" {
+		t.Fatalf("expected home settingsView to preserve actionSavedMsg for inline banner, got %q", kept)
+	}
+	if !tt.HasText("已保存到生词本 ✓") {
+		t.Fatalf("expected home inline feedback banner to remain visible: %v", tt.Texts())
+	}
+
+	a.page = "vocabulary"
+	tt2 := ui.NewTester(a.settingsView, 920, 660)
+	tt2.Frame()
+	a.mu.Lock()
+	afterVocab := a.actionSavedMsg
+	a.mu.Unlock()
+	if afterVocab != "" {
+		t.Fatalf("expected non-home page to consume actionSavedMsg as toast, still got %q", afterVocab)
 	}
 }

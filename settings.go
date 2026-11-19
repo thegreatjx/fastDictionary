@@ -208,7 +208,12 @@ func (a *app) settingsView(c *ui.Context) {
 			ui.Scroll(c).TrackScroll(&a.navScroll).Grow(1).FillWidth().
 				ScrollbarInsets(0, 0, Space2).Children(func() {
 				ui.Column(c).FillWidth().Gap(Space1).Children(func() {
-					for _, group := range settingsNavGroups {
+					for i, group := range settingsNavGroups {
+						if i > 0 && group.title == "常规" {
+							ui.Box(c).FillWidth().Padding(Space1, Space2, 0, Space2).Children(func() {
+								ui.Box(c).FillWidth().Height(1).Background(at.BorderSubtle)
+							})
+						}
 						ui.Text(c, group.title).Font(fontUI).FontSize(FontMicro).FontWeight(500).
 							Padding(Space2, Space2, Space1, Space2).TextColor(at.TextMuted).SingleLine()
 						for _, item := range group.items {
@@ -218,12 +223,13 @@ func (a *app) settingsView(c *ui.Context) {
 				})
 			})
 			paused := !a.selectionPausedUntil().IsZero()
-			dotCol := at.Success
+			dotCol := at.Accent
 			statusText := "划词监听中"
 			if paused {
 				dotCol = at.Warning
 				statusText = "划词已暂停"
 			} else if cfg.SelectionTrigger == "hotkey" {
+				dotCol = at.TextMuted
 				statusText = "仅快捷键划词"
 			}
 			statusBtn := ui.ButtonBase(c).FillWidth().Radius(RadiusSM).Padding(Space2, Space2).
@@ -296,8 +302,13 @@ func (a *app) settingsView(c *ui.Context) {
 	})
 
 	a.mu.Lock()
-	feedback, savedMsg := a.actionSaveFeedback, a.actionSavedMsg
-	a.actionSaveFeedback, a.actionSavedMsg = "", ""
+	feedback := a.actionSaveFeedback
+	a.actionSaveFeedback = ""
+	var savedMsg string
+	if a.page != "home" {
+		savedMsg = a.actionSavedMsg
+		a.actionSavedMsg = ""
+	}
 	a.mu.Unlock()
 	if feedback != "" {
 		c.Toast(feedback)

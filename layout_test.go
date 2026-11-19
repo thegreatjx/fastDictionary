@@ -110,8 +110,8 @@ func TestClampPopupHeight(t *testing.T) {
 	if got := clampPopupHeight(2000, 0, 1080); got != popupMaxAutoHeight {
 		t.Fatalf("clampPopupHeight(2000, 0, 1080) = %v, want %v", got, popupMaxAutoHeight)
 	}
-	if got := clampPopupHeight(900, 0, 800); got != 496 {
-		t.Fatalf("clampPopupHeight(900, 0, 800) = %v, want 496", got)
+	if got := clampPopupHeight(900, 0, 800); got != 576 {
+		t.Fatalf("clampPopupHeight(900, 0, 800) = %v, want 576", got)
 	}
 	if got := clampPopupHeight(500, 600, 500); got > 500 {
 		t.Fatalf("clampPopupHeight(500, 600, 500) = %v, want <= 500", got)

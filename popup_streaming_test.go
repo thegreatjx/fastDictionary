@@ -75,8 +75,13 @@ func TestSavedDictionaryButtonStopsOfferingAgain(t *testing.T) {
 	a.dictResult = &DictionaryResult{Term: "seize", Definition: "夺取"}
 	a.savedDictTerm = "seize"
 	tt := ui.NewTester(a.popupView, 500, 700)
-	if !tt.HasText("已保存") {
+	if !tt.HasText("已存入生词本") {
 		t.Fatalf("the button still offers to save an entry that is already there: %q", tt.Texts())
+	}
+	for _, label := range tt.Texts() {
+		if label == "存入生词本" {
+			t.Fatalf("the button still offers to save an entry that is already there: %q", tt.Texts())
+		}
 	}
 }
 
@@ -119,7 +124,7 @@ func TestDictionarySaveButtonIsReachable(t *testing.T) {
 
 	a.savedDictTerm = ""
 	tt := ui.NewTester(a.popupView, 500, 900)
-	tt.Click("保存到生词本")
+	tt.Click("存入生词本")
 	if a.savedDictTerm != "seize" {
 		t.Fatalf("the save button did not fire: savedDictTerm = %q, texts %q", a.savedDictTerm, tt.Texts())
 	}

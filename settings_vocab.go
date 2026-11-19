@@ -10,15 +10,15 @@ import (
 )
 
 func (a *app) pageCustomActions(c *ui.Context, t *ui.Theme, cfg Config) {
+	at := appTheme(t)
 	if a.editingActionID == "" {
 		PageTitle(c, t, "AI 指令", "管理与定制划词悬浮窗中的独立 AI 指令。支持独立开关、模型配置与提示词深度定制。")
 
 		ui.Column(c).FillWidth().Gap(10).Children(func() {
 			for _, action := range cfg.CustomActions {
 				act := action
-				ui.Box(c).FillWidth().Padding(14, 16).Radius(8).
-					Background(t.Surface).Border(1, t.Border).
-					Shadow(0, 1, 4, 0, ui.RGBA(0, 0, 0, 0.04)).Children(func() {
+				ui.Box(c).FillWidth().Padding(14, 16).Radius(RadiusTrack).
+					Background(at.Surface).Border(1, at.BorderSubtle).Children(func() {
 					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(14).Children(func() {
 						var actIcon *ui.SVG
 						switch act.ID {
@@ -59,14 +59,14 @@ func (a *app) pageCustomActions(c *ui.Context, t *ui.Theme, cfg Config) {
 							desc := "自定义 AI 指令"
 							switch act.ID {
 							case "default-sentence-analysis":
-								desc = "长难句语法树拆解：主干、从句微标、连词与波浪线谓语标注"
+								desc = "长难句语法树拆解：主干、从句微标、连词与谓语下划线标注"
 							case "default-improve-writing":
 								desc = "写作评改与润色：场景得体性、逐项错误修改建议与一键复制"
 							}
-							ui.Text(c, desc).FontSize(12).TextColor(t.TextMuted).Wrap()
+							ui.Text(c, desc).FontSize(12).TextColor(at.TextMuted).Wrap()
 						})
 
-						btnCustom := ui.Button(c, "定制化").Height(28).Padding(2, 14).Radius(5)
+						btnCustom := SecondaryButton(c, t, "定制化").Height(HeightCompact)
 						if btnCustom.Clicked() {
 							a.editingActionID = act.ID
 							a.customizingAction = act
@@ -95,7 +95,7 @@ func (a *app) pageCustomActions(c *ui.Context, t *ui.Theme, cfg Config) {
 		PageTitle(c, t, "定制化指令："+act.Name, "自由配置此指令调用的独立模型、系统提示词与输入模板。")
 
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
-			btnBack := ui.Button(c, "← 返回指令列表").Height(28).Padding(2, 12).Radius(5)
+			btnBack := SecondaryButton(c, t, "← 返回指令列表").Height(HeightCompact)
 			if btnBack.Clicked() {
 				a.editingActionID = ""
 			}
@@ -103,12 +103,12 @@ func (a *app) pageCustomActions(c *ui.Context, t *ui.Theme, cfg Config) {
 			ui.Spacer(c).Grow(1)
 
 			if strings.HasPrefix(a.editingActionID, "default-") {
-				btnReset := ui.Button(c, "恢复默认提示词").Height(28).Padding(2, 12).Radius(5)
+				btnReset := SecondaryButton(c, t, "恢复默认提示词").Height(HeightCompact)
 				if btnReset.Clicked() {
-					a.store.Update(func(c *Config) {
+					updated := a.store.Update(func(c *Config) {
 						c.ResetAction(a.editingActionID)
 					})
-					if def := cfg.GetAction(a.editingActionID); def != nil {
+					if def := updated.GetAction(a.editingActionID); def != nil {
 						a.customizingAction = *def
 					}
 					a.actionSaveFeedback = "已恢复为默认提示词设置"
@@ -247,15 +247,12 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 		a.pageVocabReview(c, t)
 		return
 	}
+	at := appTheme(t)
 	vocabStore := GetVocabularyStore()
-	vocabPath := vocabStore.Path()
-	if vocabPath == "" {
-		vocabPath = "仅内存（未落盘）"
-	}
-	PageTitle(c, t, "生词本与长难句笔记", "本地持久化存储（"+vocabPath+"）。支持分类归档、格式导出导入与智能补全。")
+	PageTitle(c, t, "生词本", "集中管理收藏的生词、长难句与写作批注，支持间隔复习与导出。")
 
-	ui.Box(c).FillWidth().Padding(10, 12).Radius(8).Background(t.Surface).Border(1, t.Border).Children(func() {
-		ui.Column(c).FillWidth().Gap(8).Children(func() {
+	ui.Box(c).FillWidth().Padding(Space3, Space3).Radius(RadiusTrack).Background(at.Surface).Border(1, at.BorderSubtle).Children(func() {
+		ui.Column(c).FillWidth().Gap(Space2).Children(func() {
 			cAll, cWords, cSentences, cWriting := vocabStore.CategoryCounts()
 			catNames := []string{
 				fmt.Sprintf("全部 (%d)", cAll),
@@ -263,30 +260,31 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 				fmt.Sprintf("长难句 (%d)", cSentences),
 				fmt.Sprintf("写作 (%d)", cWriting),
 			}
-			ui.Row(c).FillWidth().Children(func() {
-				ui.Segmented(c, &a.vocabCategoryIdx, catNames...).FillWidth().Height(28).FontSize(12).
-					OnChange(func() { a.resetVocabularyViewState() })
-			})
+			SegmentedControlCompact(c, &a.vocabCategoryIdx, catNames...).
+				OnChange(func() { a.resetVocabularyViewState() })
 
-			ui.SearchField(c, &a.vocabSearchQuery).FillWidth().OnChange(func() { a.resetVocabularyViewState() })
+			ui.SearchField(c, &a.vocabSearchQuery).
+				Placeholder("搜索生词、例句或笔记…").
+				Label("搜索生词本").
+				Height(HeightSearch).
+				FillWidth().
+				OnChange(func() { a.resetVocabularyViewState() })
 
 			if due := vocabStore.DueCount(time.Now()); due > 0 {
-				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
-					ui.Icon(c, iconBookmark).Size(13, 13).TextColor(t.Accent)
-					ui.Textf(c, "%d 个生词到期", due).FontSize(12).TextColor(t.Accent)
-					if ui.Button(c, "开始复习").Height(26).Padding(2, 12).Radius(5).
-						Background(t.SurfaceHover).TextColor(t.Accent).
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
+					ui.Icon(c, iconBookmark).Size(13, 13).TextColor(at.Accent)
+					ui.Textf(c, "%d 个生词到期", due).Font(fontUI).FontSize(FontHelper).TextColor(at.Accent)
+					if PrimaryButton(c, t, "开始复习").Height(HeightCompact).
 						Tooltip("按间隔重复复习到期生词").Clicked() {
 						a.startVocabReview()
 					}
 				})
 			}
 
-			ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(6).Children(func() {
+			ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(Space2).Children(func() {
 				if a.lastDeletedVocab != nil {
-					btnUndo := ui.Button(c, "↩ 撤销删除「"+truncateFor(a.lastDeletedVocab.Term, 10)+"」").
-						Height(28).Padding(2, 8).Radius(5).Background(t.SurfaceHover).
-						TextColor(t.Accent).Tooltip("恢复刚刚删除的生词条目")
+					btnUndo := AccentSoftButton(c, t, "↩ 撤销删除「"+truncateFor(a.lastDeletedVocab.Term, 10)+"」").
+						Height(HeightCompact).Tooltip("恢复刚刚删除的生词条目")
 					if btnUndo.Clicked() {
 						vocabStore.Add(*a.lastDeletedVocab)
 						if err := vocabStore.LastSaveError(); err != nil {
@@ -299,7 +297,7 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 					}
 				}
 
-				btnImport := ui.Button(c, "导入").Height(28).Padding(2, 8).Radius(5).
+				btnImport := SecondaryButton(c, t, "导入").Height(HeightCompact).
 					Tooltip("从外部 JSON/CSV/TXT 导入生词")
 				if btnImport.Clicked() {
 					go func() {
@@ -328,69 +326,79 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 					}()
 				}
 
-				btnExpCSV := ui.Button(c, "导出 CSV").Height(28).Padding(2, 8).Radius(5).
-					Tooltip("导出生词库为 CSV 表格（支持 Excel / Anki 直接打开）")
-				if btnExpCSV.Clicked() {
-					go func() {
-						defer recoverLog("settings_vocab.go:pageVocabulary")
-						if !a.tryBeginVocabJob() {
-							return
-						}
-						defer endVocabJob()
-						path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
-							Title:       "导出生词库 CSV",
-							DefaultPath: "fast词典_生词库.csv",
-							Filters:     []mygo.FileFilter{{Name: "CSV 表格", Extensions: []string{"csv"}}},
-						})
-						if err == nil && path != "" {
-							if err := vocabStore.ExportCSV(path); err == nil {
-								a.mu.Lock()
-								a.actionSavedMsg = "已成功导出 CSV 表格 ✓"
-								a.mu.Unlock()
-							} else {
-								a.mu.Lock()
-								a.actionSavedMsg = "导出 CSV 失败: " + err.Error()
-								a.mu.Unlock()
+				btnExport := ui.MenuButton(c, "导出", func(m *ui.Menu) {
+					if m.Item("导出 CSV 表格").Chosen() {
+						go func() {
+							defer recoverLog("settings_vocab.go:pageVocabulary")
+							if !a.tryBeginVocabJob() {
+								return
 							}
-							if a.cfgWin != nil {
-								a.cfgWin.Update(func() {})
+							defer endVocabJob()
+							path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
+								Title:       "导出生词库 CSV",
+								DefaultPath: "fast词典_生词库.csv",
+								Filters:     []mygo.FileFilter{{Name: "CSV 表格", Extensions: []string{"csv"}}},
+							})
+							if err == nil && path != "" {
+								if err := vocabStore.ExportCSV(path); err == nil {
+									a.mu.Lock()
+									a.actionSavedMsg = "已成功导出 CSV 表格 ✓"
+									a.mu.Unlock()
+								} else {
+									a.mu.Lock()
+									a.actionSavedMsg = "导出 CSV 失败: " + err.Error()
+									a.mu.Unlock()
+								}
+								if a.cfgWin != nil {
+									a.cfgWin.Update(func() {})
+								}
 							}
+						}()
+					}
+					if m.Item("导出 Anki 卡片").Chosen() {
+						go func() {
+							defer recoverLog("settings_vocab.go:pageVocabulary")
+							if !a.tryBeginVocabJob() {
+								return
+							}
+							defer endVocabJob()
+							path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
+								Title:       "导出 Anki 记忆卡片",
+								DefaultPath: "fast词典_生词库_Anki.txt",
+								Filters:     []mygo.FileFilter{{Name: "Anki 卡片 (*.txt)", Extensions: []string{"txt"}}},
+							})
+							if err == nil && path != "" {
+								if err := vocabStore.ExportAnki(path); err == nil {
+									a.mu.Lock()
+									a.actionSavedMsg = fmt.Sprintf("已成功导出 %d 张 Anki 记忆卡片 ✓", vocabStore.Count())
+									a.mu.Unlock()
+								} else {
+									a.mu.Lock()
+									a.actionSavedMsg = "导出 Anki 失败: " + err.Error()
+									a.mu.Unlock()
+								}
+								if a.cfgWin != nil {
+									a.cfgWin.Update(func() {})
+								}
+							}
+						}()
+					}
+					if m.Item("浏览器网页版").Chosen() {
+						if path, err := vocabStore.ExportHTML(); err == nil {
+							go mygo.Shell.OpenExternal(path)
 						}
-					}()
+					}
+				}).Height(HeightCompact).Radius(RadiusSM).Padding(0, Space3).
+					Font(fontUI).FontSize(FontControl).
+					Background(at.Surface).Border(1, at.BorderCtrl).TextColor(at.Text).
+					Disabled(vocabStore.Count() == 0).
+					Tooltip("导出生词本为 CSV、Anki 卡片或在浏览器中查看")
+				if vocabStore.Count() > 0 && btnExport.Hovered() {
+					btnExport.Background(at.SurfaceHover).Border(1, at.BorderHover)
 				}
 
-				btnExpAnki := ui.Button(c, "导出 Anki").Height(28).Padding(2, 8).Radius(5).
-					Tooltip("导出为 Anki 记忆卡片格式（含完整排版与高亮样式，可直接导入 Anki）")
-				if btnExpAnki.Clicked() {
-					go func() {
-						defer recoverLog("settings_vocab.go:pageVocabulary")
-						if !a.tryBeginVocabJob() {
-							return
-						}
-						defer endVocabJob()
-						path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
-							Title:       "导出 Anki 记忆卡片",
-							DefaultPath: "fast词典_生词库_Anki.txt",
-							Filters:     []mygo.FileFilter{{Name: "Anki 卡片 (*.txt)", Extensions: []string{"txt"}}},
-						})
-						if err == nil && path != "" {
-							if err := vocabStore.ExportAnki(path); err == nil {
-								a.mu.Lock()
-								a.actionSavedMsg = fmt.Sprintf("已成功导出 %d 张 Anki 记忆卡片 ✓", vocabStore.Count())
-								a.mu.Unlock()
-							} else {
-								a.mu.Lock()
-								a.actionSavedMsg = "导出 Anki 失败: " + err.Error()
-								a.mu.Unlock()
-							}
-							if a.cfgWin != nil {
-								a.cfgWin.Update(func() {})
-							}
-						}
-					}()
-				}
-
-				btnEnrich := ui.Button(c, "补全").Height(28).Padding(2, 8).Radius(5).
+				btnEnrich := SecondaryButton(c, t, "补全").Height(HeightCompact).
+					Disabled(vocabStore.Count() == 0).
 					Tooltip("为生词自动补全音标、CEFR 难度、例句与记忆技巧")
 				if btnEnrich.Clicked() {
 					go func() {
@@ -413,18 +421,11 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 					}()
 				}
 
-				btnWeb := ui.Button(c, "网页版").Height(28).Padding(2, 8).Radius(5).
-					Tooltip("在默认浏览器中全屏查阅生词本")
-				if btnWeb.Clicked() {
-					if path, err := vocabStore.ExportHTML(); err == nil {
-						go mygo.Shell.OpenExternal(path)
-					}
-				}
-
 				if vocabStore.Count() > 0 {
 					if a.confirmClearVocab {
-						btnYes := ui.Button(c, "确认清空").Height(28).Padding(2, 8).Radius(5).
-							Background(t.Danger).TextColor(t.AccentText).Tooltip("删除全部生词，无法恢复")
+						btnYes := ui.ButtonBase(c).Height(HeightCompact).Radius(RadiusSM).Padding(0, Space3).Center().
+							Background(at.Danger).BorderWidth(0).TextColor(at.AccentText).Tooltip("删除全部生词，无法恢复")
+						btnYes.Children(func() { buttonLabel(c, at, "确认清空", at.AccentText) })
 						if btnYes.Clicked() {
 							if err := vocabStore.Clear(); err != nil {
 								a.actionSavedMsg = "清空失败: " + err.Error()
@@ -434,14 +435,13 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 							a.confirmClearVocab = false
 							a.settingsRefresh()
 						}
-						btnNo := ui.Button(c, "取消").Height(28).Padding(2, 8).Radius(5)
+						btnNo := SecondaryButton(c, t, "取消").Height(HeightCompact)
 						if btnNo.Clicked() {
 							a.confirmClearVocab = false
 							a.settingsRefresh()
 						}
 					} else {
-						btnClear := ui.Button(c, "清空").Height(28).Padding(2, 8).Radius(5).
-							TextColor(t.Danger).Tooltip("清空当前所有笔记（会先确认）")
+						btnClear := DangerGhostButton(c, t, "清空").Tooltip("清空当前所有笔记（会先确认）")
 						if btnClear.Clicked() {
 							a.confirmClearVocab = true
 							a.settingsRefresh()
@@ -464,20 +464,20 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 
 	entries := vocabStore.Filter(catKey, a.vocabSearchQuery)
 	if len(entries) == 0 {
-		ui.Box(c).FillWidth().Padding(36, 20).Radius(8).Background(t.Surface).Border(1, t.Border).Children(func() {
+		ui.Box(c).FillWidth().Padding(36, 20).Radius(RadiusTrack).Background(at.Surface).Border(1, at.BorderSubtle).Children(func() {
 			ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 				if a.vocabSearchQuery != "" {
 					ui.Icon(c, iconSearch).Size(24, 24)
-					ui.Text(c, fmt.Sprintf("未找到与「%s」相关的笔记", a.vocabSearchQuery)).FontSize(14).FontWeight(600).TextColor(t.Text)
-					ui.Text(c, "尝试缩短搜索词，或切换上方分类查看。").FontSize(12).TextColor(t.TextMuted)
-					btnClearSearch := ui.Button(c, "清除搜索关键词").Height(26).Padding(2, 12).Radius(5).Background(t.SurfaceHover)
+					ui.Text(c, fmt.Sprintf("未找到与「%s」相关的笔记", a.vocabSearchQuery)).FontSize(14).FontWeight(600).TextColor(at.Text)
+					ui.Text(c, "尝试缩短搜索词，或切换上方分类查看。").FontSize(12).TextColor(at.TextMuted)
+					btnClearSearch := SecondaryButton(c, t, "清除搜索关键词").Height(HeightCompact)
 					if btnClearSearch.Clicked() {
 						a.vocabSearchQuery = ""
 						a.settingsRefresh()
 					}
 				} else {
 					ui.Icon(c, iconDict).Size(24, 24)
-					title := "笔记本还是空的"
+					title := "生词本还是空的"
 					desc := "在划词弹窗里点击【保存】即可自动归档；存下来的词可以在这里展开完整词卡与导出 Anki。"
 					switch a.vocabCategoryIdx {
 					case 1:
@@ -485,26 +485,35 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 						desc = "在划词翻译查词时，点击【保存生词】或【猜你想存】，即可将陌生词汇自动收录并补全音标与 CEFR 难度。"
 					case 2:
 						title = "暂无长难句分析"
-						desc = "划词选中长句子后切换到【长难句】Tab，点击【保存到长难句本】即可归档语法树与拆解。"
+						desc = "划词选中长句子后切换到【长难句】Tab，点击【存入生词本】即可归档语法树与拆解。"
 					case 3:
 						title = "暂无写作批改笔记"
-						desc = "选中需要润色的句子后切换到【写作】Tab，点击【保存到笔记本】即可归档修改建议。"
+						desc = "选中需要润色的句子后切换到【写作】Tab，点击【存入生词本】即可归档修改建议。"
 					}
-					ui.Text(c, title).FontSize(14).FontWeight(600).TextColor(t.Text)
-					ui.Text(c, desc).FontSize(12).TextColor(t.TextMuted).Wrap()
-					ui.Text(c, "常用快捷键：Alt+D 极速划词 · Alt+Q 输入翻译 · Alt+C 截图翻译").FontSize(11).TextColor(t.Accent)
+					ui.Text(c, title).FontSize(14).FontWeight(600).TextColor(at.Text)
+					ui.Text(c, desc).FontSize(12).TextColor(at.TextMuted).Wrap()
+					hints := formatShortcutHints(
+						shortcutHint{"划词翻译", cfg.HotkeySelection},
+						shortcutHint{"输入翻译", cfg.HotkeyInput},
+						shortcutHint{"截图翻译", cfg.HotkeyScreenshot},
+					)
+					if hints != "" {
+						HelperText(c, t, "常用快捷键："+hints)
+					}
 				}
 			})
 		})
+		renderVocabPathFooter(c, t, vocabStore.Path())
 		return
 	}
 
+	a.vocabList.Key = func(i int) any { return entries[i].ID }
+	a.vocabList.MoveAnimation = &ui.Animation{Duration: 150 * time.Millisecond, Ease: ui.EaseOut}
 	list := ui.List(c, &a.vocabList, len(entries), func(i int) {
 		entry := entries[i]
 		expanded := a.vocabExpandedID == entry.ID
-		ui.Box(c).FillWidth().Padding(12, 14).Radius(8).
-			Background(t.Surface).Border(1, t.Border).
-			Shadow(0, 1, 4, 0, ui.RGBA(0, 0, 0, 0.04)).Children(func() {
+		ui.Box(c).FillWidth().Padding(Space3, Space3+2).Radius(RadiusTrack).
+			Background(at.Surface).Border(1, at.BorderSubtle).Children(func() {
 			ui.Column(c).FillWidth().Gap(8).Children(func() {
 				ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
 					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
@@ -515,13 +524,13 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 						case vocabCategoryWriting:
 							srcLabel = "写作"
 						}
-						ui.Box(c).Padding(1, 6).Radius(4).Background(t.SurfaceHover).Children(func() {
-							ui.Text(c, srcLabel).FontSize(11).FontWeight(600).TextColor(t.Accent)
+						ui.Box(c).Padding(1, 6).Radius(4).Background(at.SurfaceHover).Children(func() {
+							ui.Text(c, srcLabel).FontSize(11).FontWeight(600).TextColor(at.Accent)
 						})
 
 						if !expanded {
 							if entry.Phonetic != "" {
-								ui.Text(c, entry.Phonetic).FontSize(12).TextColor(t.TextMuted)
+								ui.Text(c, entry.Phonetic).Font(fontIPA).FontSize(12).TextColor(at.TextMuted)
 							}
 
 							if entry.PartOfSpeech != "" {
@@ -645,6 +654,15 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 		})
 	})
 	list.FillWidth()
+	renderVocabPathFooter(c, t, vocabStore.Path())
+}
+
+func renderVocabPathFooter(c *ui.Context, t *ui.Theme, vocabPath string) {
+	if vocabPath == "" {
+		vocabPath = "仅内存（未落盘）"
+	}
+	at := appTheme(t)
+	ui.Text(c, "存储位置："+vocabPath).Font(fontMono).FontSize(FontMicro).TextColor(at.TextMuted).Wrap()
 }
 
 func renderVocabWordCard(c *ui.Context, t *ui.Theme, entry VocabularyEntry) {

@@ -897,10 +897,6 @@ func (a *app) selIconView(c *ui.Context) {
 					a.speakSelection(text, false)
 				}
 			})
-			a.chipIconButton(c, t, iconScreenshot, chipToneInk, "截图翻译（"+cfg.HotkeyScreenshot+"）", func() {
-				a.hideSelIcon()
-				a.TriggerScreenshotOCR()
-			})
 			for _, action := range enabledActions {
 				act := action
 				icon, mode := iconSparkles, modeTranslate
@@ -919,6 +915,10 @@ func (a *app) selIconView(c *ui.Context) {
 					})
 				})
 			}
+			a.chipIconButton(c, t, iconScreenshot, chipToneInk, "截图翻译（"+cfg.HotkeyScreenshot+"）", func() {
+				a.hideSelIcon()
+				a.TriggerScreenshotOCR()
+			})
 			ui.Box(c).Width(1).Height(14).Background(chipBorderColor(t))
 			a.chipIconButton(c, t, iconMore, chipToneInk, chipMoreLabel, func() { a.toggleMoreFlyout() })
 		})

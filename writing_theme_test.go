@@ -27,10 +27,10 @@ func writingContrastRatio(foreground, background ui.Color) float64 {
 	return (fg + 0.05) / (bg + 0.05)
 }
 
-func writingThemeForTest(dark bool) *ui.Theme {
+func writingThemeForTest(dark bool, accent string) *ui.Theme {
 	var got *ui.Theme
 	tt := ui.NewTester(func(c *ui.Context) {
-		applyTheme(c, themeModeFor(dark), dark, "sky")
+		applyTheme(c, themeModeFor(dark), dark, accent)
 		got = c.Theme()
 	}, 40, 20)
 	tt.Frame()
@@ -38,41 +38,42 @@ func writingThemeForTest(dark bool) *ui.Theme {
 }
 
 func TestWritingThemeContrast(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		base *ui.Theme
-	}{
-		{name: "light", base: writingThemeForTest(false)},
-		{name: "dark", base: writingThemeForTest(true)},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			w := writingThemeFor(tc.base)
-			base := tc.base
-			hoverBg := base.SurfaceHover.Over(base.Surface)
-			checks := []struct {
-				name       string
-				foreground ui.Color
-				background ui.Color
-			}{
-				{name: "setting label", foreground: w.settingLabel, background: w.setting.background},
-				{name: "setting value", foreground: w.setting.text, background: w.setting.background},
-				{name: "removed text", foreground: w.removed, background: hoverBg},
-				{name: "added text", foreground: w.added, background: hoverBg},
-				{name: "deleted text", foreground: w.deleted, background: hoverBg},
-				{name: "annotation tag", foreground: w.tag.text, background: w.tag.background},
-				{name: "success message", foreground: w.success.text, background: w.success.background},
-				{name: "improved heading", foreground: w.improvedTitle, background: w.improved.background},
-				{name: "improved text", foreground: w.improved.text, background: w.improved.background},
-				{name: "copy text", foreground: w.copy.text, background: w.copy.background},
-				{name: "save text", foreground: w.save.text, background: w.save.background},
-			}
-			for _, check := range checks {
-				t.Run(check.name, func(t *testing.T) {
-					if got := writingContrastRatio(check.foreground, check.background); got < 4.5 {
-						t.Errorf("contrast ratio = %.2f, want at least 4.5", got)
-					}
-				})
-			}
-		})
+	for _, choice := range accentChoices {
+		for _, dark := range []bool{false, true} {
+			name := choice.Value + "/" + themeModeFor(dark)
+			base := writingThemeForTest(dark, choice.Value)
+			t.Run(name, func(t *testing.T) {
+				w := writingThemeFor(base)
+				if w.removed == w.added {
+					t.Fatalf("removed and added colors should be distinct, both %+v", w.removed)
+				}
+				hoverBg := base.SurfaceHover.Over(base.Surface)
+				checks := []struct {
+					name       string
+					foreground ui.Color
+					background ui.Color
+				}{
+					{name: "setting label", foreground: w.settingLabel, background: w.setting.background},
+					{name: "setting value", foreground: w.setting.text, background: w.setting.background},
+					{name: "removed text", foreground: w.removed, background: hoverBg},
+					{name: "added text", foreground: w.added, background: hoverBg},
+					{name: "deleted text", foreground: w.deleted, background: hoverBg},
+					{name: "note text", foreground: w.note, background: hoverBg},
+					{name: "annotation tag", foreground: w.tag.text, background: w.tag.background},
+					{name: "success message", foreground: w.success.text, background: w.success.background},
+					{name: "improved heading", foreground: w.improvedTitle, background: w.improved.background},
+					{name: "improved text", foreground: w.improved.text, background: w.improved.background},
+					{name: "copy text", foreground: w.copy.text, background: w.copy.background},
+					{name: "save text", foreground: w.save.text, background: w.save.background},
+				}
+				for _, check := range checks {
+					t.Run(check.name, func(t *testing.T) {
+						if got := writingContrastRatio(check.foreground, check.background); got < 4.5 {
+							t.Errorf("contrast ratio = %.2f, want at least 4.5", got)
+						}
+					})
+				}
+			})
+		}
 	}
 }
