@@ -1,5 +1,31 @@
 # 更新日志
 
+## 1.6.1 — 2026-11-19（括号法和谐多色体系 · 括号排版修正 · V6 精度提示词 · 全局原生加载进度）
+
+### 变更
+
+- **三组低饱和和谐短语配色与自动防撞色（`theme.go` / `grammar.go`）**：通过 `grammarPhrasePalette` 按语法家族为短语括号法与缩进结构树同步着色（双主题均通过 WCAG AA `>= 4.5:1` 对比度校验）——`介短`采用青绿鼠尾草色（`mint` 主题下自动让位为靛青蓝）；`分词 / 不定式 / 动名`采用暖琥珀赭石色并配彩色虚线底纹（`coral` 主题下切换为橄榄松绿）；`同位 / 插入`采用柔和梅紫（`violet` 主题下切换为玫瑰岩红）。缩进结构树同步用对应家族色渲染左导引竖线、角色微标与文字，并拆分主谓宾相邻主干段。
+- **括号空格与嵌套括号排版修正 + 显著切换器（`grammar.go` / `config.go`）**：修复了此前短语末尾空格落在闭括号内侧导致 `)here.` / `)gets` 黏连的问题，并在渲染前自动检测原文是否已自带圆括号（如 `($19.99/month)`）以避免 `((...))` 双重括号与徽章粘字；控制栏升级为 `SegmentedControlCompact`（「括号标注 | 结构树」）配合「只看主干」「断句」及六色图例；默认长难句分析升级为 `grammarSystemPromptV6`（支持从 V1–V5 自动迁移），禁止把主句主/宾语错标成「同位」或把普通形容词错标成「分词」，同时要求纯中文译文不加前缀；同步更新 [docs/DESIGN.md](docs/DESIGN.md) 与 [docs/screenshots/grammar.png](docs/screenshots/grammar.png)。
+- **全局统一的 MyGo 原生加载状态体系（`theme.go` / `grammar.go` / `popup_view.go` / `popup_translation.go` / `ocr.go` / `home.go` / `settings_pages.go` / `vocab_job.go` / `settings_vocab.go`）**：
+  - 在「长难句」机翻预填（prefill）等待阶段，卡片下方展示主题色 `ui.Spinner` + 不定长进度条 `IndeterminateBar`（`ui.Progress(c, -1)`），顶部操作栏显示 `Spinner` +「句法分析中…」并隐藏可点击保存，分析未完成时不误露出「存入句法笔记」；新增 `--demo-action grammar-loading`（及 `ui-evidence.ps1 -View grammar-loading`）复现该状态。
+  - 新增共用按钮与进度条原语 `LoadingSecondaryButton` 与 `IndeterminateBar`，全面接入弹窗流式卡片、划词翻译、截图 OCR、工作台 AI 精翻/长难句/写作以及设置页「获取模型」「测试连接」「检查更新」「生词导入 / 导出 CSV / 导出 Anki / 补全」后台任务，并保持无障碍文本不重复播报。
+
+### 验证
+
+- `gofmt -w .` / `go vet ./...` / `go build -tags mygo_nowebview ./...` / `go test -v -count=1 ./...`：587 项顶层用例 + 355 项子测试全部通过（0 失败；8 项依赖外网或系统独占环境的用例跳过：`TestChipStateStrip`、`TestLiveDirectProvider`、`TestLiveProvidersRejectBadKey`、`TestLiveRaceIncludesGoogle`、`TestChipPaletteStrip`、`TestShortcutRegistration`、`TestLiveMicrosoftSplitIsRepaired`、`TestEdgeTTSLive`）。
+- 原生截图与控件树证据（基于最终 Go 源码二进制 `7E67CAB668BAE294…` 采集并逐一核对，`docs/DESIGN.md` 与示例截图随后更新）：
+  - `build/ui-evidence/20261119-214610-grammar-news-light-sky`（37 词零从句新闻长难句：青靛 `介短` + 琥珀 `分词` 虚线 + 括号外置空格 + 六色图例）
+  - `build/ui-evidence/20261119-214611-grammar-tree-dark-mint`（深色薄荷下自动切换靛青蓝 `介短` + 琥珀 `分词` 缩进结构树）
+  - `build/ui-evidence/20261119-214612-grammar-loading-light-sky`（机翻预填阶段 `Spinner` + 不定长 `ui.Progress` + 顶部「句法分析中…」）
+  - `build/ui-evidence/20261119-214614-grammar-light-coral`（暖珊瑚主题下从句、介短与橄榄松绿图例协同对比）
+  - `build/ui-evidence/20261119-214615-settings-light-sky`（主窗口「句法笔记」列表页与左侧栏计数对齐）
+
+### 分发
+
+- 源码提交：`8d48c68`
+- 包名：`fastDictionary-v2026.11.19-r3-win64.zip`（`27,550,507 bytes`；内含 `fastDictionary.exe` `17,063,936 bytes`）
+- SHA256：`D4DFED1CD2C9A1042F7D03CC571F45DF710D01823424A60EACA5A986A7C4A2C7`
+
 ## 1.6.0 — 2026-11-19（持久化查询缓存 · 句法笔记独立 · V5 括号法与结构树 · 瘦身发布）
 
 ### 变更
