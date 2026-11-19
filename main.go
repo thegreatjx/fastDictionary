@@ -536,6 +536,14 @@ func main() {
 					},
 					Translation: "日本与中国围绕高市早苗涉台言论产生的争端，已从外交抗议升级为北京对关键矿产的出口限制——这些矿产广泛应用于从汽车、半导体到军事装备的各类领域。",
 				}
+			case "grammar-loading":
+				a.mode = modeGrammar
+				a.source = "In the spring of 2023, Anthropic invited me to spend several weeks at their headquarters ahead of the launch of Claude 2, sitting in on meetings and interviewing dozens of employees to write the first major profile of the company in the NYT."
+				a.activeActionID = "default-sentence-analysis"
+				a.grammarResultPrefill = true
+				a.grammarResult = &SentenceAnalysisResult{
+					Translation: "2023年春天，Anthropic 邀请我在他们总部为 Claude 2 发布前停留数周，参加会议并采访数十名员工，为《纽约时报》撰写公司首篇重要人物报道。",
+				}
 			case "writing":
 				a.mode = modeWriting
 				a.source = "pls check the attached file and give me ur feedback asap. thx!"

@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-var appVersion = "1.6.0"
+var appVersion = "1.6.1"
 
 const releasesAPI = "https://api.github.com/repos/thegreatjx/fastDictionary/releases/latest"
 

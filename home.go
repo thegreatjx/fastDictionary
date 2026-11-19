@@ -328,9 +328,12 @@ func formatShortcutHints(items ...shortcutHint) string {
 func (a *app) renderHomeTranslateTab(c *ui.Context, t *ui.Theme, at AppTheme, cfg Config, h homeState) {
 	if h.busy {
 		SurfaceCard(c, t).Children(func() {
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Padding(Space2, 0).Children(func() {
-				ui.Spinner(c).Size(16, 16)
-				ui.Text(c, "正在查询与翻译…").Font(fontUI).FontSize(FontControl).TextColor(at.TextMuted)
+			ui.Column(c).FillWidth().Gap(Space2).Padding(Space2, 0).Children(func() {
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
+					ui.Spinner(c).Size(16, 16).TextColor(at.Accent)
+					ui.Text(c, "正在查询与翻译…").Font(fontUI).FontSize(FontControl).TextColor(at.TextSec)
+				})
+				IndeterminateBar(c, t, 3, "")
 			})
 		})
 		return
@@ -360,11 +363,7 @@ func (a *app) renderHomeTranslateTab(c *ui.Context, t *ui.Theme, at AppTheme, cf
 						a.mu.Unlock()
 						a.settingsRefresh()
 					}
-					refineLabel := "AI 精翻"
-					if h.aiRefining {
-						refineLabel = "精翻中…"
-					}
-					if SecondaryButton(c, t, refineLabel, iconSparkles).Disabled(h.aiRefining).Clicked() {
+					if LoadingSecondaryButton(c, t, "AI 精翻", "精翻中…", h.aiRefining, iconSparkles).Clicked() {
 						a.homeRefineWithAI()
 					}
 					if !h.transSaved && !isWord(h.source) {
@@ -516,8 +515,9 @@ func (a *app) renderHomeGrammarTab(c *ui.Context, t *ui.Theme, at AppTheme, cfg 
 	if h.aiBusy {
 		SurfaceCard(c, t).Children(func() {
 			ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Padding(Space6, 0).Children(func() {
-				ui.Spinner(c).Size(22, 22)
-				ui.Text(c, "正在拆解长难句…").Font(fontUI).FontSize(FontControl).TextColor(at.TextMuted)
+				ui.Spinner(c).Size(20, 20).TextColor(at.Accent)
+				ui.Text(c, "正在拆解长难句…").Font(fontUI).FontSize(FontControl).TextColor(at.TextSec)
+				ui.Progress(c, -1).Width(180).Height(3).TextColor(at.Accent)
 			})
 		})
 		return
@@ -565,8 +565,9 @@ func (a *app) renderHomeWritingTab(c *ui.Context, t *ui.Theme, at AppTheme, cfg 
 	if h.aiBusy {
 		SurfaceCard(c, t).Children(func() {
 			ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Padding(Space6, 0).Children(func() {
-				ui.Spinner(c).Size(22, 22)
-				ui.Text(c, "正在批改与润色…").Font(fontUI).FontSize(FontControl).TextColor(at.TextMuted)
+				ui.Spinner(c).Size(20, 20).TextColor(at.Accent)
+				ui.Text(c, "正在批改与润色…").Font(fontUI).FontSize(FontControl).TextColor(at.TextSec)
+				ui.Progress(c, -1).Width(180).Height(3).TextColor(at.Accent)
 			})
 		})
 		return

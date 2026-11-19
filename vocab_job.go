@@ -5,6 +5,7 @@ import "sync"
 var (
 	vocabJobMu      sync.Mutex
 	vocabJobRunning bool
+	vocabJobLabel   string
 )
 
 // 词库任务单槽位，防止并发写同一个单例。
@@ -21,6 +22,7 @@ func (a *app) tryBeginVocabJob() bool {
 		return false
 	}
 	vocabJobRunning = true
+	vocabJobLabel = ""
 	vocabJobMu.Unlock()
 	return true
 }
@@ -28,5 +30,18 @@ func (a *app) tryBeginVocabJob() bool {
 func endVocabJob() {
 	vocabJobMu.Lock()
 	vocabJobRunning = false
+	vocabJobLabel = ""
 	vocabJobMu.Unlock()
+}
+
+func setVocabJobLabel(label string) {
+	vocabJobMu.Lock()
+	vocabJobLabel = label
+	vocabJobMu.Unlock()
+}
+
+func vocabJobStatus() (bool, string) {
+	vocabJobMu.Lock()
+	defer vocabJobMu.Unlock()
+	return vocabJobRunning, vocabJobLabel
 }

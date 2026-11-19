@@ -307,12 +307,15 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 						if !a.tryBeginVocabJob() {
 							return
 						}
+						defer a.settingsRefresh()
 						defer endVocabJob()
 						paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
 							Title:   "导入生词文件",
 							Filters: []mygo.FileFilter{{Name: "生词文件 (*.json, *.csv, *.txt)", Extensions: []string{"json", "csv", "txt"}}},
 						})
 						if err == nil && len(paths) > 0 {
+							setVocabJobLabel("正在导入生词…")
+							a.settingsRefresh()
 							n, err := vocabStore.ImportFile(paths[0])
 							a.mu.Lock()
 							if err == nil {
@@ -335,6 +338,7 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 							if !a.tryBeginVocabJob() {
 								return
 							}
+							defer a.settingsRefresh()
 							defer endVocabJob()
 							path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
 								Title:       "导出生词库 CSV",
@@ -342,6 +346,8 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 								Filters:     []mygo.FileFilter{{Name: "CSV 表格", Extensions: []string{"csv"}}},
 							})
 							if err == nil && path != "" {
+								setVocabJobLabel("正在导出 CSV…")
+								a.settingsRefresh()
 								if err := vocabStore.ExportCSV(path); err == nil {
 									a.mu.Lock()
 									a.actionSavedMsg = "已成功导出 CSV 表格 ✓"
@@ -363,6 +369,7 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 							if !a.tryBeginVocabJob() {
 								return
 							}
+							defer a.settingsRefresh()
 							defer endVocabJob()
 							path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
 								Title:       "导出 Anki 记忆卡片",
@@ -370,6 +377,8 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 								Filters:     []mygo.FileFilter{{Name: "Anki 卡片 (*.txt)", Extensions: []string{"txt"}}},
 							})
 							if err == nil && path != "" {
+								setVocabJobLabel("正在导出 Anki…")
+								a.settingsRefresh()
 								if err := vocabStore.ExportAnki(path); err == nil {
 									a.mu.Lock()
 									a.actionSavedMsg = fmt.Sprintf("已成功导出 %d 张 Anki 记忆卡片 ✓", vocabStore.Count())
@@ -408,7 +417,10 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 						if !a.tryBeginVocabJob() {
 							return
 						}
+						defer a.settingsRefresh()
 						defer endVocabJob()
+						setVocabJobLabel("正在补全生词数据…")
+						a.settingsRefresh()
 						n, err := vocabStore.EnrichAll()
 						a.mu.Lock()
 						if err != nil {
@@ -451,6 +463,19 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 					}
 				}
 			})
+
+			if running, jobLabel := vocabJobStatus(); running {
+				if jobLabel == "" {
+					jobLabel = "正在处理词库任务…"
+				}
+				ui.Column(c).FillWidth().Gap(Space1).Padding(Space1, 0, 0, 0).Children(func() {
+					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
+						ui.Spinner(c).Size(13, 13).TextColor(at.Accent)
+						ui.Text(c, jobLabel).Font(fontUI).FontSize(FontHelper).TextColor(at.TextSec)
+					})
+					IndeterminateBar(c, t, 2, "")
+				})
+			}
 		})
 	})
 
@@ -648,6 +673,19 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 					}
 				}
 			})
+
+			if running, jobLabel := vocabJobStatus(); running {
+				if jobLabel == "" {
+					jobLabel = "正在处理词库任务…"
+				}
+				ui.Column(c).FillWidth().Gap(Space1).Padding(Space1, 0, 0, 0).Children(func() {
+					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
+						ui.Spinner(c).Size(13, 13).TextColor(at.Accent)
+						ui.Text(c, jobLabel).Font(fontUI).FontSize(FontHelper).TextColor(at.TextSec)
+					})
+					IndeterminateBar(c, t, 2, "")
+				})
+			}
 		})
 	})
 	list.FillWidth()

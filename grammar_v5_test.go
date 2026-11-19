@@ -76,13 +76,20 @@ func TestGrammarV5ClauseLessNewsSentenceAndTreeView(t *testing.T) {
 
 	ttInline := ui.NewTester(a.popupView, 520, 760)
 	ttInline.Frame()
-	if !ttInline.HasText("存入句法笔记") || !ttInline.HasText("结构树") || !ttInline.HasText("1 句 · 9 处短语") {
-		t.Fatalf("inline grammar card missing V5 controls/scope: %v", ttInline.Texts())
+	if !ttInline.HasText("存入句法笔记") || !ttInline.HasText("括号标注") || !ttInline.HasText("结构树") || !ttInline.HasText("1 句 · 9 处短语") {
+		t.Fatalf("inline grammar card missing V5/V6 controls/scope: %v", ttInline.Texts())
 	}
 	joined := strings.ReplaceAll(strings.Join(ttInline.Texts(), " "), "\u2060", "")
 	if !strings.Contains(joined, "介短") || !strings.Contains(joined, "分词") {
 		t.Fatalf("inline grammar card missing 括号法 phrase badges: %s", joined)
 	}
+
+	ttInline.Click("结构树")
+	ttInline.Frame()
+	if !a.showTree {
+		t.Fatal("clicking segmented control '结构树' did not switch to tree view")
+	}
+	a.showTree = false
 
 	a.onlyTrunk = true
 	ttTrunk := ui.NewTester(a.popupView, 520, 760)
@@ -101,5 +108,55 @@ func TestGrammarV5ClauseLessNewsSentenceAndTreeView(t *testing.T) {
 		if !strings.Contains(treeText, "↳ 修饰 minerals") || !strings.Contains(treeText, "分词·后置定语") {
 			t.Fatalf("dark=%v tree view missing hierarchy labels: %v", dark, ttTree.Texts())
 		}
+	}
+}
+
+func TestGrammarParenthesisSpacingAndOwnParens(t *testing.T) {
+	a := newTestApp()
+	a.mode = modeGrammar
+	a.source = "Google AI Pro ($19.99/month) gets Gemini 4 and something interesting here."
+	a.grammarResult = &SentenceAnalysisResult{
+		Segments: []Segment{
+			{Text: "Google AI Pro", Role: RoleSubject, IsBackbone: true},
+			{Text: " ($19.99/month) ", Role: RoleModifier, PhraseID: "p1"},
+			{Text: "gets", Role: RolePredicate, IsBackbone: true},
+			{Text: " Gemini 4 and", Role: RoleObject, IsBackbone: true},
+			{Text: " something interesting ", Role: RoleModifier, PhraseID: "p2"},
+			{Text: "here.", Role: RoleModifier, IsBackbone: true},
+		},
+		Phrases: []PhraseInfo{
+			{ID: "p1", Type: "插入语", ShortTag: "插入", Role: "插入", Target: "补充价格"},
+			{ID: "p2", Type: "定语", ShortTag: "介短", Role: "定语", Target: "修饰"},
+		},
+		Translation: "Google AI Pro 获得 Gemini 4。",
+	}
+
+	tt := ui.NewTester(a.popupView, 520, 680)
+	tt.Frame()
+	joined := strings.Join(tt.Texts(), "")
+	if strings.Contains(joined, "(($") || strings.Contains(joined, "month))") || strings.Contains(joined, "month) )") {
+		t.Fatalf("own-paren span gained redundant outer parentheses: %q", joined)
+	}
+	if strings.Contains(joined, ")gets") || strings.Contains(joined, ")here.") || strings.Contains(joined, "interesting )") {
+		t.Fatalf("trailing space leaked inside closing parenthesis: %q", joined)
+	}
+}
+
+func TestGrammarPrefillLoadingShowsProgressAndHidesSave(t *testing.T) {
+	a := newTestApp()
+	a.mode = modeGrammar
+	a.source = "In the spring of 2023, Anthropic invited me."
+	a.grammarResultPrefill = true
+	a.grammarResult = &SentenceAnalysisResult{
+		Translation: "2023 年春天 Anthropic 邀请了我。",
+	}
+
+	tt := ui.NewTester(a.popupView, 520, 640)
+	tt.Frame()
+	if !tt.HasText("句法分析中…") || !tt.HasText("正在拆解句法结构（主干 / 从句 / 短语），先看机器译文…") {
+		t.Fatalf("prefill card missing loading progress copy: %v", tt.Texts())
+	}
+	if tt.HasText("存入句法笔记") {
+		t.Fatalf("prefill card should not expose clickable save before analysis completes: %v", tt.Texts())
 	}
 }

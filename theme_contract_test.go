@@ -61,6 +61,14 @@ func TestGrammarPaletteContrastAcrossThemes(t *testing.T) {
 				requireContrast(t, name+" badge "+tag, colors.badgeText, badge, 4.5)
 			}
 
+			for _, ptag := range []string{"介短", "分词", "插入"} {
+				pc := grammarPhrasePalette(th, ptag)
+				wash := pc.wash.Over(at.SurfaceHover)
+				badge := pc.badgeBg.Over(wash)
+				requireContrast(t, name+" phrase badge "+ptag, pc.badgeText, badge, 4.5)
+				requireContrast(t, name+" phrase text "+ptag, pc.text, wash, 4.5)
+			}
+
 			d := grammarDifficultyPalette(at)
 			requireContrast(t, name+" difficulty heading", d.heading, d.surface, 4.5)
 			requireContrast(t, name+" difficulty chip", d.chipText, d.chipBg, 4.5)
@@ -69,6 +77,26 @@ func TestGrammarPaletteContrastAcrossThemes(t *testing.T) {
 			w := writingThemeFor(th)
 			requireContrast(t, name+" writing removed", w.removed, at.SurfaceHover, 4.5)
 			requireContrast(t, name+" writing added", w.added, at.SurfaceHover, 4.5)
+		}
+	}
+}
+
+func TestGrammarPhrasePaletteAvoidsAccentCollision(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		skyMint := grammarPhrasePalette(themeForContract(t, dark, "sky"), "介短")
+		mintMint := grammarPhrasePalette(themeForContract(t, dark, "mint"), "介短")
+		if skyMint.badgeText == mintMint.badgeText {
+			t.Errorf("dark=%v: 介短 palette did not shift away from mint accent", dark)
+		}
+		skyNF := grammarPhrasePalette(themeForContract(t, dark, "sky"), "分词")
+		coralNF := grammarPhrasePalette(themeForContract(t, dark, "coral"), "分词")
+		if skyNF.badgeText == coralNF.badgeText {
+			t.Errorf("dark=%v: 分词 palette did not shift away from coral accent", dark)
+		}
+		skyApp := grammarPhrasePalette(themeForContract(t, dark, "sky"), "插入")
+		violetApp := grammarPhrasePalette(themeForContract(t, dark, "violet"), "插入")
+		if skyApp.badgeText == violetApp.badgeText {
+			t.Errorf("dark=%v: 插入 palette did not shift away from violet accent", dark)
 		}
 	}
 }

@@ -529,11 +529,7 @@ func (a *app) aiModelField(sc *settingCard, t *ui.Theme, cfg Config) {
 						a.store.Update(func(c *Config) { c.AIModel = v })
 					})
 				}
-				label := "获取模型"
-				if state.phase == aiModelsLoading {
-					label = "获取中…"
-				}
-				if SecondaryButton(c, t, label).Disabled(state.phase == aiModelsLoading).Clicked() {
+				if LoadingSecondaryButton(c, t, "获取模型", "获取中…", state.phase == aiModelsLoading).Clicked() {
 					a.refreshAIModels()
 				}
 			})
@@ -581,11 +577,7 @@ func (a *app) aiTestField(sc *settingCard, t *ui.Theme, cfg Config) {
 	state := a.aiProbeStatus(cfg)
 	at := appTheme(t)
 	sc.Row("连通性", "发送一条最小测试请求，会消耗极少额度。", func() {
-		label := "测试连接"
-		if state.phase == aiProbeRunning {
-			label = "测试中…"
-		}
-		if SecondaryButton(c, t, label).Disabled(state.phase == aiProbeRunning).Clicked() {
+		if LoadingSecondaryButton(c, t, "测试连接", "测试中…", state.phase == aiProbeRunning).Clicked() {
 			a.testAIConnection()
 		}
 	})
@@ -868,11 +860,7 @@ func (a *app) pageAbout(c *ui.Context, t *ui.Theme, cfg Config) {
 			checking, msg, url, newer := a.updateSnapshot()
 			sc.Row("版本更新", "读取 GitHub 上的最新发布版本，只提示，不自动下载或安装。", func() {
 				ui.Row(c).Gap(Space2).AlignItems(ui.Center).Children(func() {
-					label := "检查更新"
-					if checking {
-						label = "检查中…"
-					}
-					if SecondaryButton(c, t, label).Disabled(checking).Clicked() {
+					if LoadingSecondaryButton(c, t, "检查更新", "检查中…", checking).Clicked() {
 						a.checkUpdatesAsync()
 					}
 					if newer && url != "" {

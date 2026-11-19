@@ -143,9 +143,13 @@ func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s
 		ui.Divider(c).FillWidth()
 	}
 	if s.busy {
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(8, 2).Children(func() {
-			ui.Spinner(c).Size(15, 15)
-			ui.Text(c, "正在翻译…").FontSize(13).TextColor(t.TextMuted)
+		at := appTheme(t)
+		ui.Column(c).FillWidth().Gap(6).Padding(8, 2).Children(func() {
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Spinner(c).Size(15, 15).TextColor(at.Accent)
+				ui.Text(c, "正在翻译…").FontSize(13).TextColor(at.TextSec)
+			})
+			IndeterminateBar(c, t, 2, "")
 		})
 	}
 	if s.target == "" && !cardHasPendingWork(s) && s.mode != modeInput && s.source == "" && s.errText == "" {

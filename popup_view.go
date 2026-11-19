@@ -438,9 +438,12 @@ func renderAIResultState(c *ui.Context, t *ui.Theme, s snapshot) {
 	case aiPassIdle, aiPassStructured:
 		return
 	case aiPassStreaming:
+		at := appTheme(t)
+		msg := aiBusyMessage(s.mode)
 		ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(10).Padding(32, 0).Children(func() {
-			ui.Spinner(c).Size(22, 22)
-			ui.Text(c, aiBusyMessage(s.mode)).FontSize(13).TextColor(t.TextMuted)
+			ui.Spinner(c).Size(20, 20).TextColor(at.Accent)
+			ui.Text(c, msg).FontSize(13).TextColor(at.TextSec)
+			ui.Progress(c, -1).Width(160).Height(3).TextColor(at.Accent)
 		})
 		return
 	case aiPassProse:

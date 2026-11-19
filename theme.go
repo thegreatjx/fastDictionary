@@ -414,6 +414,34 @@ func SecondaryButton(c *ui.Context, t *ui.Theme, label string, icon ...*ui.SVG) 
 	return b
 }
 
+func LoadingSecondaryButton(c *ui.Context, t *ui.Theme, idleLabel, busyLabel string, busy bool, icon ...*ui.SVG) ui.Element {
+	if !busy {
+		return SecondaryButton(c, t, idleLabel, icon...)
+	}
+	at := appTheme(t)
+	b := ui.ButtonBase(c).Height(HeightControl).Radius(RadiusSM).
+		Padding(0, Space3).Gap(Space2).Center().
+		Background(at.SurfaceHover).Border(1, at.BorderSubtle).
+		TextColor(at.TextSec).Disabled(true).DimDisabled(false)
+	b.Children(func() {
+		ui.Spinner(c).Size(13, 13).TextColor(at.Accent)
+		buttonLabel(c, at, busyLabel, at.TextSec)
+	})
+	return b
+}
+
+func IndeterminateBar(c *ui.Context, t *ui.Theme, height float32, label string) ui.Element {
+	at := appTheme(t)
+	if height <= 0 {
+		height = 3
+	}
+	bar := ui.Progress(c, -1).FillWidth().Height(height).TextColor(at.Accent)
+	if label != "" {
+		bar.Label(label)
+	}
+	return bar
+}
+
 func GhostButton(c *ui.Context, t *ui.Theme, label string) ui.Element {
 	at := appTheme(t)
 	b := ui.ButtonBase(c).Height(HeightControl).Radius(RadiusSM).
@@ -853,6 +881,103 @@ func grammarClausePalette(t *ui.Theme, tag string) grammarClauseColors {
 		wash:      wash,
 		badgeBg:   at.Accent.Alpha(0.30),
 		badgeText: badgeText,
+	}
+}
+
+type grammarPhraseColors struct {
+	wash      ui.Color
+	badgeBg   ui.Color
+	badgeText ui.Color
+	border    ui.Color
+	bracket   ui.Color
+	text      ui.Color
+	underline ui.Color
+}
+
+func activeAccentValue(t *ui.Theme) string {
+	for _, choice := range accentChoices {
+		if (t.Dark && choice.Dark == t.Accent) || (!t.Dark && choice.Light == t.Accent) {
+			return choice.Value
+		}
+	}
+	return "sky"
+}
+
+func grammarPhraseFamily(tag string) string {
+	switch {
+	case strings.Contains(tag, "分词") || strings.Contains(tag, "不定式") || strings.Contains(tag, "动名"):
+		return "nonfinite"
+	case strings.Contains(tag, "同位") || strings.Contains(tag, "插入"):
+		return "appositive"
+	default:
+		return "prep"
+	}
+}
+
+func grammarPhrasePalette(t *ui.Theme, tag string) grammarPhraseColors {
+	at := appTheme(t)
+	accentName := activeAccentValue(t)
+	family := grammarPhraseFamily(tag)
+
+	var base ui.Color
+	switch family {
+	case "nonfinite":
+		if at.Dark {
+			base = ui.Hex("#F59E0B")
+			if accentName == "coral" {
+				base = ui.Hex("#A3E635")
+			}
+		} else {
+			base = ui.Hex("#A14A07")
+			if accentName == "coral" {
+				base = ui.Hex("#3F6212")
+			}
+		}
+	case "appositive":
+		if at.Dark {
+			base = ui.Hex("#C084FC")
+			if accentName == "violet" {
+				base = ui.Hex("#F472B6")
+			}
+		} else {
+			base = ui.Hex("#7E22CE")
+			if accentName == "violet" {
+				base = ui.Hex("#9F1239")
+			}
+		}
+	default:
+		if at.Dark {
+			base = ui.Hex("#2DD4BF")
+			if accentName == "mint" {
+				base = ui.Hex("#818CF8")
+			}
+		} else {
+			base = ui.Hex("#0F766E")
+			if accentName == "mint" {
+				base = ui.Hex("#3749B8")
+			}
+		}
+	}
+
+	if at.Dark {
+		return grammarPhraseColors{
+			wash:      base.Alpha(0.13),
+			badgeBg:   base.Alpha(0.24),
+			badgeText: base.Mix(ui.Hex("#FFFFFF"), 0.50),
+			border:    base.Alpha(0.38),
+			bracket:   base.Alpha(0.80),
+			text:      base.Mix(ui.Hex("#FFFFFF"), 0.55),
+			underline: base.Alpha(0.75),
+		}
+	}
+	return grammarPhraseColors{
+		wash:      base.Alpha(0.09),
+		badgeBg:   base.Alpha(0.18),
+		badgeText: base.Mix(at.Text, 0.40),
+		border:    base.Alpha(0.32),
+		bracket:   base.Alpha(0.72),
+		text:      base.Mix(at.Text, 0.45),
+		underline: base.Alpha(0.65),
 	}
 }
 
