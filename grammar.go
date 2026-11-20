@@ -633,4 +633,3 @@ func grammarClauseTooltip(info ClauseInfo) string {
 	}
 	return "从句"
 }
-

@@ -1553,4 +1553,3 @@ func grammarDefaultHint(res *SentenceAnalysisResult, prefill bool) string {
 	}
 	return "悬停句子成分，查看它的语法作用"
 }
-
