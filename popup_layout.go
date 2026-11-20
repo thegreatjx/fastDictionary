@@ -183,24 +183,41 @@ func popupContentHeight(s snapshot, w float32) float32 {
 			h = 96
 			if s.source != "" {
 				srcText := s.source
-				if !s.sourceExpanded && (len([]rune(srcText)) > 110 || strings.Contains(srcText, "\n")) {
-					srcText = TruncateEllipsis(flattenTranslation(srcText), 110)
+				if !s.sourceExpanded && (len([]rune(srcText)) > sourceCollapseThreshold || strings.Count(srcText, "\n") >= 4) {
+					srcText = TruncateEllipsis(flattenTranslation(srcText), sourceCollapseThreshold)
 				}
 				srcParas := splitDisplayParagraphs(srcText)
 				srcLines := wrappedLines(strings.Join(srcParas, "\n"), w-48, 13)
 				h += 24 + float32(srcLines)*18 + float32(len(srcParas)-1)*Space2
 			}
 			if s.target != "" {
-				sz := float32(14)
+				sz := float32(15)
 				if s.isWord {
-					sz = 16
+					sz = 14
 				}
 				paras := splitDisplayParagraphs(s.target)
-				lines := wrappedLines(strings.Join(paras, "\n"), w-48, sz)
+				lines := wrappedLines(strings.Join(paras, "\n"), w-64, sz)
 				h += 40 + float32(lines)*20 + float32(len(paras)-1)*Space2
 			}
 			if s.dict != nil || s.gdict != nil {
-				h += 60
+				h += 72
+				if s.dict != nil {
+					for _, ex := range s.dict.Explains {
+						lines := wrappedLines(ex, w-110, 14)
+						if lines < 1 {
+							lines = 1
+						}
+						h += float32(lines)*22 + 6
+					}
+				} else if s.gdict != nil {
+					for _, e := range s.gdict.Entries {
+						lines := wrappedLines(e.Explain, w-110, 14)
+						if lines < 1 {
+							lines = 1
+						}
+						h += float32(lines)*22 + 6
+					}
+				}
 			}
 			if s.notesExpanded && len(s.notes) > 0 {
 				h += float32(len(s.notes))*52 + 104
@@ -216,7 +233,7 @@ func popupContentHeight(s snapshot, w float32) float32 {
 
 const (
 	popupMinHeight     float32 = 260
-	popupMaxAutoHeight float32 = 640
+	popupMaxAutoHeight float32 = 680
 )
 
 // viewportH/contentH 都是 DIP 布局值；内容高出 1 DIP 也必须撑开，否则描边被 Scroll 裁掉。
@@ -226,7 +243,7 @@ func autofitHeight(viewportH, contentH float32) (float32, bool) {
 	}
 	delta := contentH - viewportH
 	if delta > 0 {
-		return float32(math.Ceil(float64(delta))), true
+		return float32(math.Ceil(float64(delta))) + 2, true
 	}
 	if delta > -4 {
 		return 0, false

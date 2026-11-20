@@ -437,7 +437,7 @@ func main() {
 			}
 		}
 		if previewDark {
-			a.store.Update(func(c *Config) { c.ThemeMode = "dark" })
+			a.store.Update(func(c *Config) { c.ThemeMode = "light" })
 		}
 		if chipDemo {
 			removeHooks()
@@ -561,6 +561,20 @@ func main() {
 				a.grammarResultPrefill = true
 				a.grammarResult = &SentenceAnalysisResult{
 					Translation: "2023年春天，Anthropic 邀请我在他们总部为 Claude 2 发布前停留数周，参加会议并采访数十名员工，为《纽约时报》撰写公司首篇重要人物报道。",
+				}
+			case "word":
+				a.mode = modeTranslate
+				a.source = "investigated"
+				a.target = "已调查"
+				a.engine = "微软"
+				a.detected = "en"
+				a.elapsed = time.Second
+				a.dict = &YoudaoDict{
+					UKPhone: "ɪnˈvestɪɡeɪtɪd",
+					USPhone: "ɪnˈvestɪɡeɪtɪd",
+					Explains: []string{
+						"v. investigate 的过去式和过去分词；调查，审查；研究，探究",
+					},
 				}
 			case "writing":
 				a.mode = modeWriting

@@ -46,16 +46,13 @@ func trayStatusText(cfg Config) string {
 
 func (a *app) trayFlyoutView(c *ui.Context) {
 	cfg := a.store.Get()
-	applyTheme(c, cfg.ThemeMode, c.Theme().Dark, cfg.AccentTheme)
+	applyTheme(c, "light", false, cfg.AccentTheme)
 	t := c.Theme()
 	at := appTheme(t)
 
 	c.Root().Background(ui.Transparent)
 	panel := ui.Column(c).Fill().Background(at.Surface).Radius(RadiusWindow).
 		Border(1, at.BorderWindow).Padding(Space3).Gap(Space3)
-	if at.Dark {
-		panel.InsetShadow(0, 0, 1, 0, at.InsetColor)
-	}
 	panel.Children(func() {
 		ui.Row(c).FillWidth().Height(HeightIconMd).AlignItems(ui.Center).Gap(Space2).Children(func() {
 			ui.Box(c).Size(HeightIconSm, HeightIconSm).Radius(RadiusSM).Center().

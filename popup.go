@@ -128,6 +128,7 @@ type app struct {
 	moreFlyout              *mygo.Window
 	moreFlyoutRect          ui.Rect
 	moreFlyoutShown         bool
+	moreBtnRect             ui.Rect
 	showSlashes             bool
 	showTree                bool
 	vocabCategoryIdx        int
@@ -353,7 +354,7 @@ func (a *app) openPopup(m popupMode) {
 		}
 		log.Printf("fastDictionary: selection %s from %q", a.logText(sel.Text, 40), app)
 		mode := modeSelection
-		if preferred, ok := a.store.Get().InitialAIMode(); ok {
+		if preferred, ok := a.store.Get().InitialAIMode(); ok && isPopupModeEnabled(a.store.Get(), preferred) {
 			mode = preferred
 			log.Printf("fastDictionary: selection opens in %s (ai_mode)", modeName(mode))
 		}
@@ -406,7 +407,9 @@ func (a *app) rerunCurrentModeFresh(text string) {
 func (a *app) switchMode(m popupMode) {
 	cfg := a.store.Get()
 	notice := ""
-	if problem := cfg.AISetupProblem(); (m == modeGrammar || m == modeWriting) && problem != "" {
+	if (m == modeGrammar || m == modeWriting) && !isPopupModeEnabled(cfg, m) {
+		m = modeTranslate
+	} else if problem := cfg.AISetupProblem(); (m == modeGrammar || m == modeWriting) && problem != "" {
 		m = modeTranslate
 		notice = "AI 精翻暂不可用（" + problem + "），已使用机器翻译。可在 设置 → AI 精翻 中设置。"
 	}

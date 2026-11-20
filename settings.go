@@ -129,33 +129,32 @@ var settingsNavGroups = []settingsNavGroup{
 		{"vocabulary", "生词本", iconBookmark},
 		{"notebook", "句法笔记", iconGrammar},
 	}},
-	{"常规", []settingsNavEntry{
+	{"偏好设置", []settingsNavEntry{
 		{"general", "通用", iconGear},
 		{"hotkey", "快捷键", iconKeyboard},
-	}},
-	{"划词与翻译", []settingsNavEntry{
 		{"selection", "划词", iconSearch},
 		{"translate", "翻译", iconSwap},
 		{"dict", "词典与发音", iconDict},
 	}},
-	{"AI 与指令", []settingsNavEntry{
+	{"AI 能力", []settingsNavEntry{
 		{"ai", "AI 精翻", iconPolish},
 		{"actions", "AI 指令", iconSparkles},
 	}},
-	{"其他", []settingsNavEntry{
-		{"about", "关于", iconInfo},
-	}},
 }
+
+var settingsAboutNav = settingsNavEntry{"about", "关于", iconInfo}
 
 func (a *app) settingsNavItem(c *ui.Context, t *ui.Theme, at AppTheme, item settingsNavEntry) {
 	active := a.page == item.id
-	b := ui.ButtonBase(c).Height(28).Radius(RadiusSM).
+	b := ui.ButtonBase(c).Height(32).Radius(RadiusSM).
 		Role(ui.RoleTreeItem).Focusable().FillWidth().
-		Padding(0, Space2).Gap(Space2).Justify(ui.Start).AlignItems(ui.Center)
+		Padding(0, Space2+2).Gap(Space2 + 2).Justify(ui.Start).AlignItems(ui.Center)
 	if active {
-		b.Background(at.AccentSoft)
+		b.Background(at.AccentSoft).Border(1, at.AccentRing)
 	} else if b.Hovered() {
-		b.Background(at.SurfaceHover)
+		b.Background(at.SurfaceHover).Border(1, ui.Transparent)
+	} else {
+		b.Background(ui.Transparent).Border(1, ui.Transparent)
 	}
 	iconCol := at.TextSec
 	textCol := at.TextSec
@@ -163,23 +162,31 @@ func (a *app) settingsNavItem(c *ui.Context, t *ui.Theme, at AppTheme, item sett
 	if active {
 		iconCol, textCol, weight = at.Accent, at.Accent, 600
 	}
-	label := item.label
+	count := 0
 	switch item.id {
 	case "vocabulary":
-		if n := GetVocabularyStore().Count(); n > 0 {
-			label = fmt.Sprintf("生词本 (%d)", n)
-		}
+		count = GetVocabularyStore().Count()
 	case "notebook":
-		if n := GetNotebookStore().Count(); n > 0 {
-			label = fmt.Sprintf("句法笔记 (%d)", n)
-		}
+		count = GetNotebookStore().Count()
 	}
 	b.Children(func() {
 		ui.Box(c).Width(IconSize).Height(IconSize).Shrink(0).Center().Children(func() {
 			ui.Icon(c, item.icon).Size(IconSize, IconSize).TextColor(iconCol)
 		})
-		ui.Text(c, label).Font(fontUI).FontSize(FontControl).
-			FontWeight(weight).TextColor(textCol).SingleLine()
+		ui.Text(c, item.label).Font(fontUI).FontSize(FontControl).
+			FontWeight(weight).TextColor(textCol).SingleLine().Grow(1)
+		if count > 0 {
+			badgeBg := at.SurfaceHover
+			badgeFg := at.TextMuted
+			if active {
+				badgeBg = at.Surface
+				badgeFg = at.Accent
+			}
+			ui.Box(c).Padding(1, 6).Radius(10).Background(badgeBg).Shrink(0).Children(func() {
+				ui.Text(c, fmt.Sprintf("%d", count)).Font(fontMono).FontFeatures("tnum").
+					FontSize(FontMicro).FontWeight(600).TextColor(badgeFg).SingleLine()
+			})
+		}
 	})
 	if b.Clicked() && !active {
 		a.page = item.id
@@ -189,7 +196,7 @@ func (a *app) settingsNavItem(c *ui.Context, t *ui.Theme, at AppTheme, item sett
 
 func (a *app) settingsView(c *ui.Context) {
 	cfg := a.store.Get()
-	applyTheme(c, cfg.ThemeMode, c.Theme().Dark, cfg.AccentTheme)
+	applyTheme(c, "light", false, cfg.AccentTheme)
 	t := c.Theme()
 	at := appTheme(t)
 
@@ -202,30 +209,38 @@ func (a *app) settingsView(c *ui.Context) {
 	}
 
 	ui.Row(c).FillWidth().FillHeight().Children(func() {
-		ui.Column(c).Width(NavWidth).FillHeight().Padding(Space3).Gap(Space1).
-			Background(at.Canvas).Children(func() {
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Padding(Space1, Space2).Children(func() {
-				ui.Box(c).Size(24, 24).Radius(RadiusSM).Background(at.AccentSoft).Center().Shrink(0).Children(func() {
-					ui.Icon(c, iconDict).Size(14, 14).TextColor(at.Accent)
+		ui.Column(c).Width(NavWidth).FillHeight().Padding(Space4, Space3, Space3, Space3).Gap(Space2).
+			Background(at.Surface).Children(func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2+2).Padding(0, Space2, Space1, Space2).Children(func() {
+				ui.Box(c).Size(28, 28).Radius(RadiusSM).Background(at.Accent).Center().Shrink(0).Children(func() {
+					ui.Icon(c, iconDict).Size(15, 15).TextColor(at.AccentText)
 				})
-				ui.Text(c, appTitle).Font(fontUI).FontSize(FontControl).FontWeight(600).
-					TextColor(at.Text).SingleLine()
+				ui.Text(c, appTitle).Font(fontUI).FontSize(FontSection).FontWeight(700).
+					TextColor(at.Text).SingleLine().Grow(1)
+				ui.Box(c).Padding(1, 6).Radius(RadiusXS).Background(at.SurfaceHover).Shrink(0).Children(func() {
+					ui.Text(c, "v"+appVersion).Font(fontMono).FontFeatures("tnum").FontSize(10).
+						FontWeight(500).TextColor(at.TextMuted).SingleLine()
+				})
 			})
 			ui.Scroll(c).TrackScroll(&a.navScroll).Grow(1).FillWidth().
 				ScrollbarInsets(0, 0, Space2).Children(func() {
 				ui.Column(c).FillWidth().Gap(2).Children(func() {
 					for i, group := range settingsNavGroups {
-						if i > 0 && group.title == "常规" {
-							ui.Box(c).FillWidth().Padding(Space1, Space2, 0, Space2).Children(func() {
+						if i > 0 {
+							ui.Box(c).FillWidth().Padding(Space2, Space2, 2, Space2).Children(func() {
 								ui.Box(c).FillWidth().Height(1).Background(at.BorderSubtle)
 							})
 						}
-						ui.Text(c, group.title).Font(fontUI).FontSize(FontMicro).FontWeight(500).
-							Padding(6, Space2, 2, Space2).TextColor(at.TextMuted).SingleLine()
+						ui.Text(c, group.title).Font(fontUI).FontSize(FontMicro).FontWeight(600).
+							Padding(Space1, Space2+2, 4, Space2+2).TextColor(at.TextMuted).SingleLine()
 						for _, item := range group.items {
 							a.settingsNavItem(c, t, at, item)
 						}
 					}
+					ui.Box(c).FillWidth().Padding(Space2, Space2, 2, Space2).Children(func() {
+						ui.Box(c).FillWidth().Height(1).Background(at.BorderSubtle)
+					})
+					a.settingsNavItem(c, t, at, settingsAboutNav)
 				})
 			})
 			paused := !a.selectionPausedUntil().IsZero()
@@ -236,22 +251,21 @@ func (a *app) settingsView(c *ui.Context) {
 				statusText = "划词已暂停"
 			} else if cfg.SelectionTrigger == "hotkey" {
 				dotCol = at.TextMuted
-				statusText = "仅快捷键划词"
+				statusText = "仅快捷键"
 			}
-			statusBtn := ui.ButtonBase(c).FillWidth().Radius(RadiusSM).Padding(Space2, Space2).
-				Background(at.Surface).Border(1, at.BorderSubtle).Justify(ui.Start).AlignItems(ui.Center)
+			statusBtn := ui.ButtonBase(c).FillWidth().Radius(RadiusSM).Padding(Space2, Space2+2).
+				Background(at.SurfaceHover).Border(1, at.BorderSubtle).Justify(ui.Start).AlignItems(ui.Center)
 			if statusBtn.Hovered() {
-				statusBtn.Background(at.SurfaceHover)
+				statusBtn.Background(at.SurfacePress).Border(1, at.BorderHover)
 			}
 			statusBtn.Children(func() {
 				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
-					ui.Box(c).Size(6, 6).Radius(RadiusXS).Background(dotCol).Shrink(0)
-					ui.Column(c).Grow(1).Children(func() {
-						ui.Text(c, statusText).Font(fontUI).FontSize(FontMicro).FontWeight(600).TextColor(at.Text).SingleLine()
-						if hk := strings.TrimSpace(cfg.HotkeySelection); hk != "" {
-							ui.Text(c, "快捷键 "+hk).Font(fontMono).FontSize(10).TextColor(at.TextMuted).SingleLine()
-						}
-					})
+					ui.Box(c).Size(7, 7).Radius(4).Background(dotCol).Shrink(0)
+					ui.Text(c, statusText).Font(fontUI).FontSize(FontHelper).FontWeight(500).
+						TextColor(at.TextSec).SingleLine().Grow(1)
+					if hk := strings.TrimSpace(cfg.HotkeySelection); hk != "" {
+						KeycapBadge(c, t, hk)
+					}
 				})
 			})
 			if statusBtn.Clicked() {
@@ -259,6 +273,7 @@ func (a *app) settingsView(c *ui.Context) {
 				a.settingsRefresh()
 			}
 		})
+		ui.Box(c).Width(1).FillHeight().Background(at.BorderSubtle)
 
 		ui.Scroll(c).TrackScroll(&a.settingsScroll).Grow(1).FillHeight().
 			Padding(Space6, Space8, Space8+Space4, Space8).ScrollbarInsets(0, 0, Space2).Children(func() {
@@ -514,10 +529,10 @@ func (a *app) showMainWindow(page string) {
 	a.resetNotebookViewState()
 	win := mygo.NewWindow(mygo.WindowOptions{
 		Title:     appTitle,
-		Width:     920,
-		Height:    660,
-		MinWidth:  700,
-		MinHeight: 500,
+		Width:     960,
+		Height:    680,
+		MinWidth:  740,
+		MinHeight: 520,
 		Content:   ui.View(safeView("settings", a.settingsView)),
 	})
 	win.OnClose(func(e *mygo.CloseEvent) {

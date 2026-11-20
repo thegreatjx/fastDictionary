@@ -251,6 +251,26 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 	vocabStore := GetVocabularyStore()
 	PageTitle(c, t, "生词本", "管理收藏的生词与例句，支持间隔复习与导出；长难句与写作请至「句法笔记」。")
 
+	if due := vocabStore.DueCount(time.Now()); due > 0 {
+		SurfaceCard(c, t).Padding(0, 0).Clip().Children(func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Stretch).Children(func() {
+				ui.Box(c).Width(inkRuleWidth).Background(at.Accent)
+				ui.Box(c).Grow(1).Padding(Space3, Space4).Children(func() {
+					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space3).Children(func() {
+						ui.Column(c).Grow(1).Gap(2).Children(func() {
+							ui.Textf(c, "今日有 %d 条待复习", due).Font(fontUI).FontSize(FontSection).FontWeight(600).TextColor(at.Text)
+							ui.Text(c, "按记忆曲线巩固收藏的生词与短语").Font(fontUI).FontSize(FontHelper).TextColor(at.TextSec)
+						})
+						if PrimaryButton(c, t, "开始复习").Height(HeightCompact).
+							Tooltip("按间隔重复复习到期生词").Clicked() {
+							a.startVocabReview()
+						}
+					})
+				})
+			})
+		})
+	}
+
 	ui.Box(c).FillWidth().Padding(Space3, Space3).Radius(RadiusTrack).Background(at.Surface).Border(1, at.BorderSubtle).Children(func() {
 		ui.Column(c).FillWidth().Gap(Space2).Children(func() {
 			cAll, cWords, cSentences, _ := vocabStore.CategoryCounts()
@@ -271,17 +291,6 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 				Height(HeightSearch).
 				FillWidth().
 				OnChange(func() { a.resetVocabularyViewState() })
-
-			if due := vocabStore.DueCount(time.Now()); due > 0 {
-				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
-					ui.Icon(c, iconBookmark).Size(13, 13).TextColor(at.Accent)
-					ui.Textf(c, "%d 个生词到期", due).Font(fontUI).FontSize(FontHelper).TextColor(at.Accent)
-					if PrimaryButton(c, t, "开始复习").Height(HeightCompact).
-						Tooltip("按间隔重复复习到期生词").Clicked() {
-						a.startVocabReview()
-					}
-				})
-			}
 
 			ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(Space2).Children(func() {
 				if a.lastDeletedVocab != nil {
@@ -549,12 +558,12 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 
 						if !expanded {
 							if entry.Phonetic != "" {
-								ui.Text(c, entry.Phonetic).Font(fontIPA).FontSize(12).TextColor(at.TextMuted)
+								ui.Text(c, entry.Phonetic).Font(fontIPA).FontSize(FontIPASize).TextColor(at.TextMuted)
 							}
 
 							if entry.PartOfSpeech != "" {
 								ui.Box(c).Padding(1, 6).Radius(4).Background(t.SurfaceHover).Children(func() {
-									ui.Text(c, entry.PartOfSpeech).FontSize(10).FontWeight(600).TextColor(t.Accent)
+									ui.Text(c, entry.PartOfSpeech).Font(fontMono).FontSize(10).FontWeight(700).TextColor(t.Accent)
 								})
 							}
 
@@ -638,33 +647,45 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 					renderVocabWordCard(c, t, entry)
 				} else {
 					ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, entry.Term).FontSize(15).FontWeight(700).TextColor(t.Text).Wrap()
+						font := fontUI
+						if isWordEntry {
+							font = fontHeadword
+						}
+						ui.Text(c, entry.Term).Font(font).FontSize(16).FontWeight(700).TextColor(t.Text).Wrap()
 						if renderIconButton(c, iconSpeak, "朗读", 22, 12, false).Clicked() {
 							PlaySpeechLang(entry.Term, "", false)
 						}
 					})
 
 					if entry.Definition != "" {
-						ui.Text(c, entry.Definition).FontSize(13).TextColor(t.Text).Wrap()
+						ui.Text(c, entry.Definition).FontSize(13.5).FontWeight(500).TextColor(t.Text).Wrap()
 					}
 
 					if entry.Context != "" {
-						ui.Box(c).FillWidth().Padding(8, 10).Radius(6).Background(t.SurfaceHover).Children(func() {
-							ui.Column(c).FillWidth().Gap(4).Children(func() {
-								ui.Text(c, entry.Context).FontSize(12).FontWeight(500).TextColor(t.Text).Wrap()
-								if entry.ContextTranslation != "" {
-									ui.Text(c, entry.ContextTranslation).FontSize(12).TextColor(t.TextMuted).Wrap()
-								}
+						ui.Row(c).FillWidth().AlignItems(ui.Stretch).Radius(RadiusSM).
+							Background(at.SurfaceHover).Clip().Children(func() {
+							ui.Box(c).Width(inkRuleWidth).Background(at.Accent)
+							ui.Box(c).Grow(1).Padding(6, 10).Children(func() {
+								ui.Column(c).FillWidth().Gap(3).Children(func() {
+									ui.Text(c, entry.Context).FontSize(12).FontWeight(500).TextColor(t.Text).Wrap()
+									if entry.ContextTranslation != "" {
+										ui.Text(c, entry.ContextTranslation).FontSize(11.5).TextColor(t.TextMuted).Wrap()
+									}
+								})
 							})
 						})
 					}
 
 					if entry.MemoryTips != "" {
-						tipBg, tipBorder, _, tipBody := memoryTipColors(t)
-						ui.Box(c).FillWidth().Padding(6, 10).Radius(4).Background(tipBg).Border(1, tipBorder).Children(func() {
-							ui.Row(c).FillWidth().Gap(4).AlignItems(ui.Start).Children(func() {
-								ui.Icon(c, iconInfo).Size(12, 12).TextColor(tipBody)
-								ui.Text(c, entry.MemoryTips).FontSize(12).TextColor(tipBody).Wrap().Grow(1)
+						tipBg, _, _, tipBody := memoryTipColors(t)
+						ui.Row(c).FillWidth().AlignItems(ui.Stretch).Radius(RadiusXS).
+							Background(tipBg).Clip().Children(func() {
+							ui.Box(c).Width(inkRuleWidth).Background(at.Accent)
+							ui.Box(c).Grow(1).Padding(6, 10).Children(func() {
+								ui.Row(c).FillWidth().Gap(4).AlignItems(ui.Start).Children(func() {
+									ui.Icon(c, iconInfo).Size(12, 12).TextColor(tipBody)
+									ui.Text(c, entry.MemoryTips).FontSize(12).TextColor(tipBody).Wrap().Grow(1)
+								})
 							})
 						})
 					}

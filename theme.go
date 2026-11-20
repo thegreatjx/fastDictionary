@@ -28,18 +28,19 @@ const (
 
 const (
 	FontPageTitle float32 = 20
-	FontWordHead  float32 = 18
+	FontWordHead  float32 = 20
 	FontSection   float32 = 14
 	FontControl   float32 = 13
 	FontHelper    float32 = 12
 	FontMicro     float32 = 11
+	FontIPASize   float32 = 11
 	IconSize      float32 = 16
 
 	LabelColumn     float32 = 112
-	ControlColumn   float32 = 480
+	ControlColumn   float32 = 520
 	InputWidth      float32 = 240
-	ContentMaxWidth float32 = 600
-	NavWidth                = 188
+	ContentMaxWidth float32 = 760
+	NavWidth                = 212
 	TrayWidth               = 300
 	TrayHeight              = 248
 
@@ -50,9 +51,10 @@ const (
 )
 
 const (
-	fontUI   = "Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI"
-	fontIPA  = "Segoe UI, Lucida Sans Unicode, Arial Unicode MS"
-	fontMono = "Cascadia Mono, Consolas"
+	fontUI       = "Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI"
+	fontHeadword = "Georgia, Sitka Text, Segoe UI Variable Display, Segoe UI"
+	fontIPA      = "Segoe UI, Lucida Sans Unicode, Arial Unicode MS"
+	fontMono     = "Cascadia Mono, Consolas"
 )
 
 type AppTheme struct {
@@ -95,9 +97,9 @@ type AppTheme struct {
 
 func defaultAccent(dark bool) ui.Color {
 	if dark {
-		return ui.Hex("#60A5FA")
+		return ui.Hex("#78A2F7")
 	}
-	return ui.Hex("#2563EB")
+	return ui.Hex("#2B56B5")
 }
 
 type accentChoice struct {
@@ -115,28 +117,28 @@ type accentChoice struct {
 
 var accentChoices = []accentChoice{
 	{
-		Value: "sky", Label: "晴空蓝",
-		Light: ui.Hex("#2563EB"), LightHover: ui.Hex("#1D4ED8"), LightPress: ui.Hex("#1E40AF"),
-		LightSoft: ui.Hex("#EFF6FF"), LightSoftBorder: ui.Hex("#BFDBFE"),
-		Dark: ui.Hex("#60A5FA"), DarkSoft: ui.Hex("#1B2A4A"), DarkSoftBorder: ui.Hex("#35558A"),
+		Value: "sky", Label: "霁蓝",
+		Light: ui.Hex("#2B56B5"), LightHover: ui.Hex("#224596"), LightPress: ui.Hex("#1A3678"),
+		LightSoft: ui.Hex("#EFF4FC"), LightSoftBorder: ui.Hex("#C7D8F5"),
+		Dark: ui.Hex("#78A2F7"), DarkSoft: ui.Hex("#192744"), DarkSoftBorder: ui.Hex("#314D80"),
 	},
 	{
-		Value: "mint", Label: "薄荷青",
-		Light: ui.Hex("#0F766E"), LightHover: ui.Hex("#115E59"), LightPress: ui.Hex("#134E4A"),
-		LightSoft: ui.Hex("#F0FDFA"), LightSoftBorder: ui.Hex("#99F6E4"),
-		Dark: ui.Hex("#2DD4BF"), DarkSoft: ui.Hex("#133332"), DarkSoftBorder: ui.Hex("#1F5A54"),
+		Value: "mint", Label: "松青",
+		Light: ui.Hex("#1A6B63"), LightHover: ui.Hex("#14554F"), LightPress: ui.Hex("#0E403B"),
+		LightSoft: ui.Hex("#EFF8F6"), LightSoftBorder: ui.Hex("#BCE0DA"),
+		Dark: ui.Hex("#4FD1C5"), DarkSoft: ui.Hex("#14312F"), DarkSoftBorder: ui.Hex("#235550"),
 	},
 	{
-		Value: "violet", Label: "薰衣紫",
-		Light: ui.Hex("#7C3AED"), LightHover: ui.Hex("#6D28D9"), LightPress: ui.Hex("#5B21B6"),
-		LightSoft: ui.Hex("#F5F3FF"), LightSoftBorder: ui.Hex("#DDD6FE"),
-		Dark: ui.Hex("#A78BFA"), DarkSoft: ui.Hex("#262044"), DarkSoftBorder: ui.Hex("#453672"),
+		Value: "violet", Label: "墨堇",
+		Light: ui.Hex("#5B4BA6"), LightHover: ui.Hex("#4B3C8F"), LightPress: ui.Hex("#3B2E75"),
+		LightSoft: ui.Hex("#F3F1FB"), LightSoftBorder: ui.Hex("#D6CFF2"),
+		Dark: ui.Hex("#A799EA"), DarkSoft: ui.Hex("#231F3D"), DarkSoftBorder: ui.Hex("#41386E"),
 	},
 	{
-		Value: "coral", Label: "暖珊瑚",
-		Light: ui.Hex("#C2410C"), LightHover: ui.Hex("#9A3412"), LightPress: ui.Hex("#7C2D12"),
-		LightSoft: ui.Hex("#FFF7ED"), LightSoftBorder: ui.Hex("#FED7AA"),
-		Dark: ui.Hex("#FB923C"), DarkSoft: ui.Hex("#36211A"), DarkSoftBorder: ui.Hex("#6B3B22"),
+		Value: "coral", Label: "暖陶",
+		Light: ui.Hex("#B5492B"), LightHover: ui.Hex("#993A20"), LightPress: ui.Hex("#7D2D17"),
+		LightSoft: ui.Hex("#FDF3F0"), LightSoftBorder: ui.Hex("#F2CEC2"),
+		Dark: ui.Hex("#E88B72"), DarkSoft: ui.Hex("#341F1A"), DarkSoftBorder: ui.Hex("#63372C"),
 	},
 }
 
@@ -248,20 +250,20 @@ func newAppTheme(dark bool, accent ui.Color) AppTheme {
 	danger := ui.Hex("#B42318")
 	return AppTheme{
 		Dark:          false,
-		Canvas:        ui.Hex("#F7F9FC"),
+		Canvas:        ui.Hex("#F4F6FA"),
 		Surface:       ui.Hex("#FFFFFF"),
 		SurfaceSubtle: soft,
 		SurfaceElev:   ui.Hex("#FFFFFF"),
 		SurfaceHover:  ui.Hex("#F1F5F9"),
 		SurfacePress:  ui.Hex("#E2E8F0"),
-		Text:          ui.Hex("#0F172A"),
+		Text:          ui.Hex("#0B1220"),
 		TextSec:       ui.Hex("#475569"),
 		TextMuted:     ui.Hex("#5A6B82"),
-		TextDisabled:  ui.RGBA(15, 23, 42, 0.34),
-		BorderSubtle:  ui.Hex("#E5EAF2"),
+		TextDisabled:  ui.RGBA(11, 18, 32, 0.34),
+		BorderSubtle:  ui.Hex("#E4E9F2"),
 		BorderCtrl:    ui.Hex("#D3DCE8"),
 		BorderHover:   ui.Hex("#B8C6D9"),
-		BorderWindow:  ui.Hex("#DCE4EF"),
+		BorderWindow:  ui.Hex("#DCE3EE"),
 		Accent:        accent,
 		AccentHover:   accentHoverFor(accent, false),
 		AccentPress:   accentPressFor(accent, false),
@@ -339,11 +341,13 @@ func HelperText(c *ui.Context, t *ui.Theme, text string) ui.Element {
 
 func PageTitle(c *ui.Context, t *ui.Theme, title, sub string) {
 	at := appTheme(t)
-	ui.Text(c, title).Font(fontUI).FontSize(FontPageTitle).FontWeight(600).
-		LineHeight(1.4).TextColor(at.Text).Balance()
-	if sub != "" {
-		HelperText(c, t, sub)
-	}
+	ui.Column(c).FillWidth().Gap(Space1).Children(func() {
+		ui.Text(c, title).Font(fontUI).FontSize(FontPageTitle).FontWeight(600).
+			LineHeight(1.35).TextColor(at.Text).Balance()
+		if sub != "" {
+			HelperText(c, t, sub).MaxWidth(ContentMaxWidth)
+		}
+	})
 }
 
 func SectionTitle(c *ui.Context, t *ui.Theme, text string) ui.Element {
@@ -534,13 +538,15 @@ func (sc *settingCard) Custom(fn func()) {
 }
 
 func SettingCard(c *ui.Context, t *ui.Theme, title string, fn func(*settingCard)) {
-	if title != "" {
-		SectionTitle(c, t, title)
-	}
-	SurfaceCard(c, t).Padding(0, 0).Children(func() {
-		sc := &settingCard{c: c, t: t}
-		ui.Column(c).FillWidth().Children(func() {
-			fn(sc)
+	ui.Column(c).FillWidth().Gap(Space2).Children(func() {
+		if title != "" {
+			SectionTitle(c, t, title)
+		}
+		SurfaceCard(c, t).Padding(0, 0).Children(func() {
+			sc := &settingCard{c: c, t: t}
+			ui.Column(c).FillWidth().Children(func() {
+				fn(sc)
+			})
 		})
 	})
 }
@@ -553,7 +559,7 @@ func SettingRow(c *ui.Context, t *ui.Theme, label, desc string, control func()) 
 				ui.Text(c, label).Font(fontUI).FontSize(FontControl).FontWeight(500).
 					TextColor(at.Text)
 				if desc != "" {
-					HelperText(c, t, desc).MaxWidth(320)
+					HelperText(c, t, desc).MaxWidth(420)
 				}
 			})
 			control()
@@ -568,7 +574,7 @@ func SettingSliderRow(c *ui.Context, t *ui.Theme, label, desc, valueText string,
 			ui.Column(c).Grow(1).Gap(Space1).Children(func() {
 				ui.Text(c, label).Font(fontUI).FontSize(FontControl).FontWeight(500).TextColor(at.Text)
 				if desc != "" {
-					HelperText(c, t, desc).MaxWidth(320)
+					HelperText(c, t, desc).MaxWidth(420)
 				}
 			})
 			ui.Row(c).AlignItems(ui.Center).Gap(Space3).Shrink(0).Children(func() {

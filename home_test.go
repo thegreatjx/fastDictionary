@@ -31,10 +31,46 @@ func TestHomeReadyStateKeepsTheInputAndAIHint(t *testing.T) {
 	if strings.Contains(texts, "后台划词监听已就绪") {
 		t.Errorf("首页仍在重复侧栏的监听状态：%q", texts)
 	}
+	if strings.Contains(texts, "左侧输入单词或长句") || strings.Contains(texts, "条待复习") {
+		t.Errorf("首页仍包含冗余空态框或待复习提醒：%q", texts)
+	}
 	a.store.Update(func(c *Config) { c.AIEnabled = false })
 	texts = strings.Join(renderHome(t, a), "")
 	if !strings.Contains(texts, "配置 AI 服务后可解锁") {
 		t.Errorf("首页没有 AI 配置引导：%q", texts)
+	}
+}
+
+func TestHomeAndPopupRespectDisabledWritingAction(t *testing.T) {
+	a := newTestApp()
+	a.store.Update(func(c *Config) {
+		for i := range c.CustomActions {
+			if c.CustomActions[i].ID == "default-improve-writing" {
+				c.CustomActions[i].Enabled = false
+			}
+		}
+	})
+
+	a.home.source = "hello"
+	a.home.target = "你好"
+	homeTexts := strings.Join(renderHome(t, a), "")
+	if strings.Contains(homeTexts, "写作润色") {
+		t.Errorf("关闭写作指令后工作台仍显示写作页签：%q", homeTexts)
+	}
+	if !strings.Contains(homeTexts, "长难句拆解") {
+		t.Errorf("未关闭长难句时工作台缺少长难句页签：%q", homeTexts)
+	}
+
+	a.source = "hello"
+	a.target = "你好"
+	a.popupW = 500
+	tt := ui.NewTester(a.popupView, 500, 340)
+	tt.Frame()
+	if tt.HasText("写作") {
+		t.Errorf("关闭写作指令后弹窗仍显示写作页签：%v", tt.Texts())
+	}
+	if !tt.HasText("长难句") {
+		t.Errorf("未关闭长难句时弹窗缺少长难句页签：%v", tt.Texts())
 	}
 }
 

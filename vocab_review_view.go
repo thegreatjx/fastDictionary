@@ -97,12 +97,12 @@ func (a *app) pageVocabReview(c *ui.Context, t *ui.Theme) {
 	ui.Box(c).FillWidth().Padding(28, 26).Radius(RadiusTrack).Background(at.Surface).
 		Border(1, at.BorderSubtle).Children(func() {
 		ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
-			ui.Text(c, entry.Term).FontSize(30).FontWeight(700).TextColor(at.Text).Wrap()
+			ui.Text(c, entry.Term).Font(fontHeadword).FontSize(28).FontWeight(700).TextColor(at.Text).Wrap()
 			ui.Row(c).AlignItems(ui.Center).Gap(4).Children(func() {
 				if entry.Phonetic != "" {
-					ui.Text(c, entry.Phonetic).Font(fontIPA).FontSize(14).TextColor(at.TextMuted)
+					ui.Text(c, entry.Phonetic).Font(fontIPA).FontSize(FontIPASize).TextColor(at.TextMuted)
 				}
-				if renderIconButton(c, iconSpeak, "朗读发音", 28, 15, false).Clicked() {
+				if renderIconButton(c, iconSpeak, "朗读发音", 24, 13, false).Clicked() {
 					PlaySpeechLang(entry.Term, "", false)
 				}
 			})

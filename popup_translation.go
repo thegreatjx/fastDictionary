@@ -10,9 +10,9 @@ import (
 func (a *app) renderPopupHeader(c *ui.Context, t *ui.Theme, cfg Config, s snapshot) {
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).DragWindow().Children(func() {
 		if a.popupW > 0 && a.popupW < 440 {
-			a.renderCompactModeMenu(c, s)
+			a.renderCompactModeMenu(c, cfg, s)
 		} else {
-			a.renderPopupModeTabs(c, s)
+			a.renderPopupModeTabs(c, cfg, s)
 		}
 		ui.Spacer(c).Grow(1)
 		ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
@@ -57,45 +57,104 @@ func (a *app) togglePopupPin(cfg Config) {
 	}
 }
 
+type popupModeOption struct {
+	mode  popupMode
+	label string
+}
+
 var popupModeLabels = [...]string{"翻译", "长难句", "写作"}
 
+func isPopupModeEnabled(cfg Config, m popupMode) bool {
+	switch m {
+	case modeGrammar:
+		if act := cfg.GetAction("default-sentence-analysis"); act != nil {
+			return act.Enabled
+		}
+		return true
+	case modeWriting:
+		if act := cfg.GetAction("default-improve-writing"); act != nil {
+			return act.Enabled
+		}
+		return true
+	default:
+		return true
+	}
+}
+
+func enabledPopupModes(cfg Config) []popupModeOption {
+	opts := []popupModeOption{{mode: modeTranslate, label: "翻译"}}
+	if isPopupModeEnabled(cfg, modeGrammar) {
+		opts = append(opts, popupModeOption{mode: modeGrammar, label: "长难句"})
+	}
+	if isPopupModeEnabled(cfg, modeWriting) {
+		opts = append(opts, popupModeOption{mode: modeWriting, label: "写作"})
+	}
+	return opts
+}
+
 func popupModeIndex(mode, target popupMode) int {
+	return popupModeIndexIn(enabledPopupModes(DefaultConfig()), mode, target)
+}
+
+func popupModeIndexIn(opts []popupModeOption, mode, target popupMode) int {
 	if mode == modeInput {
 		mode = target
 	}
-	switch mode {
-	case modeGrammar:
-		return 1
-	case modeWriting:
-		return 2
-	default:
-		return 0
+	for i, opt := range opts {
+		if opt.mode == mode {
+			return i
+		}
 	}
+	return 0
+}
+
+func (a *app) switchPopupModeByOpts(opts []popupModeOption, index int) {
+	if index < 0 || index >= len(opts) {
+		return
+	}
+	target := opts[index].mode
+	a.mu.Lock()
+	a.inputTargetMode = target
+	a.inputText = ""
+	a.mu.Unlock()
+	a.switchMode(target)
 }
 
 func (a *app) switchPopupMode(index int) {
-	modes := [...]popupMode{modeTranslate, modeGrammar, modeWriting}
-	if index >= 0 && index < len(modes) {
-		a.mu.Lock()
-		a.inputTargetMode = modes[index]
-		a.inputText = ""
-		a.mu.Unlock()
-		a.switchMode(modes[index])
+	a.switchPopupModeByOpts(enabledPopupModes(a.store.Get()), index)
+}
+
+func (a *app) renderPopupModeTabs(c *ui.Context, cfg Config, s snapshot) {
+	opts := enabledPopupModes(cfg)
+	if len(opts) <= 1 {
+		at := appTheme(c.Theme())
+		ui.Text(c, opts[0].label).Font(fontUI).FontSize(FontControl).FontWeight(600).
+			TextColor(at.Text).Padding(0, Space1).SingleLine()
+		return
 	}
+	labels := make([]string, len(opts))
+	for i, opt := range opts {
+		labels[i] = opt.label
+	}
+	modeIdx := popupModeIndexIn(opts, s.mode, s.inputTargetMode)
+	SegmentedControlCompact(c, &modeIdx, labels...).
+		Label("阅读工具").OnChange(func() { a.switchPopupModeByOpts(opts, modeIdx) })
 }
 
-func (a *app) renderPopupModeTabs(c *ui.Context, s snapshot) {
-	modeIdx := popupModeIndex(s.mode, s.inputTargetMode)
-	SegmentedControlCompact(c, &modeIdx, popupModeLabels[:]...).
-		Label("阅读工具").OnChange(func() { a.switchPopupMode(modeIdx) })
-}
-
-func (a *app) renderCompactModeMenu(c *ui.Context, s snapshot) {
-	label := popupModeLabels[popupModeIndex(s.mode, s.inputTargetMode)]
+func (a *app) renderCompactModeMenu(c *ui.Context, cfg Config, s snapshot) {
+	opts := enabledPopupModes(cfg)
+	if len(opts) <= 1 {
+		at := appTheme(c.Theme())
+		ui.Text(c, opts[0].label).Font(fontUI).FontSize(FontControl).FontWeight(600).
+			TextColor(at.Text).Padding(0, Space1).SingleLine()
+		return
+	}
+	idx := popupModeIndexIn(opts, s.mode, s.inputTargetMode)
+	label := opts[idx].label
 	ui.MenuButton(c, label, func(m *ui.Menu) {
-		for i, name := range popupModeLabels {
-			if m.Item(name).Checked(i == popupModeIndex(s.mode, s.inputTargetMode)).Chosen() {
-				a.switchPopupMode(i)
+		for i, opt := range opts {
+			if m.Item(opt.label).Checked(i == idx).Chosen() {
+				a.switchPopupModeByOpts(opts, i)
 			}
 		}
 	}).Height(30).FontSize(12).Shrink(0).Label("切换阅读工具")
@@ -134,6 +193,12 @@ func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s
 			return false
 		})
 	}
+	hasDict := s.dict != nil || s.gdict != nil
+	if !s.isScreenshotMode && isWordSource(s) && (hasDict || s.target != "") {
+		a.renderWordTranslationCard(c, t, cfg, s)
+		a.renderNotesSummary(c, t, cfg, s)
+		return
+	}
 	if s.isScreenshotMode {
 		a.renderScreenshotSource(c, t, s)
 	} else if s.source != "" {
@@ -165,19 +230,167 @@ func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s
 					a.fitHeight()
 				}
 			}
-			ui.Column(c).FillWidth().Gap(8).Children(func() {
-				fontSize := float32(15)
-				fontWeight := 400
-				lineHeight := float32(1.55)
-				if s.isWord {
-					fontSize = 17
-					fontWeight = 600
-					lineHeight = 1.4
+			at := appTheme(t)
+			ui.Box(c).FillWidth().Padding(Space3, Space4).Radius(RadiusTrack).
+				Background(at.Surface).Border(1, at.BorderSubtle).Children(func() {
+				ui.Column(c).FillWidth().Gap(Space3).Children(func() {
+					ui.Column(c).FillWidth().Gap(Space2).Children(func() {
+						for _, para := range splitDisplayParagraphs(s.target) {
+							ui.Text(c, para).FontSize(15).FontWeight(400).
+								TextColor(at.Text).Wrap().LineHeight(1.6)
+						}
+					})
+					ui.Row(c).FillWidth().Gap(Space1).AlignItems(ui.Center).Children(func() {
+						copyIcon := iconCopy
+						copyTip := "复制译文"
+						if s.copiedMsg != "" {
+							copyIcon = iconCheck
+							copyTip = "译文已复制"
+						}
+						if renderIconButton(c, copyIcon, copyTip, 28, 14, false).Clicked() {
+							a.copyToClipboard(s.target)
+						}
+						spText, spLang, spTip := primarySpeechTarget(s.source, s.target)
+						if spText != "" {
+							if renderIconButton(c, iconSpeak, spTip, 28, 14, false).Clicked() {
+								PlaySpeechLang(spText, spLang, false)
+							}
+						}
+						a.renderLayoutMenu(c, cfg)
+						renderAIRefineControls(c, t, a, s)
+						ui.Spacer(c).Grow(1)
+
+						if cfg.ShowNotes && shouldExtractNotes(s.source) {
+							ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+								switch notesViewPhase(s) {
+								case notesLoading:
+									ui.Box(c).Padding(0, Space1).Children(func() {
+										ui.Text(c, "发现生词中…").Font(fontUI).FontSize(FontHelper).TextColor(t.TextMuted)
+									})
+								case notesReady:
+									btnText := fmt.Sprintf("猜你想存 · %d", len(s.notes))
+									tip := "展开生词推荐"
+									if s.notesExpanded {
+										btnText = fmt.Sprintf("收起生词 · %d", len(s.notes))
+										tip = "收起生词推荐"
+									}
+									btnNotes := ui.Button(c, "").Tooltip(tip).Height(HeightCompact).Padding(0, Space2).Radius(RadiusSM).Center()
+									bg := at.TintSurface
+									borderCol := at.TintBorder
+									if s.notesExpanded {
+										bg = at.AccentSoft
+										borderCol = at.AccentRing
+									}
+									if btnNotes.Hovered() {
+										bg = at.SurfaceHover
+									}
+									btnNotes.Background(bg).Border(1, borderCol)
+									btnNotes.Children(func() {
+										ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
+											ui.Icon(c, iconBookmark).Size(14, 14).TextColor(at.Accent)
+											ui.Text(c, btnText).Font(fontUI).FontSize(FontHelper).FontWeight(600).TextColor(at.Accent)
+										})
+									})
+									if btnNotes.Clicked() {
+										a.mu.Lock()
+										a.notesExpanded = !a.notesExpanded
+										a.mu.Unlock()
+										a.fitHeight()
+									}
+								}
+							})
+						}
+					})
+				})
+			})
+		}
+	}
+	a.renderNotesSummary(c, t, cfg, s)
+}
+
+func isWordSource(s snapshot) bool {
+	if s.isWord {
+		return true
+	}
+	trimmed := strings.TrimSpace(s.source)
+	return trimmed != "" && !strings.Contains(trimmed, " ") && len([]rune(trimmed)) <= 28 && !strings.Contains(trimmed, "\n")
+}
+
+func (a *app) renderWordTranslationCard(c *ui.Context, t *ui.Theme, cfg Config, s snapshot) {
+	at := appTheme(t)
+	hasPhones := (s.dict != nil && (s.dict.UKPhone != "" || s.dict.USPhone != "")) || (s.gdict != nil && s.gdict.Pron != "")
+	hasDict := s.dict != nil || s.gdict != nil
+
+	ui.Box(c).FillWidth().Padding(Space3, Space4).Radius(RadiusTrack).
+		Background(at.Surface).Border(1, at.BorderSubtle).Children(func() {
+		ui.Column(c).FillWidth().Gap(Space2 + 2).Children(func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
+				ui.Text(c, strings.TrimSpace(s.source)).Font(fontHeadword).FontSize(22).
+					FontWeight(700).TextColor(at.Text).Grow(1).Wrap()
+				copyIcon, copyTip := iconCopy, "复制原文"
+				if s.copiedMsg != "" {
+					copyIcon, copyTip = iconCheck, "已复制"
 				}
+				if renderIconButton(c, copyIcon, copyTip, HeightIconMd, 14, false).Clicked() {
+					a.copyToClipboard(s.source)
+				}
+				if !hasPhones {
+					if renderIconButton(c, iconSpeak, "朗读原文", HeightIconMd, 14, false).Clicked() {
+						PlaySpeechLang(s.source, a.speechLang(), false)
+					}
+				}
+				if s.isWord {
+					renderWordSaveButton(c, t, s, a)
+				}
+			})
+
+			if hasPhones {
+				ui.Row(c).FillWidth().Gap(Space2).AlignItems(ui.Center).Wrap().Children(func() {
+					if s.dict != nil && s.dict.UKPhone != "" {
+						renderHomePhonePill(c, at, "UK", s.dict.UKPhone, func() {
+							a.play(s.source, false)
+						})
+					}
+					if s.dict != nil && s.dict.USPhone != "" {
+						renderHomePhonePill(c, at, "US", s.dict.USPhone, func() {
+							a.play(s.source, true)
+						})
+					} else if s.gdict != nil && s.gdict.Pron != "" {
+						renderHomePhonePill(c, at, "", s.gdict.Pron, func() {
+							a.play(s.source, false)
+						})
+					}
+				})
+			}
+
+			if s.busy {
+				ui.Box(c).FillWidth().Padding(Space1, 0).Children(func() {
+					ui.Text(c, "正在翻译…").FontSize(13).TextColor(at.TextMuted)
+				})
+			}
+
+			if hasDict {
+				dictBlock(c, t, s, a)
+				if s.target != "" {
+					ui.Row(c).FillWidth().AlignItems(ui.Stretch).Radius(RadiusSM).
+						Background(at.SurfaceHover).Clip().Children(func() {
+						ui.Box(c).Width(inkRuleWidth).Background(at.Accent)
+						ui.Box(c).Grow(1).Padding(6, 10).Children(func() {
+							ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
+								ui.Text(c, "速译").Font(fontUI).FontSize(FontMicro).FontWeight(600).TextColor(at.TextMuted).SingleLine()
+								ui.Text(c, flattenTranslation(s.target)).Font(fontUI).FontSize(13.5).FontWeight(500).TextColor(at.TextSec).Wrap().Grow(1)
+								if renderIconButton(c, iconCopy, "复制译文", 22, 12, false).Clicked() {
+									a.copyToClipboard(s.target)
+								}
+							})
+						})
+					})
+				}
+			} else if s.target != "" {
+				ui.Divider(c).FillWidth()
 				ui.Column(c).FillWidth().Gap(Space2).Children(func() {
 					for _, para := range splitDisplayParagraphs(s.target) {
-						ui.Text(c, para).FontSize(fontSize).FontWeight(fontWeight).
-							TextColor(t.Text).Wrap().LineHeight(lineHeight)
+						ui.Text(c, para).FontSize(17).FontWeight(600).TextColor(at.Text).Wrap().LineHeight(1.45)
 					}
 				})
 				ui.Row(c).FillWidth().Gap(Space1).AlignItems(ui.Center).Children(func() {
@@ -196,59 +409,10 @@ func (a *app) renderTranslationContent(c *ui.Context, t *ui.Theme, cfg Config, s
 							PlaySpeechLang(spText, spLang, false)
 						}
 					}
-					a.renderLayoutMenu(c, cfg)
-					renderAIRefineControls(c, t, a, s)
-					ui.Spacer(c).Grow(1)
-
-					if cfg.ShowNotes && shouldExtractNotes(s.source) {
-						ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-							switch notesViewPhase(s) {
-							case notesLoading:
-								ui.Box(c).Padding(0, Space1).Children(func() {
-									ui.Text(c, "发现生词中…").Font(fontUI).FontSize(FontHelper).TextColor(t.TextMuted)
-								})
-							case notesReady:
-								btnText := fmt.Sprintf("猜你想存 · %d", len(s.notes))
-								tip := "展开生词推荐"
-								if s.notesExpanded {
-									btnText = fmt.Sprintf("收起生词 · %d", len(s.notes))
-									tip = "收起生词推荐"
-								}
-								btnNotes := ui.Button(c, "").Tooltip(tip).Height(HeightCompact).Padding(0, Space2).Radius(RadiusSM).Center()
-								at := appTheme(t)
-								bg := at.TintSurface
-								borderCol := at.TintBorder
-								if s.notesExpanded {
-									bg = at.AccentSoft
-									borderCol = at.AccentRing
-								}
-								if btnNotes.Hovered() {
-									bg = at.SurfaceHover
-								}
-								btnNotes.Background(bg).Border(1, borderCol)
-								btnNotes.Children(func() {
-									ui.Row(c).Gap(Space1).AlignItems(ui.Center).Children(func() {
-										ui.Icon(c, iconBookmark).Size(14, 14).TextColor(at.Accent)
-										ui.Text(c, btnText).Font(fontUI).FontSize(FontHelper).FontWeight(600).TextColor(at.Accent)
-									})
-								})
-								if btnNotes.Clicked() {
-									a.mu.Lock()
-									a.notesExpanded = !a.notesExpanded
-									a.mu.Unlock()
-									a.fitHeight()
-								}
-							}
-						})
-					}
 				})
-				if s.dict != nil || s.gdict != nil {
-					dictBlock(c, t, s, a)
-				}
-			})
-		}
-	}
-	a.renderNotesSummary(c, t, cfg, s)
+			}
+		})
+	})
 }
 
 func splitDisplayParagraphs(s string) []string {
@@ -372,41 +536,59 @@ func langDisplayName(tag string) string {
 	return tag
 }
 
+const sourceCollapseThreshold = 180
+
 func (a *app) renderTranslationSource(c *ui.Context, t *ui.Theme, s snapshot) {
 	at := appTheme(t)
 	text := s.source
-	isLong := len([]rune(text)) > 110 || strings.Contains(text, "\n")
-	if isLong && !s.sourceExpanded {
-		text = TruncateEllipsis(flattenTranslation(text), 110)
+	if s.isWord || (!strings.Contains(strings.TrimSpace(text), " ") && len([]rune(strings.TrimSpace(text))) <= 28 && !strings.Contains(text, "\n")) {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Padding(2, 2).Children(func() {
+			ui.Text(c, strings.TrimSpace(text)).Font(fontHeadword).FontSize(FontWordHead).
+				FontWeight(700).TextColor(at.Text).Grow(1).Wrap()
+			if renderIconButton(c, iconCopy, "复制原文", HeightIconMd, 14, false).Clicked() {
+				a.copyToClipboard(s.source)
+			}
+			if renderIconButton(c, iconSpeak, "朗读原文", HeightIconMd, 14, false).Clicked() {
+				PlaySpeechLang(s.source, a.speechLang(), false)
+			}
+		})
+		return
 	}
-	ui.Box(c).FillWidth().Padding(Space2, Space3).Radius(RadiusSM).
-		Background(at.TintSurface).Border(1, at.TintBorder).Children(func() {
-		ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(Space1).Children(func() {
-			ui.Column(c).Grow(1).Gap(Space2).Children(func() {
-				for _, para := range splitDisplayParagraphs(text) {
-					ui.Text(c, para).Font(fontUI).FontSize(FontControl).
-						TextColor(at.TextSec).Wrap().LineHeight(1.5)
-				}
-			})
-			ui.Row(c).Gap(0).AlignItems(ui.Center).Children(func() {
-				if isLong {
-					icon, tip := iconChevronDown, "展开完整原文"
-					if s.sourceExpanded {
-						icon, tip = iconChevronUp, "收起原文"
+	isLong := len([]rune(text)) > sourceCollapseThreshold || strings.Count(text, "\n") >= 4
+	if isLong && !s.sourceExpanded {
+		text = TruncateEllipsis(flattenTranslation(text), sourceCollapseThreshold)
+	}
+	ui.Row(c).FillWidth().AlignItems(ui.Stretch).Radius(RadiusSM).
+		Background(at.SurfaceHover).Clip().Children(func() {
+		ui.Box(c).Width(inkRuleWidth).Background(at.Accent)
+		ui.Box(c).Grow(1).Padding(Space2, Space3).Children(func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(Space1).Children(func() {
+				ui.Column(c).Grow(1).Gap(Space2).Children(func() {
+					for _, para := range splitDisplayParagraphs(text) {
+						ui.Text(c, para).Font(fontUI).FontSize(FontControl).
+							TextColor(at.TextSec).Wrap().LineHeight(1.5)
 					}
-					if renderIconButton(c, icon, tip, HeightIconMd, 14, false).Clicked() {
-						a.mu.Lock()
-						a.sourceExpanded = !a.sourceExpanded
-						a.mu.Unlock()
-						a.fitHeight()
+				})
+				ui.Row(c).Gap(0).AlignItems(ui.Center).Shrink(0).Children(func() {
+					if isLong {
+						icon, tip := iconChevronDown, "展开完整原文"
+						if s.sourceExpanded {
+							icon, tip = iconChevronUp, "收起原文"
+						}
+						if renderIconButton(c, icon, tip, HeightIconMd, 14, false).Clicked() {
+							a.mu.Lock()
+							a.sourceExpanded = !a.sourceExpanded
+							a.mu.Unlock()
+							a.fitHeight()
+						}
 					}
-				}
-				if renderIconButton(c, iconCopy, "复制原文", HeightIconMd, 14, false).Clicked() {
-					a.copyToClipboard(s.source)
-				}
-				if renderIconButton(c, iconSpeak, "朗读原文", HeightIconMd, 14, false).Clicked() {
-					PlaySpeechLang(s.source, a.speechLang(), false)
-				}
+					if renderIconButton(c, iconCopy, "复制原文", HeightIconMd, 14, false).Clicked() {
+						a.copyToClipboard(s.source)
+					}
+					if renderIconButton(c, iconSpeak, "朗读原文", HeightIconMd, 14, false).Clicked() {
+						PlaySpeechLang(s.source, a.speechLang(), false)
+					}
+				})
 			})
 		})
 	})

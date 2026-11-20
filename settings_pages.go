@@ -13,60 +13,52 @@ import (
 )
 
 func (a *app) pageGeneral(c *ui.Context, t *ui.Theme, cfg Config) {
-	PageTitle(c, t, "通用", "外观、透明度与窗口行为。改动即时保存。")
+	PageTitle(c, t, "通用", "白昼纸墨外观、透明度与窗口行为。改动即时保存。")
 	ui.Column(c).FillWidth().Gap(Space6).Children(func() {
 		SettingCard(c, t, "外观", func(sc *settingCard) {
-			sc.Row("外观主题", "跟随 Windows 深浅色或手动固定。", func() {
-				SegmentedControlMapped(c, false, cfg.ThemeMode, func(mode string) {
-					a.store.Update(func(c *Config) { c.ThemeMode = mode })
-				},
-					SegmentedOption[string]{Value: "system", Label: "跟随系统"},
-					SegmentedOption[string]{Value: "light", Label: "浅色"},
-					SegmentedOption[string]{Value: "dark", Label: "深色"},
-				)
-			})
-			sc.Row("主题色", "同时改变主色、原文区淡色底与焦点边框；四套氛围一眼可分。", func() {
+			sc.Row("主题色", "同步改变主色、胶囊高亮与焦点边框。", func() {
 				at := appTheme(t)
 				current := accentThemeChoice(cfg.AccentTheme).Value
-				currentLabel := accentThemeChoice(cfg.AccentTheme).Label
-				ui.Row(c).Gap(Space3).AlignItems(ui.Center).Children(func() {
-					ui.Row(c).Gap(Space2).AlignItems(ui.Center).Children(func() {
-						for _, choice := range accentChoices {
-							swatch := choice.Light
-							if t.Dark {
-								swatch = choice.Dark
-							}
-							b := ui.ButtonBase(c).Width(28).Height(28).Radius(14).
-								Background(swatch).Tooltip(choice.Label).Label(choice.Label)
-							if choice.Value == current {
-								b.Border(2, at.TextSec)
-								b.Children(func() {
-									ui.Icon(c, iconCheck).Size(12, 12).TextColor(at.AccentText)
-								})
-							} else {
-								b.Border(1, at.BorderCtrl)
-								if b.Hovered() {
-									b.Border(1, at.BorderHover)
-								}
-							}
-							value := choice.Value
-							if b.Clicked() {
-								a.store.Update(func(c *Config) { c.AccentTheme = value })
-								a.refreshThemeWindows()
-							}
+				ui.Row(c).Gap(Space2).AlignItems(ui.Center).Children(func() {
+					for _, choice := range accentChoices {
+						selected := choice.Value == current
+						b := ui.ButtonBase(c).Height(HeightCompact).Radius(14).
+							Padding(0, 10).Gap(6).Center().Label(choice.Label)
+						textCol := at.TextSec
+						weight := 500
+						if selected {
+							b.Background(at.AccentSoft).Border(1, at.AccentRing)
+							textCol = at.Accent
+							weight = 600
+						} else if b.Hovered() {
+							b.Background(at.SurfaceHover).Border(1, at.BorderHover)
+							textCol = at.Text
+						} else {
+							b.Background(at.Surface).Border(1, at.BorderCtrl)
 						}
-					})
-					ui.Text(c, currentLabel).Font(fontUI).FontSize(FontHelper).
-						TextColor(at.TextMuted).Width(48).SingleLine()
+						dot := choice.Light
+						b.Children(func() {
+							ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+								ui.Box(c).Size(10, 10).Radius(5).Background(dot).Shrink(0)
+								ui.Text(c, choice.Label).Font(fontUI).FontSize(FontHelper).
+									FontWeight(weight).TextColor(textCol).SingleLine()
+							})
+						})
+						value := choice.Value
+						if b.Clicked() {
+							a.store.Update(func(c *Config) { c.AccentTheme = value })
+							a.refreshThemeWindows()
+						}
+					}
 				})
 			})
 			op := cfg.WindowOpacity
 			if op <= 0 {
 				op = 0.95
 			}
-			sc.Slider("窗口透明度", "调节划词弹窗透明度（60% - 100%）。",
+			sc.Slider("窗口透明度", "调整划词弹窗透明度（60%–100%）。",
 				fmt.Sprintf("%.0f%%", op*100), func() {
-					ui.Slider(c, &op, 0.6, 1.0).Width(180).Step(0.05).OnChange(func() {
+					ui.Slider(c, &op, 0.6, 1.0).Width(160).Step(0.05).OnChange(func() {
 						a.store.Update(func(c *Config) { c.WindowOpacity = op })
 						if a.win != nil {
 							a.win.SetOpacity(op)
@@ -92,9 +84,9 @@ func (a *app) pageGeneral(c *ui.Context, t *ui.Theme, cfg Config) {
 				})
 			})
 			w := float64(cfg.PopupWidth)
-			sc.Slider("弹窗宽度", "超长内容会自动纵向平滑滚动。",
+			sc.Slider("弹窗宽度", "超长内容自动纵向平滑滚动。",
 				fmt.Sprintf("%.0f px", w), func() {
-					ui.Slider(c, &w, 360, 680).Width(180).Step(20).OnChange(func() {
+					ui.Slider(c, &w, 360, 680).Width(160).Step(20).OnChange(func() {
 						a.store.Update(func(cfg *Config) { cfg.PopupWidth = float32(w) })
 					})
 				})
@@ -214,23 +206,32 @@ func (a *app) pageTranslate(c *ui.Context, t *ui.Theme, cfg Config) {
 				)
 			})
 			sc.Row("引擎状态", "某个引擎连续失败两次会暂时跳过，不影响其他引擎继续翻译。", func() {
-				ui.Column(c).Gap(Space1).Children(func() {
+				at := appTheme(t)
+				ui.Row(c).Gap(Space2).AlignItems(ui.Center).Wrap().Children(func() {
 					for _, h := range engineHealths() {
-						ui.Row(c).AlignItems(ui.Center).Gap(Space2).Children(func() {
-							ui.Text(c, h.Engine).FontSize(FontHelper).TextColor(t.Text).Width(48)
-							status := "正常"
-							col := t.TextMuted
-							if h.Open {
-								remain := time.Until(h.Until).Round(time.Second)
-								if remain < 0 {
-									remain = 0
-								}
-								status = fmt.Sprintf("熔断中 · 约 %s 后重试", remain)
-								col = t.Danger
-							} else if h.Fails > 0 {
-								status = fmt.Sprintf("连续失败 %d 次", h.Fails)
+						status := "正常"
+						col := at.TextSec
+						dotCol := at.Success
+						if h.Open {
+							remain := time.Until(h.Until).Round(time.Second)
+							if remain < 0 {
+								remain = 0
 							}
-							ui.Text(c, status).FontSize(FontHelper).TextColor(col).SingleLine()
+							status = fmt.Sprintf("熔断中 · 约 %s 后重试", remain)
+							col = at.Danger
+							dotCol = at.Danger
+						} else if h.Fails > 0 {
+							status = fmt.Sprintf("连续失败 %d 次", h.Fails)
+							col = at.Warning
+							dotCol = at.Warning
+						}
+						ui.Box(c).Padding(6, 10).Radius(RadiusSM).
+							Background(at.SurfaceHover).Border(1, at.BorderSubtle).Children(func() {
+							ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
+								ui.Box(c).Size(6, 6).Radius(3).Background(dotCol)
+								ui.Text(c, h.Engine).FontSize(FontHelper).FontWeight(600).TextColor(at.Text)
+								ui.Text(c, status).FontSize(FontMicro).TextColor(col).SingleLine()
+							})
 						})
 					}
 				})
@@ -720,26 +721,24 @@ func (a *app) pageHotkey(c *ui.Context, t *ui.Theme, cfg Config) {
 	conflictMsg := checkHotkeyConflict(a.pendingHotkeySelection, a.pendingHotkeyInput, a.pendingHotkeyScreenshot)
 	ui.Column(c).FillWidth().Gap(Space6).Children(func() {
 		SettingCard(c, t, "全局快捷键", func(sc *settingCard) {
-			sc.Custom(func() {
-				ui.Box(c).FillWidth().Padding(Space4).Children(func() {
-					ui.Column(c).FillWidth().Gap(Space2).Children(func() {
-						btnP1 := AccentSoftButton(c, t, "极速单手：Alt+D (划词) / Alt+C (截图) / Alt+Q (输入)").
-							Tooltip("【最推荐】左手单手盲操极速触发。注意：Alt+D 在 Chrome/Edge 中会聚焦地址栏，浏览器内建议用方案二")
-						if btnP1.Clicked() {
-							a.pendingHotkeySelection = "Alt+D"
-							a.pendingHotkeyScreenshot = "Alt+C"
-							a.pendingHotkeyInput = "Alt+Q"
-							a.applyHotkeys()
-						}
-						btnP2 := SecondaryButton(c, t, "稳健三键：Ctrl+Alt+D (划词) / Ctrl+Alt+S (截图) / Ctrl+Alt+I (输入)").
-							Tooltip("标准三键组合，防误触")
-						if btnP2.Clicked() {
-							a.pendingHotkeySelection = "Ctrl+Alt+D"
-							a.pendingHotkeyScreenshot = "Ctrl+Alt+S"
-							a.pendingHotkeyInput = "Ctrl+Alt+I"
-							a.applyHotkeys()
-						}
-					})
+			sc.Row("快捷方案", "一键套用常用组合，或直接在下方微调。", func() {
+				ui.Row(c).Gap(Space2).AlignItems(ui.Center).Children(func() {
+					btnP1 := AccentSoftButton(c, t, "极速单手 (Alt+D)").Height(HeightCompact).
+						Tooltip("Alt+D 划词 / Alt+C 截图 / Alt+Q 输入（浏览器内 Alt+D 会聚焦地址栏，可用稳健三键）")
+					if btnP1.Clicked() {
+						a.pendingHotkeySelection = "Alt+D"
+						a.pendingHotkeyScreenshot = "Alt+C"
+						a.pendingHotkeyInput = "Alt+Q"
+						a.applyHotkeys()
+					}
+					btnP2 := SecondaryButton(c, t, "稳健三键 (Ctrl+Alt+D)").Height(HeightCompact).
+						Tooltip("Ctrl+Alt+D 划词 / Ctrl+Alt+S 截图 / Ctrl+Alt+I 输入（防误触）")
+					if btnP2.Clicked() {
+						a.pendingHotkeySelection = "Ctrl+Alt+D"
+						a.pendingHotkeyScreenshot = "Ctrl+Alt+S"
+						a.pendingHotkeyInput = "Ctrl+Alt+I"
+						a.applyHotkeys()
+					}
 				})
 			})
 

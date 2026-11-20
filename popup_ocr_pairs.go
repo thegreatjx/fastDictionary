@@ -67,42 +67,58 @@ func (a *app) renderOcrParagraphPairs(c *ui.Context, t *ui.Theme, s snapshot) {
 			FontSize(10).TextColor(t.TextMuted).Wrap()
 	}
 
+	at := appTheme(t)
 	limit := maxPairs
 	if !s.ocrExpanded && limit > 8 {
 		limit = 8
 	}
-	for i := 0; i < limit; i++ {
-		srcText := ""
-		if i < len(src) {
-			srcText = src[i]
-		}
-		dstText := ""
-		if i < len(dst) {
-			dstText = dst[i]
-		}
-		ui.Box(c).FillWidth().Padding(8, 10).Radius(8).
-			Background(t.Surface).Border(1, t.Border).Children(func() {
-			ui.Column(c).FillWidth().Gap(4).Children(func() {
-				ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
-					ui.Text(c, fmt.Sprintf("§ %d", i+1)).FontSize(10).FontWeight(600).TextColor(t.TextMuted)
-					ui.Spacer(c).Grow(1)
-					toCopy := dstText
-					if toCopy == "" {
-						toCopy = srcText
-					}
-					if renderIconButton(c, iconCopy, "复制本段译文", 20, 11, false).Clicked() {
-						a.copyToClipboard(toCopy)
-					}
+	ui.Box(c).FillWidth().Radius(RadiusTrack).
+		Background(at.Surface).Border(1, at.BorderSubtle).Clip().Children(func() {
+		ui.Column(c).FillWidth().Children(func() {
+			for i := 0; i < limit; i++ {
+				if i > 0 {
+					ui.Box(c).FillWidth().Height(1).Background(at.BorderSubtle)
+				}
+				srcText := ""
+				if i < len(src) {
+					srcText = src[i]
+				}
+				dstText := ""
+				if i < len(dst) {
+					dstText = dst[i]
+				}
+				idx := i
+				ui.Row(c).FillWidth().AlignItems(ui.Stretch).Children(func() {
+					ui.Box(c).Grow(1).Padding(8, 10).Children(func() {
+						ui.Column(c).FillWidth().Gap(3).Children(func() {
+							ui.Text(c, fmt.Sprintf("§ %d", idx+1)).Font(fontMono).FontSize(10).FontWeight(700).TextColor(at.Accent)
+							if srcText != "" {
+								ui.Text(c, srcText).FontSize(12).TextColor(at.TextSec).Wrap().LineHeight(1.5)
+							}
+						})
+					})
+					ui.Box(c).Width(1).Background(at.BorderSubtle)
+					ui.Box(c).Grow(1).Padding(8, 10).Children(func() {
+						ui.Column(c).FillWidth().Gap(3).Children(func() {
+							ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+								ui.Spacer(c).Grow(1)
+								toCopy := dstText
+								if toCopy == "" {
+									toCopy = srcText
+								}
+								if renderIconButton(c, iconCopy, "复制本段译文", 20, 11, false).Clicked() {
+									a.copyToClipboard(toCopy)
+								}
+							})
+							if dstText != "" {
+								ui.Text(c, dstText).FontSize(13.5).FontWeight(500).TextColor(at.Text).Wrap().LineHeight(1.55)
+							}
+						})
+					})
 				})
-				if srcText != "" {
-					ui.Text(c, srcText).FontSize(12).TextColor(t.TextMuted).Wrap().LineHeight(1.5)
-				}
-				if dstText != "" {
-					ui.Text(c, dstText).FontSize(14).TextColor(t.Text).Wrap().LineHeight(1.55)
-				}
-			})
+			}
 		})
-	}
+	})
 	if maxPairs > 8 {
 		label := fmt.Sprintf("展开全文（共 %d 段）", maxPairs)
 		if s.ocrExpanded {

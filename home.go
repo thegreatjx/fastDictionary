@@ -58,12 +58,36 @@ func (h *homeState) cancelRefineLocked() {
 	h.aiRefineErr = ""
 }
 
+func enabledHomeTabs(cfg Config) []SegmentedOption[string] {
+	opts := []SegmentedOption[string]{
+		{Value: "translate", Label: "翻译与词典"},
+	}
+	if isPopupModeEnabled(cfg, modeGrammar) {
+		opts = append(opts, SegmentedOption[string]{Value: "grammar", Label: "长难句拆解"})
+	}
+	if isPopupModeEnabled(cfg, modeWriting) {
+		opts = append(opts, SegmentedOption[string]{Value: "writing", Label: "写作润色"})
+	}
+	return opts
+}
+
+func isHomeTabEnabled(cfg Config, tab string) bool {
+	switch tab {
+	case "grammar":
+		return isPopupModeEnabled(cfg, modeGrammar)
+	case "writing":
+		return isPopupModeEnabled(cfg, modeWriting)
+	default:
+		return true
+	}
+}
+
 func (a *app) pageHome(c *ui.Context, t *ui.Theme, cfg Config) {
 	at := appTheme(t)
 
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space3).Children(func() {
 		ui.Column(c).Grow(1).Gap(Space1).Children(func() {
-			PageTitle(c, t, "查词与翻译", "输入或粘贴英文/中文内容即查；划词与截图在后台随时可用。")
+			PageTitle(c, t, "查词与翻译", "输入单词或段落即查；划词与截图随时可用。")
 		})
 		ui.Row(c).Gap(Space2).AlignItems(ui.Center).Shrink(0).Children(func() {
 			targetLabel := langLabels[cfg.TargetLang]
@@ -95,47 +119,11 @@ func (a *app) pageHome(c *ui.Context, t *ui.Theme, cfg Config) {
 		})
 	})
 
-	SurfaceCard(c, t).Children(func() {
-		ui.Column(c).FillWidth().Gap(Space3).Children(func() {
-			ui.TextArea(c, &a.home.input).Height(88).FillWidth().
-				Placeholder("输入单词、短语或段落 · 回车翻译 · Shift+回车换行").
-				OnTextKey(func(k ui.TextKey) bool {
-					if k.Key == ui.KeyEnter && k.Mods&ui.Shift == 0 {
-						if txt := CleanSelectionText(k.Text()); txt != "" {
-							a.home.input = k.Text()
-							a.homeSubmit(txt)
-						}
-						return true
-					}
-					return false
-				})
-
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
-				runeCount := len([]rune(strings.TrimSpace(a.home.input)))
-				if runeCount > 0 {
-					ui.Text(c, fmt.Sprintf("%d 字", runeCount)).Font(fontMono).
-						FontFeatures("tnum").FontSize(FontMicro).TextColor(at.TextMuted)
-				} else {
-					ui.Text(c, "支持自动检测语种").Font(fontUI).FontSize(FontHelper).TextColor(at.TextMuted)
-				}
-				ui.Spacer(c).Grow(1)
-				if strings.TrimSpace(a.home.input) != "" || a.home.source != "" {
-					if GhostButton(c, t, "清空").Clicked() {
-						a.homeClear()
-					}
-				}
-				if PrimaryButton(c, t, "翻译", strings.TrimSpace(a.home.input) == "").Clicked() {
-					a.homeSubmit(a.home.input)
-				}
-			})
-		})
-	})
-
 	a.mu.Lock()
 	h := a.home
 	a.mu.Unlock()
 
-	if h.tab == "" {
+	if h.tab == "" || !isHomeTabEnabled(cfg, h.tab) {
 		h.tab = "translate"
 	}
 
@@ -156,86 +144,115 @@ func (a *app) pageHome(c *ui.Context, t *ui.Theme, cfg Config) {
 		})
 	}
 
-	if strings.TrimSpace(h.source) == "" && !h.busy {
-		a.renderHomeReadyState(c, t, at, cfg, h)
-		return
+	hasResult := strings.TrimSpace(h.source) != "" || h.busy
+	inputH := float32(116)
+	if hasResult {
+		inputH = 84
 	}
 
-	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space3).Children(func() {
-		SegmentedControlMapped(c, false, h.tab, func(tab string) {
-			a.homeSwitchTab(tab)
-		},
-			SegmentedOption[string]{Value: "translate", Label: "翻译与词典"},
-			SegmentedOption[string]{Value: "grammar", Label: "长难句拆解"},
-			SegmentedOption[string]{Value: "writing", Label: "写作润色"},
-		)
-		ui.Spacer(c).Grow(1)
-		if h.source != "" {
-			if GhostButton(c, t, "重新生成").Clicked() {
-				a.homeRunTab(h.tab, h.source, true)
-			}
-		}
-	})
-
-	if h.errText != "" {
-		SurfaceCard(c, t).Background(dangerSoft(t)).Border(1, dangerLine(t)).Children(func() {
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
-				ui.Icon(c, iconInfo).Size(IconSize, IconSize).TextColor(at.Danger)
-				ui.Text(c, h.errText).Font(fontUI).FontSize(FontHelper).TextColor(at.Danger).Wrap().Grow(1)
-			})
-		})
-	}
-
-	switch h.tab {
-	case "grammar":
-		a.renderHomeGrammarTab(c, t, at, cfg, h)
-	case "writing":
-		a.renderHomeWritingTab(c, t, at, cfg, h)
-	default:
-		a.renderHomeTranslateTab(c, t, at, cfg, h)
-	}
-}
-
-func (a *app) renderHomeReadyState(c *ui.Context, t *ui.Theme, at AppTheme, cfg Config, h homeState) {
-	if prob := cfg.AISetupProblem(); prob != "" {
+	ui.Column(c).FillWidth().Gap(Space4).Children(func() {
 		SurfaceCard(c, t).Children(func() {
-			ui.Box(c).FillWidth().Padding(Space2, Space3).Radius(RadiusSM).
-				Background(at.TintSurface).Border(1, at.TintBorder).Children(func() {
-				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
-					ui.Icon(c, iconSparkles).Size(IconSize, IconSize).TextColor(at.Accent)
-					ui.Text(c, "配置 AI 服务后可解锁 AI 精翻、长难句拆解与写作润色（当前："+prob+"）").
-						Font(fontUI).FontSize(FontHelper).TextColor(at.TextSec).Wrap().Grow(1)
-					if SecondaryButton(c, t, "去配置").Clicked() {
-						a.page = "ai"
-						a.settingsRefresh()
+			ui.Column(c).FillWidth().Gap(Space3).Children(func() {
+				ui.TextArea(c, &a.home.input).Height(inputH).FillWidth().
+					Placeholder("输入单词、短语或段落 · 回车翻译 · Shift+回车换行").
+					OnTextKey(func(k ui.TextKey) bool {
+						if k.Key == ui.KeyEnter && k.Mods&ui.Shift == 0 {
+							if txt := CleanSelectionText(k.Text()); txt != "" {
+								a.home.input = k.Text()
+								a.homeSubmit(txt)
+							}
+							return true
+						}
+						return false
+					})
+
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space3).Children(func() {
+					runeCount := len([]rune(strings.TrimSpace(a.home.input)))
+					if runeCount > 0 {
+						ui.Text(c, fmt.Sprintf("%d 字", runeCount)).Font(fontMono).
+							FontFeatures("tnum").FontSize(FontMicro).TextColor(at.TextMuted)
+					} else {
+						ui.Text(c, "支持自动检测语种").Font(fontUI).FontSize(FontHelper).TextColor(at.TextMuted)
+					}
+					if prob := cfg.AISetupProblem(); prob != "" {
+						btnAI := ui.ButtonBase(c).Height(24).Radius(RadiusXS).Padding(0, Space2).
+							Background(at.TintSurface).Border(1, at.TintBorder)
+						if btnAI.Hovered() {
+							btnAI.Background(at.AccentSoft)
+						}
+						btnAI.Children(func() {
+							ui.Row(c).AlignItems(ui.Center).Gap(4).Children(func() {
+								ui.Icon(c, iconSparkles).Size(12, 12).TextColor(at.Accent)
+								ui.Text(c, "配置 AI 服务后可解锁精翻与拆解（"+prob+"）").
+									Font(fontUI).FontSize(FontMicro).FontWeight(500).TextColor(at.Accent).SingleLine()
+							})
+						})
+						if btnAI.Clicked() {
+							a.page = "ai"
+							a.settingsRefresh()
+						}
+					}
+					ui.Spacer(c).Grow(1)
+					if strings.TrimSpace(a.home.input) != "" || a.home.source != "" {
+						if GhostButton(c, t, "清空").Clicked() {
+							a.homeClear()
+						}
+					}
+					if PrimaryButton(c, t, "翻译", strings.TrimSpace(a.home.input) == "").Clicked() {
+						a.homeSubmit(a.home.input)
 					}
 				})
 			})
 		})
-	}
 
-	vocabStore := GetVocabularyStore()
-	if due := vocabStore.DueCount(time.Now()); due > 0 {
-		SurfaceCard(c, t).Children(func() {
+		if !hasResult {
+			a.renderHomeIdleStrip(c, t, at, cfg, h)
+			return
+		}
+
+		tabs := enabledHomeTabs(cfg)
+		if len(tabs) > 1 || h.source != "" {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space3).Children(func() {
-				ui.Box(c).Width(8).Height(8).Radius(4).Background(at.Accent)
-				ui.Column(c).Grow(1).Gap(2).Children(func() {
-					ui.Text(c, fmt.Sprintf("今日有 %d 条待复习", due)).Font(fontUI).FontSize(FontSection).FontWeight(600).TextColor(at.Text)
-					ui.Text(c, "巩固收藏的生词与短语，保持记忆曲线节奏").Font(fontUI).FontSize(FontHelper).TextColor(at.TextSec)
-				})
-				if PrimaryButton(c, t, "开始复习").Height(HeightCompact).Clicked() {
-					a.page = "vocabulary"
-					a.startVocabReview()
-					a.settingsRefresh()
+				if len(tabs) > 1 {
+					SegmentedControlMapped(c, false, h.tab, func(tab string) {
+						a.homeSwitchTab(tab)
+					}, tabs...)
+				}
+				ui.Spacer(c).Grow(1)
+				if h.source != "" {
+					if GhostButton(c, t, "重新生成").Clicked() {
+						a.homeRunTab(h.tab, h.source, true)
+					}
 				}
 			})
-		})
-	}
+		}
 
+		if h.errText != "" {
+			SurfaceCard(c, t).Background(dangerSoft(t)).Border(1, dangerLine(t)).Children(func() {
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
+					ui.Icon(c, iconInfo).Size(IconSize, IconSize).TextColor(at.Danger)
+					ui.Text(c, h.errText).Font(fontUI).FontSize(FontHelper).TextColor(at.Danger).Wrap().Grow(1)
+				})
+			})
+		}
+
+		switch h.tab {
+		case "grammar":
+			a.renderHomeGrammarTab(c, t, at, cfg, h)
+		case "writing":
+			a.renderHomeWritingTab(c, t, at, cfg, h)
+		default:
+			a.renderHomeTranslateTab(c, t, at, cfg, h)
+		}
+	})
+}
+
+func (a *app) renderHomeIdleStrip(c *ui.Context, t *ui.Theme, at AppTheme, cfg Config, h homeState) {
+	vocabStore := GetVocabularyStore()
 	recent := h.recent
 	if len(recent) == 0 {
 		entries := vocabStore.Filter("all", "")
-		for i := 0; i < len(entries) && i < 6; i++ {
+		for i := 0; i < len(entries) && i < 8; i++ {
 			term := strings.TrimSpace(entries[i].Term)
 			if term != "" && len([]rune(term)) <= 40 {
 				recent = append(recent, term)
@@ -243,52 +260,47 @@ func (a *app) renderHomeReadyState(c *ui.Context, t *ui.Theme, at AppTheme, cfg 
 		}
 	}
 	if len(recent) > 0 {
-		SurfaceCard(c, t).Children(func() {
-			ui.Column(c).FillWidth().Gap(Space2).Children(func() {
-				ui.Text(c, "快捷复查").Font(fontUI).FontSize(FontHelper).FontWeight(600).TextColor(at.TextSec)
-				ui.Row(c).FillWidth().Wrap().Gap(Space2).Children(func() {
-					for _, item := range recent {
-						term := item
-						b := ui.ButtonBase(c).Height(HeightCompact).Radius(RadiusSM).Padding(0, Space3).
-							Background(at.SurfaceSubtle).Border(1, at.BorderSubtle).Center()
-						if b.Hovered() {
-							b.Background(at.SurfaceHover).Border(1, at.BorderHover)
-						}
-						b.Children(func() {
-							ui.Text(c, TruncateEllipsis(term, 24)).Font(fontUI).FontSize(FontHelper).TextColor(at.Text).SingleLine()
-						})
-						if b.Clicked() {
-							a.home.input = term
-							a.homeSubmit(term)
-						}
-					}
-				})
-			})
-		})
-		return
-	}
-
-	examples := []struct {
-		label string
-		query string
-	}{
-		{label: "serendipity", query: "serendipity"},
-		{label: "长难句示例", query: "Although the initial experiment succeeded, several edge cases remain to be verified."},
-		{label: "中译英示例", query: "请帮我把这段技术方案总结成简洁英文"},
-	}
-	SurfaceCard(c, t).Children(func() {
-		ui.Column(c).FillWidth().Gap(Space2).Children(func() {
-			ui.Text(c, "快速试一试").Font(fontUI).FontSize(FontHelper).FontWeight(600).TextColor(at.TextSec)
+		ui.Column(c).FillWidth().Gap(Space2).Padding(0, 2).Children(func() {
+			ui.Text(c, "快捷复查").Font(fontUI).FontSize(FontHelper).FontWeight(600).TextColor(at.TextMuted)
 			ui.Row(c).FillWidth().Wrap().Gap(Space2).Children(func() {
-				for _, ex := range examples {
-					q := ex.query
+				for _, item := range recent {
+					term := item
 					b := ui.ButtonBase(c).Height(HeightCompact).Radius(RadiusSM).Padding(0, Space3).
-						Background(at.SurfaceSubtle).Border(1, at.BorderSubtle).Center()
+						Background(at.Surface).Border(1, at.BorderSubtle).Center()
 					if b.Hovered() {
 						b.Background(at.SurfaceHover).Border(1, at.BorderHover)
 					}
 					b.Children(func() {
-						ui.Text(c, ex.label).Font(fontUI).FontSize(FontHelper).TextColor(at.Text).SingleLine()
+						ui.Text(c, TruncateEllipsis(term, 24)).Font(fontUI).FontSize(FontHelper).TextColor(at.TextSec).SingleLine()
+					})
+					if b.Clicked() {
+						a.home.input = term
+						a.homeSubmit(term)
+					}
+				}
+			})
+		})
+	} else {
+		examples := []struct {
+			label string
+			query string
+		}{
+			{label: "serendipity", query: "serendipity"},
+			{label: "长难句示例", query: "Although the initial experiment succeeded, several edge cases remain to be verified."},
+			{label: "中译英示例", query: "请帮我把这段技术方案总结成简洁英文"},
+		}
+		ui.Column(c).FillWidth().Gap(Space2).Padding(0, 2).Children(func() {
+			ui.Text(c, "快速试一试").Font(fontUI).FontSize(FontHelper).FontWeight(600).TextColor(at.TextMuted)
+			ui.Row(c).FillWidth().Wrap().Gap(Space2).Children(func() {
+				for _, ex := range examples {
+					q := ex.query
+					b := ui.ButtonBase(c).Height(HeightCompact).Radius(RadiusSM).Padding(0, Space3).
+						Background(at.Surface).Border(1, at.BorderSubtle).Center()
+					if b.Hovered() {
+						b.Background(at.SurfaceHover).Border(1, at.BorderHover)
+					}
+					b.Children(func() {
+						ui.Text(c, ex.label).Font(fontUI).FontSize(FontHelper).TextColor(at.TextSec).SingleLine()
 					})
 					if b.Clicked() {
 						a.home.input = q
@@ -296,16 +308,17 @@ func (a *app) renderHomeReadyState(c *ui.Context, t *ui.Theme, at AppTheme, cfg 
 					}
 				}
 			})
-			hints := formatShortcutHints(
-				shortcutHint{"划词翻译", cfg.HotkeySelection},
-				shortcutHint{"输入弹窗", cfg.HotkeyInput},
-				shortcutHint{"截图翻译", cfg.HotkeyScreenshot},
-			)
-			if hints != "" {
-				HelperText(c, t, "快捷键："+hints)
-			}
 		})
-	})
+	}
+
+	hints := formatShortcutHints(
+		shortcutHint{"划词翻译", cfg.HotkeySelection},
+		shortcutHint{"输入弹窗", cfg.HotkeyInput},
+		shortcutHint{"截图翻译", cfg.HotkeyScreenshot},
+	)
+	if hints != "" {
+		ui.Text(c, "快捷键："+hints).Font(fontUI).FontSize(FontHelper).TextColor(at.TextMuted).Padding(0, 2)
+	}
 }
 
 type shortcutHint struct {
@@ -327,8 +340,105 @@ func formatShortcutHints(items ...shortcutHint) string {
 func (a *app) renderHomeTranslateTab(c *ui.Context, t *ui.Theme, at AppTheme, cfg Config, h homeState) {
 	if h.busy {
 		SurfaceCard(c, t).Children(func() {
-			ui.Box(c).FillWidth().Padding(Space2, 0).Children(func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Padding(Space2, 0).Children(func() {
+				ui.Spinner(c).Size(14, 14).TextColor(at.Accent)
 				ui.Text(c, "正在查询与翻译…").Font(fontUI).FontSize(FontControl).TextColor(at.TextMuted)
+			})
+		})
+		return
+	}
+
+	if h.dict != nil || h.gdict != nil {
+		SurfaceCard(c, t).Children(func() {
+			ui.Column(c).FillWidth().Gap(Space3).Children(func() {
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
+					ui.Text(c, strings.TrimSpace(h.source)).Font(fontHeadword).FontSize(22).FontWeight(700).TextColor(at.Text).Grow(1)
+					if IconButton(c, t, iconCopy, "复制单词").Clicked() {
+						mygo.Clipboard.WriteText(h.source)
+						a.mu.Lock()
+						a.actionSavedMsg = "已复制到剪贴板 ✓"
+						a.mu.Unlock()
+						a.settingsRefresh()
+					}
+					if h.wordSaved {
+						ui.Row(c).Height(HeightCompact).Gap(Space1).AlignItems(ui.Center).Children(func() {
+							ui.Icon(c, iconCheck).Size(12, 12).TextColor(at.TextMuted)
+							ui.Text(c, "已存入生词本").Font(fontUI).FontSize(FontHelper).TextColor(at.TextMuted)
+						})
+					} else if PrimaryButton(c, t, "存生词本").Height(HeightCompact).Clicked() {
+						a.homeSaveWord()
+					}
+				})
+
+				hasPhones := (h.dict != nil && (h.dict.UKPhone != "" || h.dict.USPhone != "")) || (h.gdict != nil && h.gdict.Pron != "")
+				if hasPhones {
+					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Wrap().Children(func() {
+						if h.dict != nil && h.dict.UKPhone != "" {
+							renderHomePhonePill(c, at, "UK", h.dict.UKPhone, func() {
+								PlaySpeechLang(h.source, h.detected, false)
+							})
+						}
+						if h.dict != nil && h.dict.USPhone != "" {
+							renderHomePhonePill(c, at, "US", h.dict.USPhone, func() {
+								PlaySpeechLang(h.source, h.detected, true)
+							})
+						} else if h.gdict != nil && h.gdict.Pron != "" {
+							renderHomePhonePill(c, at, "", h.gdict.Pron, func() {
+								PlaySpeechLang(h.source, h.detected, false)
+							})
+						}
+					})
+				}
+
+				ui.Divider(c).FillWidth()
+
+				if h.dict != nil && len(h.dict.Explains) > 0 {
+					ui.Column(c).FillWidth().Gap(Space2).Children(func() {
+						for _, ex := range h.dict.Explains {
+							pos, def := splitPOSExplain(ex)
+							if pos != "" {
+								ui.Row(c).FillWidth().Gap(Space2).AlignItems(ui.Baseline).Children(func() {
+									ui.Box(c).Width(42).Shrink(0).Children(func() {
+										ui.Text(c, pos).Font(fontMono).FontSize(FontMicro).FontWeight(700).TextColor(at.Accent).SingleLine()
+									})
+									ui.Text(c, def).Font(fontUI).FontSize(14).FontWeight(500).TextColor(at.Text).Wrap().Grow(1).LineHeight(1.55)
+								})
+							} else {
+								ui.Text(c, def).Font(fontUI).FontSize(14).TextColor(at.Text).Wrap().LineHeight(1.55)
+							}
+						}
+					})
+				} else if h.gdict != nil {
+					ui.Column(c).FillWidth().Gap(Space2).Children(func() {
+						for _, e := range h.gdict.Entries {
+							ui.Row(c).FillWidth().Gap(Space2).AlignItems(ui.Baseline).Children(func() {
+								ui.Box(c).Width(42).Shrink(0).Children(func() {
+									ui.Text(c, e.POS).Font(fontMono).FontSize(FontMicro).FontWeight(700).TextColor(at.Accent).SingleLine()
+								})
+								ui.Text(c, e.Explain).Font(fontUI).FontSize(14).FontWeight(500).TextColor(at.Text).Wrap().Grow(1).LineHeight(1.55)
+							})
+						}
+					})
+				}
+
+				if h.target != "" {
+					ui.Row(c).FillWidth().AlignItems(ui.Stretch).Radius(RadiusSM).Background(at.SurfaceHover).Clip().Children(func() {
+						ui.Box(c).Width(inkRuleWidth).Background(at.Accent)
+						ui.Box(c).Grow(1).Padding(Space2, Space3).Children(func() {
+							ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
+								ui.Text(c, "速译").Font(fontUI).FontSize(FontMicro).FontWeight(600).TextColor(at.TextMuted).SingleLine()
+								ui.Text(c, flattenTranslation(h.target)).Font(fontUI).FontSize(13.5).FontWeight(500).TextColor(at.TextSec).Wrap().Grow(1)
+								if IconButton(c, t, iconCopy, "复制译文").Clicked() {
+									mygo.Clipboard.WriteText(h.target)
+									a.mu.Lock()
+									a.actionSavedMsg = "译文已复制到剪贴板 ✓"
+									a.mu.Unlock()
+									a.settingsRefresh()
+								}
+							})
+						})
+					})
+				}
 			})
 		})
 		return
@@ -339,7 +449,7 @@ func (a *app) renderHomeTranslateTab(c *ui.Context, t *ui.Theme, at AppTheme, cf
 			ui.Column(c).FillWidth().Gap(Space3).Children(func() {
 				ui.Column(c).FillWidth().Gap(Space2).Children(func() {
 					for _, para := range splitDisplayParagraphs(h.target) {
-						ui.Text(c, para).Font(fontUI).FontSize(16).FontWeight(500).
+						ui.Text(c, para).Font(fontUI).FontSize(15.5).FontWeight(500).
 							TextColor(at.Text).LineHeight(1.6).Wrap()
 					}
 				})
@@ -389,59 +499,6 @@ func (a *app) renderHomeTranslateTab(c *ui.Context, t *ui.Theme, at AppTheme, cf
 		})
 	}
 
-	if h.dict != nil || h.gdict != nil {
-		SurfaceCard(c, t).Children(func() {
-			ui.Column(c).FillWidth().Gap(Space3).Children(func() {
-				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space3).Children(func() {
-					ui.Text(c, h.source).Font(fontUI).FontSize(FontWordHead).FontWeight(600).TextColor(at.Text)
-					if h.dict != nil && h.dict.UKPhone != "" {
-						bUK := GhostButton(c, t, "")
-						bUK.Children(func() {
-							ui.Text(c, "英 /"+h.dict.UKPhone+"/").Font(fontIPA).FontSize(FontControl).FontWeight(500).TextColor(at.TextSec).SingleLine()
-						})
-						if bUK.Clicked() {
-							PlaySpeechLang(h.source, h.detected, false)
-						}
-					}
-					if h.dict != nil && h.dict.USPhone != "" {
-						bUS := GhostButton(c, t, "")
-						bUS.Children(func() {
-							ui.Text(c, "美 /"+h.dict.USPhone+"/").Font(fontIPA).FontSize(FontControl).FontWeight(500).TextColor(at.TextSec).SingleLine()
-						})
-						if bUS.Clicked() {
-							PlaySpeechLang(h.source, h.detected, true)
-						}
-					}
-					if h.dict == nil && h.gdict != nil && h.gdict.Pron != "" {
-						ui.Text(c, "/"+h.gdict.Pron+"/").Font(fontIPA).FontSize(FontHelper).TextColor(at.TextMuted)
-					}
-					ui.Spacer(c).Grow(1)
-					if h.wordSaved {
-						ui.Text(c, "已存入生词本").Font(fontUI).FontSize(FontHelper).TextColor(at.TextMuted)
-					} else if SecondaryButton(c, t, "存生词本", iconBookmark).Clicked() {
-						a.homeSaveWord()
-					}
-				})
-
-				if h.dict != nil && len(h.dict.Explains) > 0 {
-					for _, ex := range h.dict.Explains {
-						ui.Text(c, ex).Font(fontUI).FontSize(FontControl).TextColor(at.Text).Wrap().LineHeight(1.5)
-					}
-				} else if h.gdict != nil {
-					for _, e := range h.gdict.Entries {
-						ui.Row(c).FillWidth().Gap(Space2).AlignItems(ui.Start).Children(func() {
-							ui.Box(c).Shrink(0).Padding(2, 6).Radius(RadiusXS).
-								Background(at.SurfaceSubtle).Border(1, at.BorderSubtle).Children(func() {
-								ui.Text(c, e.POS).FontSize(FontMicro).FontWeight(600).TextColor(at.Accent).SingleLine()
-							})
-							ui.Text(c, e.Explain).Font(fontUI).FontSize(FontControl).TextColor(at.Text).Wrap().Grow(1).LineHeight(1.5)
-						})
-					}
-				}
-			})
-		})
-	}
-
 	if h.target == "" && h.dict == nil && h.gdict == nil {
 		SurfaceCard(c, t).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
@@ -450,6 +507,26 @@ func (a *app) renderHomeTranslateTab(c *ui.Context, t *ui.Theme, at AppTheme, cf
 					Font(fontUI).FontSize(FontHelper).TextColor(at.TextMuted).Wrap().Grow(1)
 			})
 		})
+	}
+}
+
+func renderHomePhonePill(c *ui.Context, at AppTheme, tag, phone string, onSpeak func()) {
+	b := ui.ButtonBase(c).Height(24).Radius(RadiusXS).Padding(0, Space2).
+		Background(at.SurfaceHover).Border(1, at.BorderSubtle).Center()
+	if b.Hovered() {
+		b.Background(at.SurfacePress).Border(1, at.BorderHover)
+	}
+	b.Children(func() {
+		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+			if tag != "" {
+				ui.Text(c, tag).Font(fontMono).FontSize(9.5).FontWeight(700).TextColor(at.TextSec).SingleLine()
+			}
+			ui.Text(c, "/"+strings.Trim(phone, "/")+"/").Font(fontIPA).FontSize(FontIPASize).TextColor(at.TextMuted).SingleLine()
+			ui.Icon(c, iconSpeak).Size(12, 12).TextColor(at.TextSec)
+		})
+	})
+	if b.Clicked() && onSpeak != nil {
+		onSpeak()
 	}
 }
 

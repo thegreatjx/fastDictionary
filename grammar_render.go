@@ -83,8 +83,8 @@ func renderGrammarVisualCardEx(c *ui.Context, t *ui.Theme, origText string, res 
 		ui.Column(c).FillWidth().Gap(Space2).Children(func() {
 			renderGrammarCardHeader(c, t, saved, st)
 
-			ui.Box(c).FillWidth().Padding(15, 14, 14, 14).Radius(RadiusSM).
-				Background(at.SurfaceHover).Border(1, at.BorderSubtle).Children(func() {
+			ui.Box(c).FillWidth().Padding(14, 14, 12, 14).Radius(RadiusSM).
+				Background(at.SurfaceHover).Children(func() {
 				ui.Column(c).FillWidth().Gap(10).Children(func() {
 					switch {
 					case len(res.Segments) == 0:
@@ -770,9 +770,8 @@ func renderGrammarSentence(c *ui.Context, t *ui.Theme, res *SentenceAnalysisResu
 				continue
 			}
 			midY := bb.Y + bb.H*0.5
-			chip := ui.Rect{X: bb.X + 1, Y: midY - 8, W: max(bb.W-2, 14), H: 16}
-			p.Fill(chip, b.bg, 4)
-			p.Stroke(chip, b.border, 4, 1)
+			chip := ui.Rect{X: bb.X + 1, Y: midY - 7.5, W: max(bb.W-2, 14), H: 15}
+			p.Fill(chip, withAlpha(b.border, 0.24), 3)
 		}
 	})
 
@@ -785,8 +784,8 @@ func renderGrammarSentence(c *ui.Context, t *ui.Theme, res *SentenceAnalysisResu
 				continue
 			}
 			midY := bb.Y + bb.H*0.5
-			rect := ui.Rect{X: bb.X, Y: midY - 9.5, W: max(bb.W, 5.5), H: 19}
-			drawCurvedBracket(p, rect, br.isLeft, br.color, br.seed)
+			rect := ui.Rect{X: bb.X, Y: midY - 9.0, W: max(bb.W, 5.0), H: 18}
+			drawCurvedBracket(p, rect, br.isLeft, withAlpha(br.color, 0.56), br.seed)
 		}
 
 		for _, sl := range slashes {
@@ -1187,12 +1186,12 @@ func renderGrammarHintBar(c *ui.Context, t *ui.Theme, at AppTheme, text string) 
 	if text == "" {
 		return
 	}
-	ui.Box(c).FillWidth().Padding(5, 8).Radius(RadiusXS).
-		Background(at.Surface).Border(1, at.BorderSubtle).Children(func() {
-		ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(6).Children(func() {
-			ui.Text(c, "·").FontSize(12).FontWeight(700).TextColor(at.Accent)
+	ui.Row(c).FillWidth().AlignItems(ui.Stretch).Radius(RadiusXS).
+		Background(at.Surface).Clip().Children(func() {
+		ui.Box(c).Width(inkRuleWidth).Background(at.Accent)
+		ui.Box(c).Grow(1).Padding(5, 8).Children(func() {
 			ui.Text(c, text).FontSize(11).FontWeight(500).TextColor(at.TextSec).
-				LineHeight(1.45).Wrap().MaxLines(2).Tooltip(text).Grow(1)
+				LineHeight(1.45).Wrap().MaxLines(2).Tooltip(text).FillWidth()
 		})
 	})
 }

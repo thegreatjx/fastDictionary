@@ -36,7 +36,7 @@ func TestPopupShowsDictCard(t *testing.T) {
 	if !strings.Contains(joined, "ˌserənˈdɪpəti") {
 		t.Errorf("phonetics missing: %q", joined)
 	}
-	if !strings.Contains(joined, "n. 好运") {
+	if !strings.Contains(joined, "n.") || !strings.Contains(joined, "好运") {
 		t.Errorf("youdao explanation missing: %q", joined)
 	}
 	if strings.Contains(joined, "noun") {

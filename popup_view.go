@@ -38,9 +38,13 @@ func renderIconButton(c *ui.Context, icon *ui.SVG, tip string, size, iconSize fl
 
 func (a *app) popupView(c *ui.Context) {
 	cfg := a.store.Get()
-	applyTheme(c, cfg.ThemeMode, c.Theme().Dark, cfg.AccentTheme)
+	applyTheme(c, "light", false, cfg.AccentTheme)
 	t := c.Theme()
 	s := a.snap()
+
+	if !isPopupModeEnabled(cfg, s.mode) {
+		s.mode = modeTranslate
+	}
 
 	if c.Shortcut(0, ui.KeyEscape) && a.win != nil {
 		stopAudio()
@@ -48,12 +52,13 @@ func (a *app) popupView(c *ui.Context) {
 		a.win.Hide()
 	}
 
+	modeOpts := enabledPopupModes(cfg)
 	if c.Shortcut(ui.Ctrl, ui.Key1) || c.Shortcut(ui.Alt, ui.Key1) {
-		a.switchPopupMode(0)
+		a.switchPopupModeByOpts(modeOpts, 0)
 	} else if c.Shortcut(ui.Ctrl, ui.Key2) || c.Shortcut(ui.Alt, ui.Key2) {
-		a.switchPopupMode(1)
+		a.switchPopupModeByOpts(modeOpts, 1)
 	} else if c.Shortcut(ui.Ctrl, ui.Key3) || c.Shortcut(ui.Alt, ui.Key3) {
-		a.switchPopupMode(2)
+		a.switchPopupModeByOpts(modeOpts, 2)
 	}
 
 	if c.Shortcut(0, ui.KeyF5) || c.Shortcut(ui.Ctrl, ui.KeyR) {
@@ -92,7 +97,7 @@ func (a *app) popupView(c *ui.Context) {
 
 		scrollEl = ui.Scroll(c).Grow(1).FillWidth()
 		scrollEl.Children(func() {
-			contentEl = ui.Column(c).FillWidth().Gap(6).Padding(0, 14, 0, 0)
+			contentEl = ui.Column(c).FillWidth().Gap(6).Padding(0, 6, 0, 0)
 			contentEl.Children(func() {
 				if s.notice != "" {
 					ui.Box(c).FillWidth().Padding(8, 10).Radius(6).
@@ -348,53 +353,57 @@ func renderWordSaveButton(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
 	}
 }
 
+func splitPOSExplain(ex string) (pos, def string) {
+	ex = strings.TrimSpace(ex)
+	if idx := strings.IndexByte(ex, '.'); idx > 0 && idx <= 8 {
+		cand := ex[:idx+1]
+		valid := true
+		for _, r := range cand[:idx] {
+			if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '/' || r == '&') {
+				valid = false
+				break
+			}
+		}
+		if valid {
+			rest := strings.TrimSpace(ex[idx+1:])
+			if rest != "" {
+				return cand, rest
+			}
+		}
+	}
+	return "", ex
+}
+
 func dictBlock(c *ui.Context, t *ui.Theme, s snapshot, a *app) {
+	at := appTheme(t)
 	ui.Divider(c).FillWidth()
-	hasPhones := (s.dict != nil && (s.dict.UKPhone != "" || s.dict.USPhone != "")) || (s.gdict != nil && s.gdict.Pron != "")
-	if hasPhones || s.isWord {
-		ui.Row(c).FillWidth().Gap(14).AlignItems(ui.Center).Children(func() {
-			if s.dict != nil && s.dict.UKPhone != "" {
-				ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-					btnUK := renderIconButton(c, iconSpeak, "英式发音", 28, 14, false)
-					if btnUK.Clicked() && a != nil {
-						a.play(s.source, false)
-					}
-					ui.Text(c, "/"+s.dict.UKPhone+"/").Font(fontIPA).FontSize(13).TextColor(appTheme(t).TextMuted).SingleLine()
-				})
-			}
-			if s.dict != nil && s.dict.USPhone != "" {
-				ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-					btnUS := renderIconButton(c, iconSpeak, "美式发音", 28, 14, false)
-					if btnUS.Clicked() && a != nil {
-						a.play(s.source, true)
-					}
-					ui.Text(c, "/"+s.dict.USPhone+"/").Font(fontIPA).FontSize(13).TextColor(appTheme(t).TextMuted).SingleLine()
-				})
-			} else if s.gdict != nil && s.gdict.Pron != "" {
-				ui.Text(c, "/"+s.gdict.Pron+"/").Font(fontIPA).FontSize(13).TextColor(t.Accent)
-			}
-
-			ui.Spacer(c).Grow(1)
-
-			if a != nil {
-				renderWordSaveButton(c, t, s, a)
+	if s.dict != nil && len(s.dict.Explains) > 0 {
+		ui.Column(c).FillWidth().Gap(6).Children(func() {
+			for _, ex := range s.dict.Explains {
+				pos, def := splitPOSExplain(ex)
+				if pos != "" {
+					ui.Row(c).FillWidth().Gap(Space2).AlignItems(ui.Baseline).Children(func() {
+						ui.Box(c).Width(42).Shrink(0).Children(func() {
+							ui.Text(c, pos).Font(fontMono).FontSize(FontMicro).FontWeight(700).TextColor(at.Accent).SingleLine()
+						})
+						ui.Text(c, def).Font(fontUI).FontSize(14).FontWeight(500).TextColor(at.Text).Grow(1).Wrap().LineHeight(1.55)
+					})
+				} else {
+					ui.Text(c, def).Font(fontUI).FontSize(14).FontWeight(500).TextColor(at.Text).Wrap().LineHeight(1.55)
+				}
 			}
 		})
-	}
-	if s.dict != nil && len(s.dict.Explains) > 0 {
-		for _, ex := range s.dict.Explains {
-			ui.Text(c, ex).FontSize(14).TextColor(t.Text).Wrap().LineHeight(1.5)
-		}
 	} else if s.gdict != nil {
-		for _, e := range s.gdict.Entries {
-			ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Start).Children(func() {
-				ui.Box(c).Shrink(0).Padding(2, 6).Radius(4).
-					Background(t.SurfaceHover).Border(1, t.Border).Children(func() {
-					ui.Text(c, e.POS).FontSize(11).FontWeight(600).TextColor(t.Accent).SingleLine()
+		ui.Column(c).FillWidth().Gap(6).Children(func() {
+			for _, e := range s.gdict.Entries {
+				ui.Row(c).FillWidth().Gap(Space2).AlignItems(ui.Baseline).Children(func() {
+					ui.Box(c).Width(42).Shrink(0).Children(func() {
+						ui.Text(c, e.POS).Font(fontMono).FontSize(FontMicro).FontWeight(700).TextColor(at.Accent).SingleLine()
+					})
+					ui.Text(c, e.Explain).Font(fontUI).FontSize(14).FontWeight(500).TextColor(at.Text).Grow(1).Wrap().LineHeight(1.55)
 				})
-				ui.Text(c, e.Explain).FontSize(14).TextColor(t.Text).Grow(1).Wrap().LineHeight(1.5)
-			})
-		}
+			}
+		})
 	}
 }
 

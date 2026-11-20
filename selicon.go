@@ -360,18 +360,24 @@ func (a *app) hideSelIcon() {
 }
 
 func (a *app) recordChipHit(btn ui.Element, label string) {
+	b := btn.Bounds()
+	if label == chipMoreLabel {
+		a.mu.Lock()
+		a.moreBtnRect = b
+		a.mu.Unlock()
+	}
 	t := &a.chipTip
 	t.mu.Lock()
 	replaced := false
 	for i := range t.hits {
 		if t.hits[i].label == label {
-			t.hits[i].rect = btn.Bounds()
+			t.hits[i].rect = b
 			replaced = true
 			break
 		}
 	}
 	if !replaced {
-		t.hits = append(t.hits, chipHit{label: label, rect: btn.Bounds()})
+		t.hits = append(t.hits, chipHit{label: label, rect: b})
 	}
 	t.mu.Unlock()
 }
@@ -558,7 +564,7 @@ func chipTipWidth(label string) int {
 
 func (a *app) chipTipView(c *ui.Context) {
 	cfg := a.store.Get()
-	applyTheme(c, cfg.ThemeMode, c.Theme().Dark, cfg.AccentTheme)
+	applyTheme(c, "light", false, cfg.AccentTheme)
 	t := c.Theme()
 	c.Root().Background(ui.Transparent)
 
@@ -872,7 +878,7 @@ func (a *app) actOnSelection(fn func(text string)) {
 
 func (a *app) selIconView(c *ui.Context) {
 	cfg := a.store.Get()
-	applyTheme(c, cfg.ThemeMode, c.Theme().Dark, cfg.AccentTheme)
+	applyTheme(c, "light", false, cfg.AccentTheme)
 	t := c.Theme()
 	c.Root().Background(ui.Transparent)
 
@@ -965,6 +971,7 @@ func (a *app) toggleMoreFlyout() {
 		a.moreFlyoutRect = ui.Rect{}
 	}
 	selWin := a.sel.win
+	anchor := a.moreBtnRect
 	a.mu.Unlock()
 	if existing != nil && !existing.IsDestroyed() {
 		existing.Close()
@@ -973,14 +980,34 @@ func (a *app) toggleMoreFlyout() {
 	if selWin == nil || selWin.IsDestroyed() {
 		return
 	}
+	a.hideChipTip()
+	if anchor.W <= 0 || anchor.H <= 0 {
+		pw := a.currentSelectionChipWidth()
+		anchor = ui.Rect{
+			X: float32(pw - chipPadH - chipButtonSize),
+			Y: chipPadV,
+			W: chipButtonSize,
+			H: chipButtonSize,
+		}
+	}
 	flyout := mygo.NewFlyout(mygo.FlyoutOptions{
-		Parent:    selWin,
-		Placement: mygo.PlacementBottomEnd,
-		Width:     232,
-		Height:    196,
-		Focusable: true,
-		Shadow:    true,
-		Content:   ui.View(safeView("more", a.moreFlyoutView)),
+		Parent: selWin,
+		Anchor: mygo.Rectangle{
+			X:      int(anchor.X),
+			Y:      int(anchor.Y),
+			Width:  int(anchor.W),
+			Height: int(anchor.H),
+		},
+		Placement:  mygo.PlacementBottomEnd,
+		Gap:        6,
+		Width:      168,
+		Height:     152,
+		FitContent: true,
+		MinWidth:   160,
+		MaxWidth:   200,
+		Focusable:  true,
+		Shadow:     true,
+		Content:    ui.View(safeView("more", a.moreFlyoutView)),
 	})
 	flyout.OnShow(func() {
 		x, y := flyout.Position()
@@ -1010,19 +1037,13 @@ func (a *app) toggleMoreFlyout() {
 
 func (a *app) moreFlyoutView(c *ui.Context) {
 	cfg := a.store.Get()
-	applyTheme(c, cfg.ThemeMode, c.Theme().Dark, cfg.AccentTheme)
+	applyTheme(c, "light", false, cfg.AccentTheme)
 	t := c.Theme()
+	at := appTheme(t)
 
 	c.Root().Background(ui.Transparent)
-	box := ui.Column(c).Fill().Background(t.Surface).Radius(10).Border(1, t.Border).Padding(10).Gap(2)
+	box := ui.Column(c).FillWidth().Background(at.Surface).Padding(6).Gap(2)
 	box.Children(func() {
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Padding(0, 4).Children(func() {
-			ui.Text(c, "更多工具").FontSize(12).FontWeight(600).TextColor(t.TextMuted)
-			ui.Spacer(c).Grow(1)
-		})
-		ui.Text(c, TruncateEllipsis(a.selText(), 22)).FontSize(11).TextColor(t.TextMuted).
-			Wrap().Padding(0, 4).MaxLines(2)
-		ui.Divider(c).FillWidth()
 		if a.chipMenuItem(c, t, iconCopy, "复制选中文字", func() {
 			if text := a.selText(); strings.TrimSpace(text) != "" {
 				a.copyToClipboard(text)
@@ -1031,20 +1052,22 @@ func (a *app) moreFlyoutView(c *ui.Context) {
 		}) {
 			return
 		}
-		ui.Divider(c).FillWidth()
-		if a.chipMenuItem(c, t, iconSparkles, "管理 AI 指令", func() {
-			a.hideSelIcon()
-			a.showMainWindow("actions")
-		}) {
-			return
-		}
+		ui.Box(c).FillWidth().Padding(3, 6).Children(func() {
+			ui.Box(c).FillWidth().Height(1).Background(at.BorderSubtle)
+		})
 		if a.chipMenuItem(c, t, iconBookmark, "生词本", func() {
 			a.hideSelIcon()
 			a.showMainWindow("vocabulary")
 		}) {
 			return
 		}
-		if a.chipMenuItem(c, t, iconInfo, "设置", func() {
+		if a.chipMenuItem(c, t, iconSparkles, "AI 指令", func() {
+			a.hideSelIcon()
+			a.showMainWindow("actions")
+		}) {
+			return
+		}
+		if a.chipMenuItem(c, t, iconGear, "设置", func() {
 			a.hideSelIcon()
 			a.showSettings()
 		}) {
@@ -1054,21 +1077,25 @@ func (a *app) moreFlyoutView(c *ui.Context) {
 }
 
 func (a *app) chipMenuItem(c *ui.Context, t *ui.Theme, icon *ui.SVG, label string, fn func()) bool {
-	item := ui.Button(c, "").FillWidth().Height(30).Padding(2, 6).Radius(6).
-		Tooltip(label).Label(label).Justify(ui.Start)
-	bg := ui.Color{}
-	fg := t.Text
+	at := appTheme(t)
+	item := ui.Button(c, "").FillWidth().Height(32).Padding(0, 8).Radius(RadiusSM).
+		Label(label).Justify(ui.Start)
+	bg := ui.Transparent
+	fg := at.Text
+	iconFg := at.TextSec
 	if item.Hovered() {
-		bg = t.SurfaceHover
+		bg = at.SurfaceHover
+		iconFg = at.Text
 	}
 	if item.Pressed() {
-		bg = t.SurfacePressed
+		bg = at.SurfacePress
+		iconFg = at.Text
 	}
 	item.Background(bg).Border(0, ui.Transparent)
 	item.Children(func() {
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Icon(c, icon).Size(14, 14).TextColor(t.TextMuted)
-			ui.Text(c, label).FontSize(12).TextColor(fg)
+		ui.Row(c).Gap(Space2).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, icon).Size(14, 14).TextColor(iconFg)
+			ui.Text(c, label).Font(fontUI).FontSize(FontControl).FontWeight(500).TextColor(fg).SingleLine()
 		})
 	})
 	if !item.Clicked() {

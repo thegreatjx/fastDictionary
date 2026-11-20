@@ -197,7 +197,7 @@ func TestSettingsNavIsGroupedAndAligned(t *testing.T) {
 	tt := ui.NewTester(a.settingsView, 920, 660)
 	tt.Frame()
 
-	for _, group := range []string{"工作台", "常规", "划词与翻译", "AI 与指令", "其他"} {
+	for _, group := range []string{"工作台", "偏好设置", "AI 能力"} {
 		if !tt.HasText(group) {
 			t.Errorf("侧栏缺少分组 %q", group)
 		}
@@ -211,7 +211,7 @@ func TestSettingsNavIsGroupedAndAligned(t *testing.T) {
 		t.Errorf("默认窗口下侧栏仍需要滚动（MaxY=%v）", a.navScroll.MaxY)
 	}
 
-	small := ui.NewTester(a.settingsView, 700, 500)
+	small := ui.NewTester(a.settingsView, 740, 500)
 	small.Frame()
 	if !small.HasText("关于") {
 		t.Error("最小高度下侧栏丢了最后一个入口")

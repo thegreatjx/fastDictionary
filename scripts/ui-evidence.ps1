@@ -22,7 +22,7 @@
 # 每次运行重建 fixture；结束时只停止自己启动的 PID。
 
 param(
-    [ValidateSet("home", "settings", "grammar", "grammar-news", "grammar-tree", "grammar-loading", "writing", "chip")]
+    [ValidateSet("home", "settings", "word", "grammar", "grammar-news", "grammar-tree", "grammar-loading", "writing", "chip")]
     [string]$View = "home",
 
     [ValidateSet("light", "dark")]
@@ -172,6 +172,7 @@ try {
     switch ($View) {
         "home" { $appArgs += @("--page", "home") }
         "settings" { $appArgs += @("--settings", "--page", $Page) }
+        "word" { $appArgs += @("--demo-action", "word") }
         "grammar" { $appArgs += @("--demo-action", "grammar") }
         "grammar-news" { $appArgs += @("--demo-action", "grammar-news") }
         "grammar-tree" { $appArgs += @("--demo-action", "grammar-tree") }
