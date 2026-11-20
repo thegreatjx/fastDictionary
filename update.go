@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -14,7 +15,10 @@ import (
 
 var appVersion = "1.6.1"
 
-const releasesAPI = "https://api.github.com/repos/thegreatjx/fastDictionary/releases/latest"
+const (
+	releasesAPI    = "https://api.github.com/repos/thegreatjx/fastDictionary/releases/latest"
+	releasesWebURL = "https://github.com/thegreatjx/fastDictionary/releases/latest"
+)
 
 var errNoRelease = errors.New("GitHub 上还没有可用的发布版本")
 
@@ -111,8 +115,67 @@ func updateMessage(current string, rel releaseInfo) (msg string, newer bool) {
 	return "已是最新版本（" + current + "）", false
 }
 
+func fetchLatestReleaseFromWeb(ctx context.Context, client *http.Client, webURL string) (releaseInfo, error) {
+	c := *client
+	c.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, webURL, nil)
+	if err != nil {
+		return releaseInfo{}, err
+	}
+	req.Header.Set("User-Agent", "fastDictionary/"+appVersion)
+
+	resp, err := c.Do(req)
+	if err != nil {
+		return releaseInfo{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return releaseInfo{}, errNoRelease
+	}
+	if resp.StatusCode < 300 || resp.StatusCode >= 400 {
+		return releaseInfo{}, fmt.Errorf("GitHub 网页返回 HTTP %d", resp.StatusCode)
+	}
+	loc := strings.TrimSpace(resp.Header.Get("Location"))
+	if loc == "" {
+		return releaseInfo{}, fmt.Errorf("GitHub 网页未返回版本跳转地址")
+	}
+	resolved, err := resp.Request.URL.Parse(loc)
+	if err != nil {
+		return releaseInfo{}, err
+	}
+	const marker = "/releases/tag/"
+	idx := strings.Index(resolved.Path, marker)
+	if idx < 0 {
+		if strings.HasSuffix(strings.TrimRight(resolved.Path, "/"), "/releases") {
+			return releaseInfo{}, errNoRelease
+		}
+		return releaseInfo{}, fmt.Errorf("无法从跳转地址解析版本号")
+	}
+	tag := strings.Trim(resolved.Path[idx+len(marker):], "/")
+	if unescaped, err := url.PathUnescape(tag); err == nil {
+		tag = unescaped
+	}
+	if tag == "" {
+		return releaseInfo{}, errNoRelease
+	}
+	return releaseInfo{TagName: tag, HTMLURL: resolved.String(), Name: tag}, nil
+}
+
+func fetchLatestReleaseWithFallback(ctx context.Context, client *http.Client, apiURL, webURL string) (releaseInfo, error) {
+	rel, err := fetchLatestRelease(ctx, client, apiURL)
+	if err == nil || errors.Is(err, errNoRelease) {
+		return rel, err
+	}
+	if webRel, webErr := fetchLatestReleaseFromWeb(ctx, client, webURL); webErr == nil || errors.Is(webErr, errNoRelease) {
+		return webRel, webErr
+	}
+	return releaseInfo{}, err
+}
+
 var checkForUpdate = func(ctx context.Context, client *http.Client) (releaseInfo, error) {
-	return fetchLatestRelease(ctx, client, releasesAPI)
+	return fetchLatestReleaseWithFallback(ctx, client, releasesAPI, releasesWebURL)
 }
 
 func updateHTTPClient() *http.Client {

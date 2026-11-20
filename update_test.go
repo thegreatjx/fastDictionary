@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -104,5 +105,36 @@ func TestAboutPageShowsUpdateResult(t *testing.T) {
 		if !tt.HasText(want) {
 			t.Errorf("about page is missing %q: %v", want, tt.Texts())
 		}
+	}
+}
+
+func TestFetchLatestReleaseFallbackOn403(t *testing.T) {
+	apiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer apiSrv.Close()
+
+	webSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", "https://github.com/thegreatjx/fastDictionary/releases/tag/v1.6.2")
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer webSrv.Close()
+
+	rel, err := fetchLatestReleaseWithFallback(context.Background(), apiSrv.Client(), apiSrv.URL, webSrv.URL)
+	if err != nil {
+		t.Fatalf("expected web fallback to succeed on API 403, got: %v", err)
+	}
+	if rel.TagName != "v1.6.2" || rel.HTMLURL != "https://github.com/thegreatjx/fastDictionary/releases/tag/v1.6.2" {
+		t.Fatalf("unexpected fallback release: %+v", rel)
+	}
+
+	emptyWeb := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", "https://github.com/thegreatjx/fastDictionary/releases")
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer emptyWeb.Close()
+
+	if _, err := fetchLatestReleaseWithFallback(context.Background(), apiSrv.Client(), apiSrv.URL, emptyWeb.URL); !errors.Is(err, errNoRelease) {
+		t.Fatalf("expected errNoRelease when web redirects to /releases, got: %v", err)
 	}
 }
