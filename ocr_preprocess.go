@@ -177,7 +177,7 @@ func isSuspiciousOCRText(text string) bool {
 	if len(core) < 3 || !isASCIIWord(core) {
 		return false
 	}
-	_, ok := spellWords()[strings.ToLower(core)]
+	ok := hasSpellWord(strings.ToLower(core))
 	return !ok
 }
 
@@ -198,7 +198,7 @@ func scoreOCRText(text string) int {
 		if len(core) < 3 || !isASCIIWord(core) {
 			continue
 		}
-		if _, ok := spellWords()[strings.ToLower(core)]; ok {
+		if hasSpellWord(strings.ToLower(core)) {
 			score += 8
 		}
 	}

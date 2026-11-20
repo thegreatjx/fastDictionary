@@ -83,12 +83,12 @@ func TestFixDoubledLettersMultiLine(t *testing.T) {
 }
 
 func TestSpellListLoaded(t *testing.T) {
-	words := spellWords()
+	words := spellWordList()
 	if len(words) < 10000 {
 		t.Fatalf("word list has only %d entries; the repair would be useless", len(words))
 	}
 	for _, w := range []string{"stocks", "with", "miles", "nasdaq", "saturday"} {
-		if _, ok := words[w]; !ok {
+		if !hasSpellWord(w) {
 			t.Errorf("word list is missing %q, so that repair cannot fire", w)
 		}
 	}

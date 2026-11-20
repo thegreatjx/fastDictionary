@@ -177,6 +177,7 @@ func resolveSpeechLang(ctx context.Context, text, lang string) string {
 }
 
 func speakWithSAPI(text, lang string, gen int) {
+	defer recoverLog("audio.go:speakWithSAPI")
 	escaped := strings.ReplaceAll(text, "'", "''")
 	escaped = strings.ReplaceAll(escaped, "\n", " ")
 	escaped = strings.ReplaceAll(escaped, "\r", " ")
@@ -200,12 +201,18 @@ $s.Speak('%s')`, escapePowerShell(langPrefix(lang)), escaped)
 	if gen != speakGeneration {
 		speakMu.Unlock()
 		_ = c.Process.Kill()
+		go func() {
+			defer recoverLog("audio.go:speakWithSAPI.wait")
+			_ = c.Wait()
+		}()
 		return
 	}
 	speakCmd = c
 	speakMu.Unlock()
-	go func() { _ = c.Wait() }()
-	defer recoverLog("audio.go:speakWithSAPI")
+	go func() {
+		defer recoverLog("audio.go:speakWithSAPI.wait")
+		_ = c.Wait()
+	}()
 }
 
 func escapePowerShell(s string) string {

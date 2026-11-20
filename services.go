@@ -737,3 +737,22 @@ func (b *engineBreaker) fail(name string) {
 }
 
 func (b *engineBreaker) open(name string) bool { return !b.allow(name) }
+
+func fetchWordDicts(ctx context.Context, text, from, to, caller string) (*YoudaoDict, *DictResult) {
+	var yd *YoudaoDict
+	var gd *DictResult
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer recoverLog(caller + ":dict")
+		defer wg.Done()
+		yd, _ = LookupYoudao(ctx, text)
+	}()
+	go func() {
+		defer recoverLog(caller + ":gdict")
+		defer wg.Done()
+		gd, _ = GoogleDict(ctx, text, from, to)
+	}()
+	wg.Wait()
+	return yd, gd
+}

@@ -413,6 +413,7 @@ func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError f
 		hwndDesk, _, _ := procGetDesktopWindow.Call()
 		hdcScreen, _, _ := procGetDC.Call(hwndDesk)
 		if hdcScreen == 0 {
+			hwndDesk = 0
 			hdcScreen, _, _ = procGetDC.Call(0)
 		}
 		if hdcScreen == 0 {
@@ -447,10 +448,21 @@ func StartNativeSnip(onSuccess func(cropRect winRect, imgPath string), onError f
 
 		hdcDark, _, _ := procCreateCompatibleDC.Call(hdcScreen)
 		hbmDark, _, _ := procCreateCompatibleBitmap.Call(hdcScreen, 1, 1)
-		oldDarkBmp, _, _ := procSelectObject.Call(hdcDark, hbmDark)
-		defer procDeleteDC.Call(hdcDark)
-		defer procDeleteObject.Call(hbmDark)
-		defer procSelectObject.Call(hdcDark, oldDarkBmp)
+		var oldDarkBmp uintptr
+		if hdcDark != 0 && hbmDark != 0 {
+			oldDarkBmp, _, _ = procSelectObject.Call(hdcDark, hbmDark)
+			defer procDeleteDC.Call(hdcDark)
+			defer procDeleteObject.Call(hbmDark)
+			defer procSelectObject.Call(hdcDark, oldDarkBmp)
+		} else {
+			if hbmDark != 0 {
+				procDeleteObject.Call(hbmDark)
+			}
+			if hdcDark != 0 {
+				procDeleteDC.Call(hdcDark)
+			}
+			hdcDark, hbmDark = 0, 0
+		}
 
 		hdcBuf, _, _ := procCreateCompatibleDC.Call(hdcScreen)
 		hbmBuf, _, _ := procCreateCompatibleBitmap.Call(hdcScreen, uintptr(vw), uintptr(vh))

@@ -2,6 +2,7 @@ package main
 
 import (
 	_ "embed"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -11,21 +12,34 @@ var spellData string
 
 var (
 	spellOnce sync.Once
-	spellSet  map[string]struct{}
+	spellList []string
 )
 
-func spellWords() map[string]struct{} {
+func spellWordList() []string {
 	spellOnce.Do(func() {
 		lines := strings.Split(spellData, "\n")
-		spellSet = make(map[string]struct{}, len(lines))
+		out := make([]string, 0, len(lines))
 		for _, w := range lines {
 			w = strings.TrimSpace(w)
 			if w != "" {
-				spellSet[w] = struct{}{}
+				out = append(out, w)
 			}
 		}
+		if !sort.StringsAreSorted(out) {
+			sort.Strings(out)
+		}
+		spellList = out
 	})
-	return spellSet
+	return spellList
+}
+
+func hasSpellWord(word string) bool {
+	if word == "" {
+		return false
+	}
+	list := spellWordList()
+	i := sort.SearchStrings(list, word)
+	return i < len(list) && list[i] == word
 }
 
 func collapseDoubles(w string) string {
@@ -57,11 +71,10 @@ func fixDoubledLetter(word string) string {
 		return word
 	}
 
-	words := spellWords()
-	if _, ok := words[lower]; ok {
+	if hasSpellWord(lower) {
 		return word
 	}
-	if _, ok := words[collapsed]; !ok {
+	if !hasSpellWord(collapsed) {
 		return word
 	}
 	return matchCase(word, collapsed)

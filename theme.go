@@ -430,18 +430,6 @@ func LoadingSecondaryButton(c *ui.Context, t *ui.Theme, idleLabel, busyLabel str
 	return b
 }
 
-func IndeterminateBar(c *ui.Context, t *ui.Theme, height float32, label string) ui.Element {
-	at := appTheme(t)
-	if height <= 0 {
-		height = 3
-	}
-	bar := ui.Progress(c, -1).FillWidth().Height(height).TextColor(at.Accent)
-	if label != "" {
-		bar.Label(label)
-	}
-	return bar
-}
-
 func GhostButton(c *ui.Context, t *ui.Theme, label string) ui.Element {
 	at := appTheme(t)
 	b := ui.ButtonBase(c).Height(HeightControl).Radius(RadiusSM).
@@ -834,14 +822,56 @@ func chipTipColors(t *ui.Theme) (bg, fg ui.Color) {
 
 func grammarInkFor(t *ui.Theme) grammarInk {
 	at := appTheme(t)
+	accentName := activeAccentValue(t)
+	if at.Dark {
+		connText := ui.Hex("#5CCB99")
+		if accentName == "mint" {
+			connText = ui.Hex("#86A6FF")
+		}
+		return grammarInk{
+			body:           at.Text,
+			predicate:      at.Accent,
+			predicateLine:  at.Accent.Alpha(0.85),
+			muted:          at.TextMuted,
+			connector:      at.TextSec,
+			clauseTint:     at.Accent.Alpha(0.15),
+			clauseText:     at.TextSec,
+			subjectLine:    ui.Hex("#94A3B8"),
+			objectLine:     ui.Hex("#94A3B8"),
+			complementLine: ui.Hex("#94A3B8"),
+			adverbialLine:  ui.Hex("#64748B"),
+			connectorText:  connText,
+			connectorRing:  connText.Alpha(0.84),
+			obstacleStar:   ui.Hex("#FF8A70"),
+			highlightFill:  ui.Hex("#FACC15").Alpha(0.24),
+			targetPillBg:   connText.Alpha(0.20),
+			targetPillRing: connText.Alpha(0.65),
+			arrowStroke:    connText,
+		}
+	}
+	connText := ui.Hex("#177A53")
+	if accentName == "mint" {
+		connText = ui.Hex("#2A57C4")
+	}
 	return grammarInk{
-		body:          at.Text,
-		predicate:     at.Accent,
-		predicateLine: at.Accent.Alpha(0.55),
-		muted:         at.TextMuted,
-		connector:     at.TextSec,
-		clauseTint:    at.Accent.Alpha(0.15),
-		clauseText:    at.TextSec,
+		body:           at.Text,
+		predicate:      at.Accent,
+		predicateLine:  at.Accent.Alpha(0.82),
+		muted:          at.TextMuted,
+		connector:      at.TextSec,
+		clauseTint:     at.Accent.Alpha(0.15),
+		clauseText:     at.TextSec,
+		subjectLine:    ui.Hex("#475569"),
+		objectLine:     ui.Hex("#475569"),
+		complementLine: ui.Hex("#64748B"),
+		adverbialLine:  ui.Hex("#64748B").Alpha(0.75),
+		connectorText:  connText,
+		connectorRing:  connText.Alpha(0.82),
+		obstacleStar:   ui.Hex("#C43D27"),
+		highlightFill:  ui.Hex("#FDE047").Alpha(0.45),
+		targetPillBg:   connText.Alpha(0.15),
+		targetPillRing: connText.Alpha(0.55),
+		arrowStroke:    connText,
 	}
 }
 

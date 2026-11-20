@@ -81,19 +81,6 @@ func indraDevDirs() []string {
 	return []string{filepath.Join("build", "indra-models"), "indra-models"}
 }
 
-func indraResolve() ([]string, string) {
-	var dirs []string
-	if d := strings.TrimSpace(os.Getenv(indraModelDirEnv)); d != "" {
-		dirs = append(dirs, d)
-	}
-	if exe, err := os.Executable(); err == nil {
-		base := filepath.Dir(exe)
-		dirs = append(dirs, filepath.Join(base, "indra-models"),
-			filepath.Join(base, "models", "indra"))
-	}
-	return dirs, ""
-}
-
 func indraRuntimeCandidates() []string {
 	var out []string
 	if d := strings.TrimSpace(os.Getenv(indraRuntimeEnv)); d != "" {
@@ -104,11 +91,6 @@ func indraRuntimeCandidates() []string {
 	}
 	if wd, err := os.Getwd(); err == nil {
 		out = append(out, filepath.Join(wd, "onnxruntime.dll"))
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		out = append(out,
-			filepath.Join(home, "AppData", "Local", "Programs", "Python", "Python312",
-				"Lib", "site-packages", "onnxruntime", "capi", "onnxruntime.dll"))
 	}
 	if root := os.Getenv("SystemRoot"); root != "" {
 		out = append(out, filepath.Join(root, "System32", "onnxruntime.dll"))
@@ -267,6 +249,27 @@ func (e *indraEngine) Destroy() {
 	})
 }
 
+func destroyOrtOutputs(out map[string]*ort.Value) {
+	for _, v := range out {
+		if v != nil {
+			v.Destroy()
+		}
+	}
+}
+
+func closeIndraOCR() {
+	indraMu.Lock()
+	inst := indraInst
+	indraInst = nil
+	indraLoaded = false
+	indraErr = nil
+	indraFailedAt = time.Time{}
+	indraMu.Unlock()
+	if inst != nil {
+		inst.Destroy()
+	}
+}
+
 func indraRecognize(ctx context.Context, img image.Image) (string, error) {
 	e, err := indraGet()
 	if err != nil {
@@ -320,6 +323,7 @@ func (e *indraEngine) detect(ctx context.Context, page grayImage) ([]lineBox, er
 	if err != nil {
 		return nil, fmt.Errorf("检测失败：%w", err)
 	}
+	defer destroyOrtOutputs(out)
 	v, ok := out["out"]
 	if !ok {
 		return nil, fmt.Errorf("检测输出缺失")
@@ -413,6 +417,7 @@ func (e *indraEngine) classifyScript(page grayImage, box lineBox) scriptKind {
 	if err != nil {
 		return scriptCJK
 	}
+	defer destroyOrtOutputs(out)
 	p, ok := out["p"]
 	if !ok {
 		return scriptCJK
@@ -446,6 +451,7 @@ func (e *indraEngine) runRecognizer(s *ort.Session, vocab []string, ink []float3
 	if err != nil {
 		return "", fmt.Errorf("识别失败：%w", err)
 	}
+	defer destroyOrtOutputs(out)
 	ids, ok := out["ids"]
 	if !ok {
 		return "", fmt.Errorf("识别输出缺失")

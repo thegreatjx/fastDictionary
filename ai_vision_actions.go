@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+var streamAIWithImageFunc = StreamAIWithImage
+
 func (a *app) visionRefine() {
 	cfg := a.store.Get()
 	mode := normalizeLayoutMode(cfg.LayoutMode)
@@ -55,13 +57,18 @@ func (a *app) visionRefine() {
 			return
 		}
 		parser := &visionStreamParser{}
-		out, err := StreamAIWithImage(ctx, cfg.AIConn(cfg.AIModel),
+		var lastPaint time.Time
+		out, err := streamAIWithImageFunc(ctx, cfg.AIConn(cfg.AIModel),
 			visionSystemPrompt(targetLang), visionUserPrompt(sourceHint), dataURL,
 			cfg.AIReasoningEffortFor(cfg.AIModel), func(delta string) {
 				source, target := parser.Push(delta)
 				if source == "" && target == "" {
 					return
 				}
+				if !lastPaint.IsZero() && time.Since(lastPaint) < 40*time.Millisecond {
+					return
+				}
+				lastPaint = time.Now()
 				a.mu.Lock()
 				if gen != a.aiRefineGen || ocrGen != a.ocrGeneration || !a.isScreenshotMode {
 					a.mu.Unlock()
@@ -165,14 +172,19 @@ func (a *app) recognizeScreenshotVision(ctx context.Context, cancel context.Canc
 		return
 	}
 	parser := &visionStreamParser{}
+	var lastPaint time.Time
 	started := time.Now()
-	out, err := StreamAIWithImage(ctx, cfg.AIConn(cfg.AIModel),
+	out, err := streamAIWithImageFunc(ctx, cfg.AIConn(cfg.AIModel),
 		visionSystemPrompt(cfg.TargetLang), visionUserPrompt(fallbackText), dataURL,
 		cfg.AIReasoningEffortFor(cfg.AIModel), func(delta string) {
 			source, target := parser.Push(delta)
 			if source == "" && target == "" {
 				return
 			}
+			if !lastPaint.IsZero() && time.Since(lastPaint) < 40*time.Millisecond {
+				return
+			}
+			lastPaint = time.Now()
 			a.mu.Lock()
 			if generation != a.ocrGeneration || !a.isScreenshotMode {
 				a.mu.Unlock()

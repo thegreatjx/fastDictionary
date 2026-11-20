@@ -468,12 +468,9 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 				if jobLabel == "" {
 					jobLabel = "正在处理词库任务…"
 				}
-				ui.Column(c).FillWidth().Gap(Space1).Padding(Space1, 0, 0, 0).Children(func() {
-					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
-						ui.Spinner(c).Size(13, 13).TextColor(at.Accent)
-						ui.Text(c, jobLabel).Font(fontUI).FontSize(FontHelper).TextColor(at.TextSec)
-					})
-					IndeterminateBar(c, t, 2, "")
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Padding(Space1, 0, 0, 0).Children(func() {
+					ui.Spinner(c).Size(13, 13).TextColor(at.Accent)
+					ui.Text(c, jobLabel).Font(fontUI).FontSize(FontHelper).TextColor(at.TextSec)
 				})
 			}
 		})
@@ -678,12 +675,9 @@ func (a *app) pageVocabulary(c *ui.Context, t *ui.Theme, cfg Config) {
 				if jobLabel == "" {
 					jobLabel = "正在处理词库任务…"
 				}
-				ui.Column(c).FillWidth().Gap(Space1).Padding(Space1, 0, 0, 0).Children(func() {
-					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Children(func() {
-						ui.Spinner(c).Size(13, 13).TextColor(at.Accent)
-						ui.Text(c, jobLabel).Font(fontUI).FontSize(FontHelper).TextColor(at.TextSec)
-					})
-					IndeterminateBar(c, t, 2, "")
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Space2).Padding(Space1, 0, 0, 0).Children(func() {
+					ui.Spinner(c).Size(13, 13).TextColor(at.Accent)
+					ui.Text(c, jobLabel).Font(fontUI).FontSize(FontHelper).TextColor(at.TextSec)
 				})
 			}
 		})

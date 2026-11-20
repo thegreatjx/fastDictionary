@@ -71,7 +71,7 @@ func TestKeyHookFeedsTheTypingClock(t *testing.T) {
 	if !containsText(src, "lastKeyAt = now") {
 		t.Error("the key hook never records a keystroke time")
 	}
-	if !containsText(src, "go OnKeyDown(vk)") {
+	if !containsText(src, "dispatchKeyDown(vk)") {
 		t.Error("the key hook never tells the chip that typing started")
 	}
 	if !containsText(src, "else if !isModifierKey(info.VkCode)") {

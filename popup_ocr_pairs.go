@@ -141,8 +141,7 @@ func (a *app) renderScreenshotPairActions(c *ui.Context, t *ui.Theme, cfg Config
 		if cfg.ShowNotes && shouldExtractNotes(s.source) {
 			switch notesViewPhase(s) {
 			case notesLoading:
-				ui.Row(c).Gap(Space1).AlignItems(ui.Center).Padding(0, Space1).Children(func() {
-					ui.Spinner(c).Size(12, 12)
+				ui.Box(c).Padding(0, Space1).Children(func() {
 					ui.Text(c, "发现生词中…").Font(fontUI).FontSize(FontHelper).TextColor(t.TextMuted)
 				})
 			case notesReady:

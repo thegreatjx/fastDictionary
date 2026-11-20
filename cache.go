@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/egoist/mygo"
 )
@@ -24,10 +25,25 @@ type cachedTranslation struct {
 	GDict    *DictResult `json:"gdict,omitempty"`
 }
 
+const queryCachePersistDebounce = 500 * time.Millisecond
+
+type queryCacheSnapshot struct {
+	Translations map[string]cachedTranslation `json:"translations"`
+	TransOrder   []string                     `json:"trans_order,omitempty"`
+	Notes        map[string][]NoteItem        `json:"notes"`
+	NotesOrder   []string                     `json:"notes_order,omitempty"`
+	AI           map[string]string            `json:"ai"`
+	AIOrder      []string                     `json:"ai_order,omitempty"`
+}
+
 type queryCache struct {
 	mu           sync.Mutex
 	saveMu       sync.Mutex
 	wg           sync.WaitGroup
+	persistMu    sync.Mutex
+	persistTimer *time.Timer
+	persistDirty bool
+	persistDelay time.Duration
 	path         string
 	Translations map[string]cachedTranslation `json:"translations"`
 	TransOrder   []string                     `json:"trans_order,omitempty"`
@@ -73,33 +89,100 @@ func (c *queryCache) load() {
 	c.mu.Unlock()
 }
 
+func (c *queryCache) snapshotForPersist() queryCacheSnapshot {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	snap := queryCacheSnapshot{
+		TransOrder: append([]string(nil), c.TransOrder...),
+		NotesOrder: append([]string(nil), c.NotesOrder...),
+		AIOrder:    append([]string(nil), c.AIOrder...),
+	}
+	if len(c.Translations) > 0 {
+		snap.Translations = make(map[string]cachedTranslation, len(c.Translations))
+		for k, v := range c.Translations {
+			snap.Translations[k] = v
+		}
+	}
+	if len(c.Notes) > 0 {
+		snap.Notes = make(map[string][]NoteItem, len(c.Notes))
+		for k, v := range c.Notes {
+			snap.Notes[k] = append([]NoteItem(nil), v...)
+		}
+	}
+	if len(c.AI) > 0 {
+		snap.AI = make(map[string]string, len(c.AI))
+		for k, v := range c.AI {
+			snap.AI[k] = v
+		}
+	}
+	return snap
+}
+
+func (c *queryCache) writeSnapshotToDisk() {
+	if c == nil || c.path == "" {
+		return
+	}
+	c.saveMu.Lock()
+	defer c.saveMu.Unlock()
+	snap := c.snapshotForPersist()
+	data, err := json.Marshal(snap)
+	if err != nil {
+		return
+	}
+	if err := atomicWriteFile(c.path, data, atomicWriteOptions{retries: 3}); err != nil {
+		log.Printf("fastDictionary: cache persist failed: %v", err)
+	}
+}
+
 func (c *queryCache) persistAsync() {
 	if c == nil || c.path == "" {
 		return
 	}
-	path := c.path
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
+	c.persistMu.Lock()
+	c.persistDirty = true
+	delay := c.persistDelay
+	if delay <= 0 {
+		delay = queryCachePersistDebounce
+	}
+	if c.persistTimer != nil {
+		c.persistTimer.Reset(delay)
+		c.persistMu.Unlock()
+		return
+	}
+	c.persistTimer = time.AfterFunc(delay, func() {
 		defer recoverLog("cache.go:persistAsync")
-		c.saveMu.Lock()
-		defer c.saveMu.Unlock()
-		c.mu.Lock()
-		data, err := json.Marshal(c)
-		c.mu.Unlock()
-		if err != nil {
+		c.persistMu.Lock()
+		dirty := c.persistDirty
+		c.persistDirty = false
+		c.persistTimer = nil
+		if !dirty {
+			c.persistMu.Unlock()
 			return
 		}
-		if err := atomicWriteFile(path, data, atomicWriteOptions{retries: 3}); err != nil {
-			log.Printf("fastDictionary: cache persist failed: %v", err)
-		}
-	}()
+		c.wg.Add(1)
+		c.persistMu.Unlock()
+		defer c.wg.Done()
+		c.writeSnapshotToDisk()
+	})
+	c.persistMu.Unlock()
 }
 
 func (c *queryCache) flush() {
-	if c != nil {
-		c.wg.Wait()
+	if c == nil {
+		return
 	}
+	c.persistMu.Lock()
+	if c.persistTimer != nil {
+		c.persistTimer.Stop()
+		c.persistTimer = nil
+	}
+	dirty := c.persistDirty
+	c.persistDirty = false
+	c.persistMu.Unlock()
+	if dirty {
+		c.writeSnapshotToDisk()
+	}
+	c.wg.Wait()
 }
 
 func putBoundedLRU[V any](m *map[string]V, order *[]string, key string, val V, limit int) {

@@ -351,6 +351,7 @@ func (a *app) recognizeScreenshot(imgPath string) {
 	}
 	go func() {
 		defer recoverLog("ocr.go:recognizeScreenshot")
+		defer cancel()
 		text, err := recognizeImageFileIn(ctx, imgPath, cfg.OCRLang)
 		if mode == ocrModeLocalFirst && (err != nil || isSuspiciousOCRText(text)) {
 			a.recognizeScreenshotVision(ctx, cancel, generation, imgPath, CleanOcrText(text))
@@ -446,18 +447,14 @@ func (a *app) renderScreenshotSource(c *ui.Context, t *ui.Theme, s snapshot) {
 	}
 	if classifyOCRView(s) == ocrViewRecognizing {
 		at := appTheme(t)
-		ui.Column(c).FillWidth().Gap(6).Padding(12, 2).Children(func() {
-			ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Spinner(c).Size(15, 15).TextColor(at.Accent)
-				ui.Text(c, "正在识别文字…").FontSize(13).TextColor(at.TextSec).Grow(1)
-				if ui.Button(c, "取消").Height(26).FontSize(11).Clicked() {
-					a.stopScreenshotOCR()
-					a.mu.Lock()
-					a.ocrError = "已取消识别。可以重试或重新截图。"
-					a.mu.Unlock()
-				}
-			})
-			IndeterminateBar(c, t, 3, "")
+		ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Padding(12, 2).Children(func() {
+			ui.Text(c, "正在识别文字…").FontSize(13).TextColor(at.TextSec).Grow(1)
+			if ui.Button(c, "取消").Height(26).FontSize(11).Clicked() {
+				a.stopScreenshotOCR()
+				a.mu.Lock()
+				a.ocrError = "已取消识别。可以重试或重新截图。"
+				a.mu.Unlock()
+			}
 		})
 		return
 	}

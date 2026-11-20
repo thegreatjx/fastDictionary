@@ -8,11 +8,12 @@ import (
 	"hash/fnv"
 	"log"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/egoist/mygo"
 )
+
+var translateRaceFunc = TranslateRace
 
 func (a *app) copyToClipboard(text string) {
 	if strings.TrimSpace(text) == "" {
@@ -132,25 +133,25 @@ func (a *app) translateTextWithReflow(text string, keepParagraphs bool) {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
 
-		r := TranslateRace(ctx, text, from, to, cfg.EngineMode)
+		r := translateRaceFunc(ctx, text, from, to, cfg.EngineMode)
 
 		word := isWord(text)
 		var yd *YoudaoDict
 		var gd *DictResult
 		if r.Err == nil && word && cfg.DictEnabled {
-			var wg sync.WaitGroup
-			wg.Add(2)
-			go func() {
-				defer recoverLog("popup_actions.go:dict")
-				defer wg.Done()
-				yd, _ = LookupYoudao(ctx, text)
-			}()
-			go func() {
-				defer recoverLog("popup_actions.go:gdict")
-				defer wg.Done()
-				gd, _ = GoogleDict(ctx, text, from, to)
-			}()
-			wg.Wait()
+			yd, gd = fetchWordDicts(ctx, text, from, to, "popup_actions.go")
+		}
+
+		alt, usedAlt := raceResult{}, false
+		if r.Err == nil && r.Untranslated && cfg.EngineMode != "race" {
+			a.mu.Lock()
+			stale := gen != a.translateGen
+			a.mu.Unlock()
+			if stale {
+				log.Printf("fastDictionary: dropped stale translation of %s", a.logText(text, 40))
+				return
+			}
+			alt, usedAlt = pickEchoAnswer(r, translateRaceFunc(ctx, text, from, to, "race"))
 		}
 
 		elapsed := time.Since(start)
@@ -165,10 +166,6 @@ func (a *app) translateTextWithReflow(text string, keepParagraphs bool) {
 		if r.Err != nil {
 			a.errText = r.Err.Error()
 		} else if r.Untranslated {
-			alt, usedAlt := raceResult{}, false
-			if cfg.EngineMode != "race" {
-				alt, usedAlt = pickEchoAnswer(r, TranslateRace(ctx, text, from, to, "race"))
-			}
 			if usedAlt {
 				a.target = formatTranslationForLayout(alt.Text, mode, keepParagraphs)
 				a.engine, a.detected = alt.Engine, alt.Detected

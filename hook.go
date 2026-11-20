@@ -193,12 +193,12 @@ func lowLevelMouseProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 
 	if press && OnMouseDown != nil {
 		x, y := pt.X, pt.Y
-		go OnMouseDown(x, y)
+		dispatchMouseDown(x, y)
 	}
 
 	if wheel && OnMouseWheel != nil {
 		x, y := wx, wy
-		go OnMouseWheel(x, y)
+		dispatchMouseWheel(x, y)
 	}
 
 	if moved && OnMouseMove != nil && atomic.LoadUint32(&chipHoverArmed) != 0 {
@@ -251,7 +251,7 @@ func lowLevelKeyProc(nCode int, wParam uintptr, lParam uintptr) uintptr {
 				hookMu.Unlock()
 				if OnKeyDown != nil {
 					vk := info.VkCode
-					go OnKeyDown(vk)
+					dispatchKeyDown(vk)
 				}
 			}
 		} else if info.Flags&llkhfUp != 0 {
@@ -366,6 +366,69 @@ func dispatchMouseMove(x, y int32) {
 	latestMove.Store(uint64(uint32(x))<<32 | uint64(uint32(y)))
 	select {
 	case moveWake <- struct{}{}:
+	default:
+	}
+}
+
+var (
+	wheelWake   = make(chan struct{}, 1)
+	wheelWorker sync.Once
+	latestWheel atomic.Uint64
+
+	keyWake   = make(chan struct{}, 1)
+	keyWorker sync.Once
+	latestKey atomic.Uint32
+)
+
+func dispatchMouseDown(x, y int32) {
+	fn := OnMouseDown
+	if fn == nil {
+		return
+	}
+	go func() {
+		defer recoverLog("hook.go:mouseDown")
+		fn(x, y)
+	}()
+}
+
+func dispatchMouseWheel(x, y int32) {
+	wheelWorker.Do(func() {
+		go func() {
+			for range wheelWake {
+				func() {
+					defer recoverLog("hook.go:wheelWorker")
+					v := latestWheel.Load()
+					if fn := OnMouseWheel; fn != nil {
+						fn(int32(uint32(v>>32)), int32(uint32(v)))
+					}
+				}()
+			}
+		}()
+	})
+	latestWheel.Store(uint64(uint32(x))<<32 | uint64(uint32(y)))
+	select {
+	case wheelWake <- struct{}{}:
+	default:
+	}
+}
+
+func dispatchKeyDown(vk uint32) {
+	keyWorker.Do(func() {
+		go func() {
+			for range keyWake {
+				func() {
+					defer recoverLog("hook.go:keyWorker")
+					k := latestKey.Load()
+					if fn := OnKeyDown; fn != nil {
+						fn(k)
+					}
+				}()
+			}
+		}()
+	})
+	latestKey.Store(vk)
+	select {
+	case keyWake <- struct{}{}:
 	default:
 	}
 }

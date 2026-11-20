@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -99,7 +100,22 @@ func (a *app) trayMenu() *mygo.Menu {
 func (a *app) quitApp() {
 	a.isQuitting.Store(true)
 
+	a.mu.Lock()
+	cancels := []context.CancelFunc{a.aiCancel, a.aiRefineCancel, a.ocrCancel, a.notesCancel}
+	a.aiCancel = nil
+	a.aiRefineCancel = nil
+	a.ocrCancel = nil
+	a.notesCancel = nil
+	a.mu.Unlock()
+	for _, cancel := range cancels {
+		if cancel != nil {
+			cancel()
+		}
+	}
+
 	stopAudio()
+	closeIndraOCR()
+	a.cache.flush()
 	if err := postHookCommand(removeHooks); err != nil {
 		removeHooks()
 	}
@@ -303,7 +319,9 @@ func main() {
 		})
 
 		if msg := registerHotkeys(cfg.HotkeySelection, cfg.HotkeyInput, cfg.HotkeyScreenshot, a); msg != "" {
+			a.mu.Lock()
 			a.setHotkeyMsgLocked(hotkeyMsgError, msg)
+			a.mu.Unlock()
 		}
 
 		OnSelectionGesture = a.onSelectionGesture
