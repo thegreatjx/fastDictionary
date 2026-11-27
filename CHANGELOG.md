@@ -1,5 +1,25 @@
 # 更新日志
 
+## 1.6.3 — 2026-11-27（GitHub 介绍页重制 · 最新界面截图 · MyGo v0.10.0 版本复核）
+
+### 变更
+
+- **GitHub 仓库介绍与 README 重制（`README.md` / `docs/screenshots/`）**：按当前白昼纸墨界面与 1.6.2 功能现状重写产品介绍、核心能力、快捷键、构建说明与数据路径，替换为工作台、翻译弹窗、词典、长难句、写作、设置等 8 张当前版本真实窗口截图，并补充「当前状态」表与设计说明；仓库 About 描述与 Topics 同步更新。
+- **MyGo 框架版本复核（`go.mod` / `go.sum`）**：`github.com/egoist/mygo v0.10.0` 是当前最新稳定版（2026-11-17 发布），`go.mod`、`go.sum` 与发布二进制均已锁定该版本，本次无需升级；随包 `BUILD_INFO.txt` 与「关于」页显示该版本。
+- **版本号更新（`update.go` / `build.ps1`）**：`appVersion` 与打包脚本默认版本更新为 `1.6.3`。
+
+### 验证
+
+- `gofmt -w` / `go vet ./...` / `go build -tags mygo_nowebview ./...`：全部通过（退出码 `0`）。
+- `go test -v -count=1 ./...`：`600` 项测试及子测试通过，`9` 项跳过，`0` 失败（总耗时 `10.227s`）。
+- 原生界面截图：`build/ui-evidence/20261127-150744-settings-light-sky` 等 6 个证据目录，manifest 记录 commit `55ca551`、e2e exe SHA256 `AB43734C…`、主题 `light / sky`；工作台与翻译弹窗由同一 e2e 二进制独立采集。
+
+### 分发
+
+- 源码提交：`55ca551`
+- 包名：`fastDictionary-v2026.11.27-win64.zip`（`27,917,204 bytes`；内含 `fastDictionary.exe` `17,210,368 bytes`）
+- SHA256：`58586EE09D25B65A5DFC8FF7B86CCF4C28C62B36A349FD4A061832D056E43C88`
+
 ## 1.6.2 — 2026-11-21（白昼纸墨编辑态重设 · 单词弹窗重构 · 悬浮胶囊菜单定位修正 · 单栏工作台与设置页）
 
 ### 变更
