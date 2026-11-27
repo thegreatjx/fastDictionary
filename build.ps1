@@ -29,7 +29,7 @@ param(
     [switch]$Overwrite,
     [switch]$Startup,
     [switch]$NoShortcuts,
-    [string]$Version = "1.6.2",
+    [string]$Version = "1.6.3",
     [switch]$Sign
 )
 
