@@ -1,9 +1,9 @@
 {
   "onnxruntime": {
     "version": "1.25.1",
-    "url": "https://github.com/microsoft/onnxruntime/releases/download/v1.25.1/onnxruntime-win-x64-1.25.1.zip",
-    "zipSha256": "33F2E8A63774811F99A5FC224CAC32F4EED8C27643D46C6CC685319FA8F18019",
-    "dllInZip": "onnxruntime-win-x64-1.25.1/lib/onnxruntime.dll",
+    "url": "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.25.1/microsoft.ml.onnxruntime.1.25.1.nupkg",
+    "zipSha256": "00B2CB35FE65B5E27A3FD640CC3FB51DBBB960EAA7ECC2C3FDF7876B3B3E6EF8",
+    "dllInZip": "runtimes/win-x64/native/onnxruntime.dll",
     "dllSha256": "373D4CB6FE92966125C4AC0D07B190CE4863E45251438F0EC087D4576B862918"
   },
   "models": {

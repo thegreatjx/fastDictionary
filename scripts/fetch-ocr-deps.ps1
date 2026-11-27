@@ -9,7 +9,7 @@
 #   .\scripts\fetch-ocr-deps.ps1 -Force   全部重新下载
 #
 # 下载源：
-#   onnxruntime: GitHub 官方 release
+#   onnxruntime: NuGet 官方包（Microsoft.ML.OnnxRuntime，固定版本）
 #   Indra 模型:  HuggingFace datalab-to/indra-ocr（固定 revision）
 # 模型许可证为 OpenRAIL，发布包需附 NOTICE，见仓库根目录 NOTICE。
 
@@ -40,7 +40,16 @@ function Save-Verified([string]$Url, [string]$Dest, [string]$Hash) {
     $tmp = "$Dest.download"
     if (Test-Path $tmp) { Remove-Item -Force $tmp }
     Write-Host "下载 $Url" -ForegroundColor Cyan
-    Invoke-WebRequest -Uri $Url -OutFile $tmp -UseBasicParsing
+    $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+    if ($curl) {
+        & $curl.Source -L --fail --retry 3 --connect-timeout 30 --silent --show-error -o $tmp $Url
+        if ($LASTEXITCODE -ne 0) {
+            Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+            throw "下载失败: $Url"
+        }
+    } else {
+        Invoke-WebRequest -Uri $Url -OutFile $tmp -UseBasicParsing
+    }
     $got = Get-Sha256 $tmp
     if ($got -ne $Hash) {
         Remove-Item -Force $tmp

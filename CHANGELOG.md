@@ -20,6 +20,10 @@
 - 包名：`fastDictionary-v2026.11.27-win64.zip`（`27,917,204 bytes`；内含 `fastDictionary.exe` `17,210,368 bytes`）
 - SHA256：`58586EE09D25B65A5DFC8FF7B86CCF4C28C62B36A349FD4A061832D056E43C88`
 
+### 工程
+
+- **GitHub Release 工作流修复（`scripts/ocr-deps.json` / `scripts/fetch-ocr-deps.ps1`）**：tag 自动发布在 `fetch-ocr-deps.ps1` 下载 ONNX Runtime 时命中失效的 `microsoft/onnxruntime` v1.25.1 GitHub 地址（404），导致 Release job 在打包前失败。现改用 NuGet 官方 `Microsoft.ML.OnnxRuntime 1.25.1` 包作为固定下载源（DLL SHA256 与现有依赖清单一致），并让下载优先走 `curl.exe`，避免 PowerShell `Invoke-WebRequest` 在大文件传输中断。已用 `.\scripts\fetch-ocr-deps.ps1 -Force` 完整验证 NuGet 包与 5 个 Indra 模型下载、SHA256 校验全部通过；该修复不改变程序二进制行为，不影响已发布的 v1.6.3 资产。
+
 ## 1.6.2 — 2026-11-21（白昼纸墨编辑态重设 · 单词弹窗重构 · 悬浮胶囊菜单定位修正 · 单栏工作台与设置页）
 
 ### 变更
